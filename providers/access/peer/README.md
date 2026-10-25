@@ -6,7 +6,7 @@
 [![Docs](https://img.shields.io/badge/docs-latest-blue.svg)](https://boriken-dev.github.io/coqui-access/rust/coqui_access_peer/)
 [![CI](https://img.shields.io/github/actions/workflow/status/Boriken-Dev/coqui-access/test.yml)](https://github.com/Boriken-Dev/coqui-access/actions/workflows/test.yml)
 
-**Peer certificates as accounts.** The transport (see `coqui-peer`) proves a peer holds the
+**Peer certificates as accounts.** The transport (see `coqui-peer-tls`) proves a peer holds the
 key of its certificate and hands over its fingerprint; this provider maps accepted
 fingerprints to a name and groups. A certificate nobody accepted is not authenticated and is
 kept for a while as waiting, with the address it came from, so an operator can accept it.

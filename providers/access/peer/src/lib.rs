@@ -1,6 +1,6 @@
 //! Maps peer certificates, verified by the transport, to directory identities.
 //!
-//! The transport (see `coqui-peer`) proves a peer holds the key of its certificate and
+//! The transport (see `coqui-peer-tls`) proves a peer holds the key of its certificate and
 //! hands the certificate's fingerprint in [`Attempt::certificate`]. This provider keeps the
 //! fingerprints that were accepted, each under a name and groups. A certificate nobody
 //! accepted is not authenticated and is kept for a while as waiting, so whoever runs the
@@ -24,7 +24,7 @@ use coqui_access::{
     Person, PutOutcome, Verdict, Waiting, error, takes,
 };
 use coqui_access_kit::{Store, file, secret};
-use coqui_peer::{Digest, Fingerprint};
+use coqui_peer_tls::{Digest, Fingerprint};
 use serde::{Deserialize, Serialize};
 
 const MAX_PEERS: usize = 10_000;
@@ -319,7 +319,7 @@ impl Accounts for Peers {
     }
 
     /// Accepts a fingerprint under a name, or changes what is said of a peer there is. The
-    /// secret of a peer is its certificate fingerprint in any spelling `coqui-peer` reads;
+    /// secret of a peer is its certificate fingerprint in any spelling `coqui-peer-tls` reads;
     /// saying it again moves the account to another certificate.
     fn put(&self, account: AccountPut) -> Result<PutOutcome, ProviderError> {
         if !valid_field(&account.name) {
@@ -482,7 +482,7 @@ fn valid_field(value: &str) -> bool {
 mod tests {
     use std::fs;
 
-    use coqui_peer::Identity;
+    use coqui_peer_tls::Identity;
 
     use super::*;
 
