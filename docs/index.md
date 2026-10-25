@@ -31,9 +31,11 @@ Each is an ordinary library and a one-line `cdylib` (`coqui-access-<name>-plugin
 
 ## Peers and access lists
 
-`coqui-peer` gives two services a mutual-TLS connection that is trusted by certificate
-fingerprint, with strict defaults and presets you can loosen. `coqui-net-acl` is an ordered,
-first-match access control list for connecting addresses, usable with or without TLS.
+[`coqui-peer-tls`](https://github.com/Boriken-Dev/coqui-peer-tls) gives two services a
+mutual-TLS connection that is trusted by certificate fingerprint, with strict defaults and
+presets you can loosen. [`coqui-net-acl`](https://github.com/Boriken-Dev/coqui-net-acl) is an
+ordered, first-match access control list for connecting addresses, usable with or without TLS.
+Both live in their own repositories.
 
 Source code, per-crate API headers and the changelog are in the
 [repository](https://github.com/Boriken-Dev/coqui-access). The Rust API reference is under

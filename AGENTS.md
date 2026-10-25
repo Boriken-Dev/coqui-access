@@ -7,8 +7,6 @@ README; those headers describe the public API and ship with the crate.
 | --- | --- |
 | `crates/coqui-access/AGENTS.md` | Kinds, models, error helpers, the pinned contract. |
 | `crates/coqui-access-kit/AGENTS.md` | Secrets, private files, reloading tables. |
-| `crates/coqui-peer/AGENTS.md` | Peer identity, trust, policy, the on-disk and text formats. |
-| `crates/coqui-net-acl/AGENTS.md` | Access control lists. |
 | `crates/coqui-roles/AGENTS.md` | Role authorizer. |
 | `providers/access/<name>/AGENTS.md` | One provider each: local, key, ldap, proxy, peer. |
 
@@ -16,7 +14,7 @@ README; those headers describe the public API and ship with the crate.
 
 | Path | What |
 | --- | --- |
-| `crates/` | Library crates: kinds, kit, peer, net-acl, roles. |
+| `crates/` | Library crates: kinds, kit, roles. The TLS peer crate and the access control list crate live in their own repositories and are git dependencies. |
 | `providers/access/<name>/` | A provider as an ordinary library. |
 | `providers/access/<name>/plugin/`, `crates/coqui-roles/plugin/` | The same provider as a `cdylib`: one `providers!` line. |
 | `docs/`, `mkdocs.yml` | Narrative site; Rust API docs are published under `/rust/`. |
@@ -31,19 +29,17 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features
 ```
 
 Regenerate the kind description after a deliberate contract change:
-`GUATIAO_WRITE_HEADER=1 cargo test -p coqui-access --test contract`. Regenerate the peer
-vectors only for a format change (commands in `crates/coqui-peer/tests/*.rs`).
+`GUATIAO_WRITE_HEADER=1 cargo test -p coqui-access --test contract`.
 
 ## Rules
 
 - Kind names and the hashes of required methods are an ABI. A new method has a default body
   and comes after every required one; the contract test names a break.
-- Providers depend on `coqui-access`, `coqui-access-kit` and at most `coqui-peer`; never on a
+- Providers depend on `coqui-access`, `coqui-access-kit` and at most `coqui-peer-tls`; never on a
   host or on each other. Code two providers share belongs in a crate under `crates/`.
-- No process-global state in `coqui-peer`: no default crypto provider is installed.
+- `coqui-peer-tls` is pinned by git revision in `[workspace.dependencies]`; change the revision to a commit of that repository's `main`, never to a branch.
 - A secret never reaches a log, a `Debug` output or an error message.
 - Limits are defaults the caller can change; do not add a refusal a caller cannot lift.
-- Files are LF, `crates/coqui-peer/tests/vectors/**` are byte-exact (`-text`).
 
 ## CI and release
 
