@@ -5,7 +5,7 @@ signature, contract and gotchas, so the crate can be used without reading its so
 ships inside the package and is self-contained. Development documentation lives with the
 source at <https://github.com/Boriken-Dev/coqui-access>.
 
-MSRV Rust 1.89. No Cargo features. Depends on `coqui-access`, `coqui-access-kit`, `coqui-peer`
+MSRV Rust 1.89. No Cargo features. Depends on `coqui-access`, `coqui-access-kit`, `coqui-peer-tls`
 (fingerprint parsing only), `serde` and `toml`. No `unsafe` code. The loadable library is the
 separate crate `coqui-access-peer-plugin`.
 

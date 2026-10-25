@@ -75,7 +75,7 @@ fields. Unknown keys are skipped when reading.
 
 `headers` are ordered pairs; a header sent twice appears twice; match names case-insensitively.
 `Attempt::certificate` is a fingerprint the transport verified the peer holds the key of, in
-the canonical text `coqui-peer` writes (`sha256:<hex>`). `Debug` of `Attempt`, `Lookup`,
+the canonical text `coqui-peer-tls` writes (`sha256:<hex>`). `Debug` of `Attempt`, `Lookup`,
 `Person`, `AccountPut` and `PutOutcome` shows no secret and no identity value.
 
 ## Errors (`coqui_access::error`)

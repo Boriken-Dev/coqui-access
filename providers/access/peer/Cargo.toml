@@ -13,10 +13,10 @@ exclude = [".*", "*.local.*"]
 [dependencies]
 coqui-access.workspace = true
 coqui-access-kit.workspace = true
-coqui-peer.workspace = true
+coqui-peer-tls.workspace = true
 serde.workspace = true
 toml.workspace = true
 
 [dev-dependencies]
-coqui-peer = { workspace = true, features = ["generate"] }
+coqui-peer-tls = { workspace = true, features = ["generate"] }
 tempfile.workspace = true

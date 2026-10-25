@@ -18,9 +18,8 @@ publish = false
 [workspace.dependencies]
 coqui-access = { path = "crates/coqui-access" }
 coqui-access-kit = { path = "crates/coqui-access-kit" }
-coqui-peer = { path = "crates/coqui-peer" }
+coqui-peer-tls = { git = "https://github.com/Boriken-Dev/coqui-peer-tls", rev = "b59e666f3d928ade281083b47cdb30c646d0bfcc" }
 coqui-roles = { path = "crates/coqui-roles" }
-coqui-net-acl = { path = "crates/coqui-net-acl" }
 
 # guatiao main, pinned until a release carries what these crates use.
 guatiao = { git = "https://github.com/Boriken-Dev/guatiao", rev = "1738fa73a2871df2f355c631026a8c6dbb94fa92" }
