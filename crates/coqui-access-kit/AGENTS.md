@@ -5,9 +5,11 @@ signature, contract and gotchas, so the crate can be used without reading its so
 ships inside the package and is self-contained. Development documentation lives with the
 source at <https://github.com/Boriken-Dev/coqui-access>.
 
-MSRV Rust 1.89. No Cargo features. A default build depends on `getrandom`, `serde`, `sha2`,
-`subtle` and `toml`. No `unsafe` code. Public modules: `secret`, `file`, `store`; `Store` is
-re-exported at the root. Errors are plain `String`s that never contain file contents or secrets.
+MSRV Rust 1.89. No Cargo features. Depends on `argon2`, `getrandom`, `sha2` and `subtle`: no
+serde and no format crate; the kit never parses a format. No `unsafe` code. Public modules:
+`table`, `hash`, `secret`, `file`; the main items are re-exported at the root. Table errors are
+`SourceError`; helpers elsewhere return plain `String`s. Neither contains file contents or
+secrets.
 
 ## Secrets (`coqui_access_kit::secret`)
 
@@ -45,22 +47,72 @@ pub fn write_private(path: &Path, bytes: &[u8]) -> Result<(), String>;
 - `write_private` writes `bytes` to a fresh file beside `path` (created new, `0600` on Unix),
   syncs, and renames over `path`. The directory must exist.
 
-## Tables (`coqui_access_kit::store`)
+## Tables (`coqui_access_kit::table`)
 
 ```rust
-pub const MAX_TABLE_BYTES: usize = 1024 * 1024;
-pub struct Store<T>;                    // Debug
-impl<T: Serialize + DeserializeOwned + Default + Clone> Store<T> {
-    pub fn open(path: impl AsRef<Path>, validate: fn(&T) -> Result<(), String>) -> Result<Self, String>;
-    pub fn path(&self) -> &Path;
-    pub fn read<R>(&self, read: impl FnOnce(&T) -> R) -> Result<R, String>;
-    pub fn change<R>(&self, change: impl FnOnce(&mut T) -> Result<R, String>) -> Result<R, String>;
+pub enum SourceError { ReadOnly, Invalid(String), Unavailable(String) }   // non_exhaustive, Error
+pub struct Revision;                    // Copy, Eq, Ord, Default; Revision::new(u64), .get()
+pub trait Keyed { fn key(&self) -> &str; }
+pub struct Snapshot<T> { pub revision: Revision, pub records: Vec<T> }     // non_exhaustive; Snapshot::new
+pub trait Table<T>: Send + Sync {
+    fn load(&self) -> Result<Snapshot<T>, SourceError>;
+    fn changes_since(&self, since: Revision) -> Result<Option<Snapshot<T>>, SourceError>;  // default: load + compare
+    fn put(&self, record: T) -> Result<(), SourceError>;        // default Err(ReadOnly); same key replaces
+    fn remove(&self, key: &str) -> Result<bool, SourceError>;   // default Err(ReadOnly); true when it was there
 }
+pub struct MemoryTable<T>;              // Table<T> for T: Keyed + Clone + Send
+impl<T> MemoryTable<T> { pub fn new() -> Self; pub fn from_records(impl IntoIterator<Item = T>) -> Self; }
+pub struct Reloading<T>;                // Debug
+impl<T: Keyed + Clone> Reloading<T> {
+    pub fn new(table: Arc<dyn Table<T>>, validate: impl Fn(&[T]) -> Result<(), SourceError> + Send + Sync + 'static) -> Result<Self, SourceError>;
+    pub fn read<R>(&self, read: impl FnOnce(&[T]) -> R) -> Result<R, SourceError>;
+    pub fn put_with<R>(&self, make: impl FnOnce(&[T]) -> Result<(T, R), SourceError>) -> Result<R, SourceError>;
+    pub fn remove(&self, key: &str) -> Result<bool, SourceError>;
+}
+pub fn check_keys<T: Keyed>(records: &[T], max: usize) -> Result<(), SourceError>;
 ```
 
-- A missing file is `T::default()`. Every `read`/`change` compares the file `Stamp` and loads
-  again when it differs; a file that has become unreadable, over 1 MiB or invalid is an
-  error, never a stale answer.
-- `change` runs on a clone, validates the result, writes it with `write_private` and keeps it;
-  when `change` or `validate` refuses nothing is written.
-- Use `#[serde(deny_unknown_fields)]` on `T` so a misspelled key is an error.
+- A `Table` is any source: memory, a file with a codec, SQL, an HTTP API. The caller
+  implements it for the storage it picks; the kit supplies no codec. A table that implements
+  only `load` is a read-only source.
+- `MemoryTable` revision counts its changes; `from_records` keeps the last of a repeated key.
+- `Reloading` calls `changes_since` on every use, so it must be cheap. Every snapshot is
+  checked with `validate`; a table that has become unreadable or invalid is an error, never a
+  stale answer. `put_with` validates the records as they would be with the new one before
+  putting it, so a refused change leaves the table alone. It is atomic within one process only.
+- `check_keys` refuses more than `max` records or a repeated key; providers call it first.
+
+## Hashing (`coqui_access_kit::hash`) - use these with your own data
+
+```rust
+pub const MAX_PASSWORD_BYTES: usize = 4096;
+pub struct Argon2Params;                // Copy; Default = 19456 KiB, 2 passes, 1 lane
+impl Argon2Params { pub fn new(memory_kib: u32, iterations: u32, parallelism: u32) -> Result<Self, String>;
+                    pub fn memory_kib(&self) -> u32; pub fn iterations(&self) -> u32; pub fn parallelism(&self) -> u32; }
+pub enum KeyHash { Sha256 /* default */, Argon2id(Argon2Params) }          // non_exhaustive
+impl KeyHash { pub fn argon2id() -> Self; pub fn hash(&self, secret: &str) -> Result<String, String>; }
+pub fn verify_key(stored: &str, presented: &[u8]) -> bool;
+pub fn is_key_hash(stored: &str) -> bool;
+pub fn generate_key(prefix: &str) -> Result<String, String>;
+pub struct PasswordHasher;              // Clone; Default = default costs
+impl PasswordHasher {
+    pub fn new(params: Argon2Params) -> Result<Self, String>;
+    pub fn params(&self) -> Argon2Params;
+    pub fn hash(&self, password: &str) -> Result<String, String>;
+    pub fn verify(&self, stored: Option<&str>, presented: &str) -> bool;
+}
+pub fn verify_password(stored: &str, presented: &str) -> bool;
+pub fn is_password_hash(stored: &str) -> bool;
+```
+
+- Stored strings name their algorithm: `sha256:<64 lowercase hex>` or `$argon2id$v=19$...`
+  (PHC). A table may mix both. A bare digest or any other prefix never verifies.
+- `KeyHash::hash` is `Err` only for Argon2id (RNG or parameters). `verify_key` branches only on
+  the stored prefix; SHA-256 digests are compared in constant time and Argon2id runs in full.
+  Argon2id keys cost one verification per Argon2id record they are tried against.
+- `Argon2Params::new` rejects what Argon2 refuses (memory under 8 KiB per lane, zero counts).
+  Stored hashes verify with the costs they carry.
+- `PasswordHasher::new` makes a dummy hash with the same costs; `verify(None, ..)` does the
+  same work and answers `false`, so an unknown name costs what a wrong password does.
+  `hash` rejects empty and over-long passwords; `verify_password` ignores them.
+

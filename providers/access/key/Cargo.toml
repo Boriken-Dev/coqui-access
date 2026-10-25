@@ -1,6 +1,6 @@
 [package]
 name = "coqui-access-key"
-description = "Hashed bearer keys in a TOML file: authenticator, directory and account management"
+description = "Hashed bearer keys in any table: authenticator, directory and account management"
 readme = "README.md"
 version.workspace = true
 edition.workspace = true
@@ -13,7 +13,8 @@ exclude = [".*", "*.local.*"]
 [dependencies]
 coqui-access.workspace = true
 coqui-access-kit.workspace = true
-serde.workspace = true
+serde = { workspace = true, optional = true }
 
-[dev-dependencies]
-tempfile.workspace = true
+[features]
+# Serialize and Deserialize on the record types, for whatever format a caller picks.
+serde = ["dep:serde"]

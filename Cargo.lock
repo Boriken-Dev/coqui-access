@@ -164,7 +164,6 @@ dependencies = [
  "coqui-access",
  "coqui-access-kit",
  "serde",
- "tempfile",
 ]
 
 [[package]]
@@ -173,18 +172,20 @@ version = "0.1.0"
 dependencies = [
  "coqui-access",
  "coqui-access-key",
+ "coqui-access-kit",
+ "coqui-access-plugin-support",
+ "tempfile",
 ]
 
 [[package]]
 name = "coqui-access-kit"
 version = "0.1.0"
 dependencies = [
+ "argon2",
  "getrandom 0.3.4",
- "serde",
  "sha2",
  "subtle",
  "tempfile",
- "toml",
 ]
 
 [[package]]
@@ -209,11 +210,9 @@ dependencies = [
 name = "coqui-access-local"
 version = "0.1.0"
 dependencies = [
- "argon2",
  "coqui-access",
  "coqui-access-kit",
  "serde",
- "tempfile",
 ]
 
 [[package]]
@@ -221,7 +220,10 @@ name = "coqui-access-local-plugin"
 version = "0.1.0"
 dependencies = [
  "coqui-access",
+ "coqui-access-kit",
  "coqui-access-local",
+ "coqui-access-plugin-support",
+ "tempfile",
 ]
 
 [[package]]
@@ -232,8 +234,6 @@ dependencies = [
  "coqui-access-kit",
  "coqui-peer-tls",
  "serde",
- "tempfile",
- "toml",
 ]
 
 [[package]]
@@ -241,7 +241,22 @@ name = "coqui-access-peer-plugin"
 version = "0.1.0"
 dependencies = [
  "coqui-access",
+ "coqui-access-kit",
  "coqui-access-peer",
+ "coqui-access-plugin-support",
+ "coqui-peer-tls",
+ "tempfile",
+]
+
+[[package]]
+name = "coqui-access-plugin-support"
+version = "0.1.0"
+dependencies = [
+ "coqui-access",
+ "coqui-access-kit",
+ "serde",
+ "tempfile",
+ "toml",
 ]
 
 [[package]]
