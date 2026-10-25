@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- `coqui-peer`: waiting entries record the address the handshake came from, and the
+  per-source caps use it. `TrustStore::waiting` returns `WaitingEntry` (fingerprint and
+  source), `record_waiting` takes a `SocketAddr`, and a waiting file may start with a
+  `Source:` line (store format version 2; version 1 files still read). `accept` requires
+  `PeerAddr` (TCP streams); other streams use the new `accept_from`, `asynch::accept_from`
+  and `asynch::accept_with_from`. `with_source` scopes the address for hosts that drive
+  rustls themselves.
+
 ### Fixed
 
 - Waiting entries are recorded only after the peer proves it holds the certificate's key
