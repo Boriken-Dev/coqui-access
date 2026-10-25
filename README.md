@@ -17,7 +17,11 @@ wants; none of them knows the host. See the [documentation](https://boriken-dev.
 - **Four small kinds** — `coqui_authenticator` (credentials to a lookup), `coqui_directory`
   (lookup to a person), `coqui_authorizer` (person, action, resource to a decision) and the
   optional `coqui_accounts` (list, put, remove, waiting).
-- **Providers as plugins** — each provider is an ordinary library plus a one-line `cdylib`.
+- **Code first** — every provider is built with a builder over a typed `Table` of records
+  (memory by default; a file, a SQL database or an HTTP API are tables you supply). The
+  libraries never parse a format; serde derives sit behind an optional `serde` feature.
+- **Providers as plugins** — each provider library has a `cdylib` plugin crate, which is where
+  a storage format is chosen from its Guatiao config.
 - **Peer certificates as accounts** — fingerprints from [coqui-peer-tls](https://github.com/Boriken-Dev/coqui-peer-tls)
   mapped to identities.
 
@@ -38,27 +42,39 @@ other `-plugin` crates) against the same Guatiao revision as the host.
 
 ## Quick start
 
-Open a key table and check a key, without any plugin host:
+Make a key and check it, without any plugin host:
 
-```text
-cargo test -p coqui-access-key
+```rust
+use coqui_access::{AccountPut, Accounts, Attempt, Authenticator, Verdict};
+use coqui_access_key::Keys;
+
+let keys = Keys::builder().build().unwrap();
+let made = keys
+    .put(AccountPut { name: "relay".into(), ..AccountPut::default() })
+    .unwrap();
+let verdict = keys
+    .authenticate(Attempt { secret: made.secret, ..Attempt::default() })
+    .unwrap();
+assert!(matches!(verdict, Verdict::Valid(_)));
 ```
 
-A host loads a plugin library, builds `coqui_access_key` with `{ path = "keys.toml" }` and
-calls `authenticate`. The per-crate READMEs show each provider's configuration.
+A host loads a plugin library and builds `coqui_access_key` from its Guatiao config, for
+example `{ "source": { "file": { "path": "keys.toml" } } }`; the `source` object names where
+the records live (`file` is the one implemented; others can be added without touching the
+other options). The per-crate READMEs show each provider's configuration.
 
 ## API overview
 
 | Crate | Purpose |
 | --- | --- |
 | `coqui-access` | The kinds and models; re-exports `guatiao`. |
-| `coqui-access-kit` | Secret generation and hashing, private atomic files, reloading TOML tables. |
+| `coqui-access-kit` | `Table` sources, key and password hashing to use with your own data, secrets, private atomic file writes. |
 | `coqui-roles` | First-match role authorizer with configurable scope kinds. |
-| `coqui-access-local` | Argon2id passwords in a TOML file. |
-| `coqui-access-key` | Hashed bearer keys in a TOML file. |
+| `coqui-access-local` | Argon2id passwords in any table. |
+| `coqui-access-key` | Hashed bearer keys (SHA-256 or Argon2id) in any table. |
 | `coqui-access-ldap` | LDAP and Active Directory. |
 | `coqui-access-proxy` | Trusted reverse-proxy identity headers. |
-| `coqui-access-peer` | Peer certificate fingerprints mapped to identities. |
+| `coqui-access-peer` | Peer certificate fingerprints, in any table, mapped to identities. |
 
 ## Development
 
