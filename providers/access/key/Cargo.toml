@@ -1,0 +1,19 @@
+[package]
+name = "coqui-access-key"
+description = "Hashed bearer keys in a TOML file: authenticator, directory and account management"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+exclude = [".*", "*.local.*"]
+
+[dependencies]
+coqui-access.workspace = true
+coqui-access-kit.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
