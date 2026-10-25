@@ -16,7 +16,8 @@ README; those headers describe the public API and ship with the crate.
 | --- | --- |
 | `crates/` | Library crates: kinds, kit, roles. The TLS peer crate and the access control list crate live in their own repositories and are git dependencies. |
 | `providers/access/<name>/` | A provider as an ordinary library. |
-| `providers/access/<name>/plugin/`, `crates/coqui-roles/plugin/` | The same provider as a `cdylib`: one `providers!` line. |
+| `providers/access/<name>/plugin/`, `crates/coqui-roles/plugin/` | The same provider as a `cdylib`: its Guatiao config, the `providers!` line, and (local, key, peer) the choice of storage format. |
+| `providers/access/plugin-support/` | Not a library API (`publish = false`): the plugins' `source` config and the file-backed `Table` with a TOML codec. |
 | `docs/`, `mkdocs.yml` | Narrative site; Rust API docs are published under `/rust/`. |
 
 ## Commands
@@ -38,6 +39,11 @@ Regenerate the kind description after a deliberate contract change:
 - Providers depend on `coqui-access`, `coqui-access-kit` and at most `coqui-peer-tls`; never on a
   host or on each other. Code two providers share belongs in a crate under `crates/`.
 - `coqui-peer-tls` is pinned by git revision in `[workspace.dependencies]`; change the revision to a commit of that repository's `main`, never to a branch.
+- The shared libraries are code first: builders over `coqui_access_kit::Table`, serde only
+  behind a `serde` feature, no `from_toml`/`from_json`, no format crate in a normal
+  dependency (a dev-dependency for tests is fine), nothing read from a file or the
+  environment unless the caller asks. A storage format is chosen only in a `-plugin` crate
+  or `plugin-support`.
 - A secret never reaches a log, a `Debug` output or an error message.
 - Limits are defaults the caller can change; do not add a refusal a caller cannot lift.
 

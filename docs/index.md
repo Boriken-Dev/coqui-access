@@ -20,14 +20,16 @@ methods are a pinned contract; providers are built against the host's Guatiao re
 
 | Provider id | Keeps | Takes |
 | --- | --- | --- |
-| `coqui_access_local` | Argon2id passwords in a TOML file | name and password |
-| `coqui_access_key` | SHA-256 hashes of generated keys | a key |
+| `coqui_access_local` | Argon2id passwords in any table | name and password |
+| `coqui_access_key` | SHA-256 or Argon2id hashes of generated keys, in any table | a key |
 | `coqui_access_ldap` | nothing; asks LDAP or Active Directory | name and password |
 | `coqui_access_proxy` | nothing; trusts a reverse proxy | request headers |
-| `coqui_access_peer` | peer certificate fingerprints | a verified certificate |
+| `coqui_access_peer` | peer certificate fingerprints, in any table | a verified certificate |
 | `coqui_roles` | role rules (an authorizer) | person, action, resource |
 
-Each is an ordinary library and a one-line `cdylib` (`coqui-access-<name>-plugin`).
+Each is an ordinary library, built in code with a builder over a table you supply (memory by
+default), and a `cdylib` (`coqui-access-<name>-plugin`) that builds it from a Guatiao config
+whose `source` object says where the records live.
 
 ## Peers and access lists
 
