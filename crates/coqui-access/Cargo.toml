@@ -1,0 +1,18 @@
+[package]
+name = "coqui-access"
+description = "Authentication, directory, authorization and account-management kinds, and the models that cross them"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+exclude = [".*", "*.local.*"]
+
+[dependencies]
+guatiao = { workspace = true, features = ["provider"] }
+
+[dev-dependencies]
+guatiao = { workspace = true, features = ["provider", "load"] }
+guatiao-serde = { workspace = true, features = ["json"] }
