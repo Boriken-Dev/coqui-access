@@ -1,0 +1,22 @@
+[package]
+name = "coqui-net-acl"
+description = "Ordered, first-match access control lists over source networks, with pre-read and post-handshake evaluation"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+exclude = [".*", "*.local.*"]
+
+[features]
+default = []
+# Serde support with a plain text form (CIDR strings, `permit` / `deny`).
+serde = ["dep:serde"]
+
+[dependencies]
+serde = { workspace = true, optional = true }
+
+[dev-dependencies]
+toml.workspace = true
