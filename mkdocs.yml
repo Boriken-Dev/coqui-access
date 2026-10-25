@@ -1,0 +1,36 @@
+site_name: coqui-access
+site_description: Shared access, identity and peer-trust building blocks.
+site_url: https://boriken-dev.github.io/coqui-access/
+repo_url: https://github.com/Boriken-Dev/coqui-access
+repo_name: Boriken-Dev/coqui-access
+edit_uri: edit/main/docs/
+
+# Constrained to docs/ so a strict build does not scan the repository's own markdown:
+# the API headers and crate READMEs are not pages.
+docs_dir: docs
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - content.code.copy
+
+nav:
+  - Home: index.md
+  - Rust API: https://boriken-dev.github.io/coqui-access/rust/index.html
+
+markdown_extensions:
+  - admonition
+  - tables
+  - pymdownx.superfences
