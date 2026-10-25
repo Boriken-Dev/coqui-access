@@ -12,10 +12,11 @@ person or group to a role at a scope, and anything not allowed is denied. Scope 
 
 ## Features
 
-- **Roles and rules in TOML** — bounded in size, with unknown keys rejected.
-- **Configurable scopes** — `*` or `<kind>:<id>` for the kinds you allow, or any kind.
-- **A Guatiao provider** — `coqui_roles` implements `Authorizer`; `coqui-roles-plugin` is its
-  loadable library.
+- **Code first** - a builder, or a plain-data `RolePolicy`; it never parses a format.
+- **Configurable scopes** - `*` or `<kind>:<id>` for the kinds you allow, or any kind.
+- **Bounded** - at most 256 roles, 256 actions per role, 10 000 rules and 64 scope kinds.
+- **Loadable** - `coqui-roles-plugin` is the `coqui_roles` Guatiao provider, configured with
+  structured lists of roles and rules.
 
 ## Installation
 
@@ -25,32 +26,34 @@ cargo add coqui-roles --git https://github.com/Boriken-Dev/coqui-access
 
 ## Quick start
 
-```rust,ignore
-use coqui_roles::RoleAuthorizer;
+```rust
+use coqui_roles::{RoleAuthorizer, Rule};
 
-let policy = RoleAuthorizer::from_toml(
-    r#"
-    [role.viewer]
-    actions = ["document.read"]
-
-    [[rule]]
-    subject = "group:staff"
-    scope = "site:north"
-    role = "viewer"
-    "#,
-    &["site".to_owned()],
-)?;
+let authorizer = RoleAuthorizer::builder()
+    .scope_kinds(["site"])
+    .role("viewer", ["document.read"])
+    .rule(Rule::new("group:staff", "site:north", "viewer"))
+    .build()
+    .unwrap();
 ```
 
-As a provider the configuration is `{ policy_toml = "...", scope_kinds = ["site"] }`.
+`RolePolicy` holds the same data (`scope_kinds`, `roles`, `rules`) for a caller that keeps
+its policy elsewhere: `RoleAuthorizer::new(policy)`. It derives serde behind the `serde`
+feature.
+
+The plugin takes `{ "scope_kinds": ["site"], "roles": [{ "name": "viewer", "actions":
+["document.read"] }], "rules": [{ "subject": "group:staff", "scope": "site:north", "role":
+"viewer" }] }`.
 
 ## API overview
 
 | Item | Purpose |
 | --- | --- |
-| `RoleAuthorizer` | `from_toml`, `load`; implements `Authorizer`. |
-| `RoleAuthorizerProvider`, `RoleAuthorizerConfig` | The provider `coqui_roles` and its configuration. |
-| `RolePolicyError` | An invalid or unreadable policy. |
+| `RoleAuthorizer` | `builder()`, `new(policy)`; implements `Authorizer`. |
+| `RoleAuthorizerBuilder` | `scope_kinds`, `role`, `rule`, `build`. |
+| `RolePolicy`, `Role`, `Rule` | The policy as plain data; `serde` feature. |
+| `RolePolicyError` | An invalid policy. |
+| `MAX_ROLES`, `MAX_ROLE_ACTIONS`, `MAX_RULES`, `MAX_SCOPE_KINDS` | The bounds. |
 
 ## Development
 

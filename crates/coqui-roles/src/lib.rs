@@ -1,51 +1,185 @@
-//! A first-match role authorizer.
+//! A first-match role authorizer, built in code.
 //!
-//! A policy is TOML: named roles that list actions, and ordered `[[rule]]` entries that bind
-//! one `account:<name>`, `person:<id>` or `group:<name>` to a role at one scope. A scope is
-//! `*` (everything) or `<kind>:<id>`, where the kinds a deployment uses are configured, for
+//! A policy is named roles that list actions, and ordered rules that bind one
+//! `account:<name>`, `person:<id>` or `group:<name>` to a role at one scope. A scope is `*`
+//! (everything) or `<kind>:<id>`, where the kinds a deployment uses are configured, for
 //! example `site` or `project`; the library has no scope vocabulary of its own. A request's
 //! `resource` is compared with a rule's scope as an exact string.
 //!
 //! The first rule whose subject and scope match is decisive: when its role lacks the
 //! requested action, access is denied. With no matching rule access is denied.
 //!
-//! ```toml
-//! [role.viewer]
-//! actions = ["document.read"]
-//!
-//! [[rule]]
-//! subject = "group:staff"
-//! scope = "site:north"
-//! role = "viewer"
 //! ```
+//! use coqui_roles::{RoleAuthorizer, Rule};
+//!
+//! let authorizer = RoleAuthorizer::builder()
+//!     .scope_kinds(["site"])
+//!     .role("viewer", ["document.read"])
+//!     .rule(Rule::new("group:staff", "site:north", "viewer"))
+//!     .build()
+//!     .unwrap();
+//! # let _ = authorizer;
+//! ```
+//!
+//! [`RolePolicy`] is the same thing as plain data (it derives serde behind the `serde`
+//! feature), for a caller that keeps its policy somewhere else.
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
-use std::io::Read;
-use std::path::Path;
 
 use coqui_access::guatiao::library::ProviderError;
-use coqui_access::guatiao::{FromValue, Provider, Schema, ToValue};
-use coqui_access::{AuthorizationDecision, AuthorizationRequest, Authorizer, Person, error};
-use serde::Deserialize;
+use coqui_access::{AuthorizationDecision, AuthorizationRequest, Authorizer, Person};
 
-const MAX_POLICY_BYTES: usize = 1024 * 1024;
-const MAX_ROLES: usize = 256;
-const MAX_ROLE_ACTIONS: usize = 256;
-const MAX_RULES: usize = 10_000;
-const MAX_SCOPE_KINDS: usize = 64;
+/// The most roles a policy may define.
+pub const MAX_ROLES: usize = 256;
+/// The most actions one role may list.
+pub const MAX_ROLE_ACTIONS: usize = 256;
+/// The most rules a policy may hold.
+pub const MAX_RULES: usize = 10_000;
+/// The most scope kinds a policy may allow.
+pub const MAX_SCOPE_KINDS: usize = 64;
 
-/// First-match role policy.
+/// A named set of actions.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(deny_unknown_fields)
+)]
+#[non_exhaustive]
+pub struct Role {
+    /// The name rules refer to.
+    pub name: String,
+    /// The actions it allows, such as `document.read`; none twice.
+    pub actions: Vec<String>,
+}
+
+impl Role {
+    /// A role allowing `actions`.
+    pub fn new(
+        name: impl Into<String>,
+        actions: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            actions: actions.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+/// Binds a subject to a role at a scope.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(deny_unknown_fields)
+)]
+#[non_exhaustive]
+pub struct Rule {
+    /// `account:<name>`, `person:<id>` or `group:<name>`.
+    pub subject: String,
+    /// `*`, or `<kind>:<id>` with the kind among the policy's scope kinds.
+    pub scope: String,
+    /// The name of a role the policy defines.
+    pub role: String,
+}
+
+impl Rule {
+    /// A rule: `subject` holds `role` at `scope`.
+    pub fn new(
+        subject: impl Into<String>,
+        scope: impl Into<String>,
+        role: impl Into<String>,
+    ) -> Self {
+        Self {
+            subject: subject.into(),
+            scope: scope.into(),
+            role: role.into(),
+        }
+    }
+}
+
+/// A role policy as plain data: what [`RoleAuthorizer::new`] checks and compiles.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(deny_unknown_fields)
+)]
+#[non_exhaustive]
+pub struct RolePolicy {
+    /// The kinds a rule scope may use (`site` allows `site:north`); empty allows any kind.
+    /// `*` is always allowed.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub scope_kinds: Vec<String>,
+    /// The roles.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub roles: Vec<Role>,
+    /// The rules, in the order they are tried.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub rules: Vec<Rule>,
+}
+
+impl RolePolicy {
+    /// An empty policy, which denies everything.
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+/// Builds a [`RoleAuthorizer`]; rules are tried in the order they are added.
+#[derive(Debug, Clone, Default)]
+pub struct RoleAuthorizerBuilder {
+    policy: RolePolicy,
+}
+
+impl RoleAuthorizerBuilder {
+    /// Allows these scope kinds in rules; without any, every kind is allowed.
+    #[must_use]
+    pub fn scope_kinds(mut self, kinds: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.policy.scope_kinds = kinds.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Defines a role.
+    #[must_use]
+    pub fn role(
+        mut self,
+        name: impl Into<String>,
+        actions: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.policy.roles.push(Role::new(name, actions));
+        self
+    }
+
+    /// Adds a rule after the ones already added.
+    #[must_use]
+    pub fn rule(mut self, rule: Rule) -> Self {
+        self.policy.rules.push(rule);
+        self
+    }
+
+    /// Checks the policy and compiles it.
+    ///
+    /// # Errors
+    ///
+    /// As [`RoleAuthorizer::new`].
+    pub fn build(self) -> Result<RoleAuthorizer, RolePolicyError> {
+        RoleAuthorizer::new(self.policy)
+    }
+}
+
+/// First-match role authorizer.
 #[derive(Clone, Default)]
 pub struct RoleAuthorizer {
     roles: BTreeMap<String, BTreeSet<String>>,
-    rules: Vec<Rule>,
+    rules: Vec<CompiledRule>,
 }
 
 #[derive(Clone)]
-struct Rule {
+struct CompiledRule {
     subject: Subject,
     scope: String,
     role: String,
@@ -58,30 +192,7 @@ enum Subject {
     Group(String),
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Document {
-    #[serde(default, rename = "role")]
-    roles: BTreeMap<String, RoleDefinition>,
-    #[serde(default, rename = "rule")]
-    rules: Vec<RuleDefinition>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RoleDefinition {
-    actions: Vec<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RuleDefinition {
-    subject: String,
-    scope: String,
-    role: String,
-}
-
-/// An invalid or unreadable role policy.
+/// An invalid role policy.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct RolePolicyError(String);
@@ -105,51 +216,57 @@ impl fmt::Debug for RoleAuthorizer {
 }
 
 impl RoleAuthorizer {
-    /// Parses a policy from TOML.
-    ///
-    /// `scope_kinds` lists the kinds a rule scope may use (`site` allows `site:north`); an
-    /// empty list allows any kind. `*` is always allowed.
+    /// Starts a policy in code; add roles and rules, then [`build`](RoleAuthorizerBuilder::build).
+    pub fn builder() -> RoleAuthorizerBuilder {
+        RoleAuthorizerBuilder::default()
+    }
+
+    /// Checks `policy` and compiles it.
     ///
     /// # Errors
     ///
-    /// Returns an error for unknown fields, unknown roles, malformed subjects or scopes,
-    /// duplicate actions, or a policy past its size bounds.
-    pub fn from_toml(source: &str, scope_kinds: &[String]) -> Result<Self, RolePolicyError> {
+    /// Returns an error for unknown roles, duplicate role names or actions, malformed
+    /// subjects or scopes, a scope kind that is not allowed, or a policy past
+    /// [`MAX_ROLES`], [`MAX_ROLE_ACTIONS`], [`MAX_RULES`] or [`MAX_SCOPE_KINDS`].
+    pub fn new(policy: RolePolicy) -> Result<Self, RolePolicyError> {
         let fail = |message: &str| RolePolicyError(message.to_owned());
-        if source.len() > MAX_POLICY_BYTES {
-            return Err(fail("policy exceeds the 1 MiB limit"));
-        }
+        let scope_kinds = &policy.scope_kinds;
         if scope_kinds.len() > MAX_SCOPE_KINDS || !scope_kinds.iter().all(|kind| name(kind)) {
             return Err(fail("scope kinds are invalid"));
         }
-        let document: Document = toml::from_str(source)
-            .map_err(|error| RolePolicyError(format!("invalid policy: {error}")))?;
-        if document.roles.len() > MAX_ROLES || document.rules.len() > MAX_RULES {
+        if policy.roles.len() > MAX_ROLES || policy.rules.len() > MAX_RULES {
             return Err(fail("policy has too many roles or rules"));
         }
         let mut roles = BTreeMap::new();
-        for (role, definition) in document.roles {
-            if !name(&role) || definition.actions.is_empty() {
-                return Err(RolePolicyError(format!("invalid role {role:?}")));
+        for role in &policy.roles {
+            if !name(&role.name) || role.actions.is_empty() {
+                return Err(RolePolicyError(format!("invalid role {:?}", role.name)));
             }
-            if definition.actions.len() > MAX_ROLE_ACTIONS {
+            if role.actions.len() > MAX_ROLE_ACTIONS {
                 return Err(RolePolicyError(format!(
-                    "role {role:?} has too many actions"
+                    "role {:?} has too many actions",
+                    role.name
                 )));
             }
             let mut actions = BTreeSet::new();
-            for action in definition.actions {
-                if !name(&action) || !actions.insert(action.clone()) {
+            for action in &role.actions {
+                if !name(action) || !actions.insert(action.clone()) {
                     return Err(RolePolicyError(format!(
-                        "invalid or duplicate action {action:?} in role {role:?}"
+                        "invalid or duplicate action {action:?} in role {:?}",
+                        role.name
                     )));
                 }
             }
-            roles.insert(role, actions);
+            if roles.insert(role.name.clone(), actions).is_some() {
+                return Err(RolePolicyError(format!(
+                    "role {:?} is defined twice",
+                    role.name
+                )));
+            }
         }
 
-        let mut rules = Vec::with_capacity(document.rules.len());
-        for rule in document.rules {
+        let mut rules = Vec::with_capacity(policy.rules.len());
+        for rule in policy.rules {
             let (kind, value) = rule
                 .subject
                 .split_once(':')
@@ -181,37 +298,13 @@ impl RoleAuthorizer {
                     rule.role
                 )));
             }
-            rules.push(Rule {
+            rules.push(CompiledRule {
                 subject,
                 scope: rule.scope,
                 role: rule.role,
             });
         }
         Ok(Self { roles, rules })
-    }
-
-    /// Reads and validates a policy file.
-    ///
-    /// # Errors
-    ///
-    /// As [`from_toml`](RoleAuthorizer::from_toml), and when the file cannot be read or is
-    /// over 1 MiB.
-    pub fn load(path: impl AsRef<Path>, scope_kinds: &[String]) -> Result<Self, RolePolicyError> {
-        let path = path.as_ref();
-        let mut source = String::new();
-        std::fs::File::open(path)
-            .and_then(|file| {
-                file.take((MAX_POLICY_BYTES + 1) as u64)
-                    .read_to_string(&mut source)
-            })
-            .map_err(|error| {
-                RolePolicyError(format!(
-                    "{}: could not read policy: {error}",
-                    path.display()
-                ))
-            })?;
-        Self::from_toml(&source, scope_kinds)
-            .map_err(|error| RolePolicyError(format!("{}: {error}", path.display())))
     }
 
     fn decision(&self, request: &AuthorizationRequest) -> AuthorizationDecision {
@@ -240,48 +333,6 @@ impl Authorizer for RoleAuthorizer {
         request: AuthorizationRequest,
     ) -> Result<AuthorizationDecision, ProviderError> {
         Ok(self.decision(&request))
-    }
-}
-
-/// Guatiao configuration for the role authorizer provider.
-#[derive(Debug, Clone, FromValue, Schema, ToValue)]
-#[map(crate = ::coqui_access::guatiao)]
-#[non_exhaustive]
-pub struct RoleAuthorizerConfig {
-    /// Complete role and rule TOML source.
-    pub policy_toml: String,
-    /// The scope kinds rules may use, such as `site`; empty allows any kind.
-    #[map(default = Vec::<String>::new())]
-    pub scope_kinds: Vec<String>,
-}
-
-/// The role authorizer as a Guatiao provider.
-#[derive(Debug, Provider)]
-#[provider(
-    Authorizer,
-    config = RoleAuthorizerConfig,
-    id = "coqui_roles",
-    name = "Role authorizer",
-    crate = ::coqui_access::guatiao
-)]
-pub struct RoleAuthorizerProvider(RoleAuthorizer);
-
-impl TryFrom<RoleAuthorizerConfig> for RoleAuthorizerProvider {
-    type Error = ProviderError;
-
-    fn try_from(config: RoleAuthorizerConfig) -> Result<Self, Self::Error> {
-        RoleAuthorizer::from_toml(&config.policy_toml, &config.scope_kinds)
-            .map(Self)
-            .map_err(|reason| error::bad_value(&reason.to_string()))
-    }
-}
-
-impl Authorizer for RoleAuthorizerProvider {
-    fn authorize(
-        &self,
-        request: AuthorizationRequest,
-    ) -> Result<AuthorizationDecision, ProviderError> {
-        self.0.authorize(request)
     }
 }
 
@@ -324,33 +375,19 @@ mod tests {
             .allowed
     }
 
-    const POLICY: &str = r#"
-        [role.viewer]
-        actions = ["document.read", "audit.read"]
-
-        [role.editor]
-        actions = ["document.read", "document.write"]
-
-        [[rule]]
-        subject = "group:staff"
-        scope = "site:north"
-        role = "viewer"
-
-        [[rule]]
-        subject = "person:p-editor"
-        scope = "site:north"
-        role = "editor"
-
-        [[rule]]
-        subject = "account:admin"
-        scope = "*"
-        role = "editor"
-    "#;
+    fn standard() -> RoleAuthorizerBuilder {
+        RoleAuthorizer::builder()
+            .scope_kinds(["site"])
+            .role("viewer", ["document.read", "audit.read"])
+            .role("editor", ["document.read", "document.write"])
+            .rule(Rule::new("group:staff", "site:north", "viewer"))
+            .rule(Rule::new("person:p-editor", "site:north", "editor"))
+            .rule(Rule::new("account:admin", "*", "editor"))
+    }
 
     #[test]
     fn scopes_roles_and_default_deny() {
-        let kinds = ["site".to_owned()];
-        let policy = RoleAuthorizer::from_toml(POLICY, &kinds).unwrap();
+        let policy = standard().build().unwrap();
         let debug = format!("{policy:?}");
         assert!(!debug.contains("p-editor") && !debug.contains("staff"));
         let viewer = person("p-viewer", "viewer", &["staff"]);
@@ -372,28 +409,38 @@ mod tests {
             "document.read",
             "site:north"
         ));
+        assert!(!allowed(
+            &RoleAuthorizer::builder().build().unwrap(),
+            &editor,
+            "document.read",
+            "*"
+        ));
+    }
+
+    #[test]
+    fn a_policy_value_builds_the_same_authorizer() {
+        let mut policy = RolePolicy::new();
+        policy.scope_kinds = vec!["site".to_owned()];
+        policy.roles = vec![Role::new("viewer", ["document.read"])];
+        policy.rules = vec![Rule::new("group:staff", "site:north", "viewer")];
+        let policy = RoleAuthorizer::new(policy).unwrap();
+        assert!(allowed(
+            &policy,
+            &person("i", "n", &["staff"]),
+            "document.read",
+            "site:north"
+        ));
     }
 
     #[test]
     fn the_first_matching_rule_is_decisive() {
-        let policy = RoleAuthorizer::from_toml(
-            r#"
-            [role.none]
-            actions = ["x.nothing"]
-            [role.all]
-            actions = ["x.read"]
-            [[rule]]
-            subject = "group:g"
-            scope = "*"
-            role = "none"
-            [[rule]]
-            subject = "group:g"
-            scope = "*"
-            role = "all"
-            "#,
-            &[],
-        )
-        .unwrap();
+        let policy = RoleAuthorizer::builder()
+            .role("none", ["x.nothing"])
+            .role("all", ["x.read"])
+            .rule(Rule::new("group:g", "*", "none"))
+            .rule(Rule::new("group:g", "*", "all"))
+            .build()
+            .unwrap();
         assert!(!allowed(
             &policy,
             &person("i", "n", &["g"]),
@@ -405,63 +452,120 @@ mod tests {
     #[test]
     fn scope_kinds_are_configurable_and_everything_else_is_refused() {
         // Another vocabulary works with no change to the library.
-        let policy = RoleAuthorizer::from_toml(
-            "[role.r]\nactions=['a.b']\n[[rule]]\nsubject='account:x'\nscope='project:p1'\nrole='r'",
-            &["project".to_owned()],
-        )
-        .unwrap();
+        let policy = RoleAuthorizer::builder()
+            .scope_kinds(["project"])
+            .role("r", ["a.b"])
+            .rule(Rule::new("account:x", "project:p1", "r"))
+            .build()
+            .unwrap();
         assert!(allowed(
             &policy,
             &person("i", "x", &[]),
             "a.b",
             "project:p1"
         ));
-        let rule = |scope: &str| {
-            format!(
-                "[role.r]\nactions=['a.b']\n[[rule]]\nsubject='account:x'\nscope='{scope}'\nrole='r'"
-            )
+        let with_scope = |scope: &str, kinds: &[&str]| {
+            RoleAuthorizer::builder()
+                .scope_kinds(kinds.iter().copied())
+                .role("r", ["a.b"])
+                .rule(Rule::new("account:x", scope, "r"))
+                .build()
         };
-        let site = ["site".to_owned()];
-        assert!(RoleAuthorizer::from_toml(&rule("project:p1"), &site).is_err());
-        assert!(RoleAuthorizer::from_toml(&rule("site"), &site).is_err());
-        assert!(RoleAuthorizer::from_toml(&rule("project:p1"), &[]).is_ok());
+        assert!(with_scope("project:p1", &["site"]).is_err());
+        assert!(with_scope("site", &["site"]).is_err());
+        assert!(with_scope("project:p1", &[]).is_ok());
         assert!(
-            RoleAuthorizer::from_toml(
-                "[[rule]]\nsubject='account:x'\nscope='*'\nrole='missing'",
-                &[]
-            )
-            .is_err()
+            RoleAuthorizer::builder()
+                .rule(Rule::new("account:x", "*", "missing"))
+                .build()
+                .is_err()
         );
-        assert!(RoleAuthorizer::from_toml(&" ".repeat(MAX_POLICY_BYTES + 1), &[]).is_err());
-        assert!(RoleAuthorizer::from_toml("[role.r]\nactions=['a','a']", &[]).is_err());
-        assert!(RoleAuthorizer::from_toml("surprise = 1", &[]).is_err());
+        assert!(
+            RoleAuthorizer::builder()
+                .role("r", ["a", "a"])
+                .build()
+                .is_err()
+        );
+        assert!(
+            RoleAuthorizer::builder()
+                .role("r", ["a"])
+                .role("r", ["b"])
+                .build()
+                .is_err()
+        );
+        assert!(
+            RoleAuthorizer::builder()
+                .role("r", ["a"])
+                .rule(Rule::new("nobody", "*", "r"))
+                .build()
+                .is_err()
+        );
+        assert!(
+            RoleAuthorizer::builder()
+                .role("r", ["a"])
+                .rule(Rule::new("robot:x", "*", "r"))
+                .build()
+                .is_err()
+        );
     }
 
     #[test]
-    fn the_provider_builds_from_its_configuration() {
-        let provider = RoleAuthorizerProvider::try_from(RoleAuthorizerConfig {
-            policy_toml: POLICY.to_owned(),
-            scope_kinds: vec!["site".to_owned()],
-        })
-        .unwrap();
-        assert!(allowed_by(&provider));
+    fn the_bounds_hold() {
+        let many_rules = (0..=MAX_RULES)
+            .fold(RoleAuthorizer::builder().role("r", ["a"]), |b, n| {
+                b.rule(Rule::new(format!("account:u{n}"), "*", "r"))
+            });
+        assert!(many_rules.build().is_err());
+        let many_roles = (0..=MAX_ROLES).fold(RoleAuthorizer::builder(), |b, n| {
+            b.role(format!("r{n}"), ["a"])
+        });
+        assert!(many_roles.build().is_err());
+        let actions = (0..=MAX_ROLE_ACTIONS).map(|n| format!("a{n}"));
         assert!(
-            RoleAuthorizerProvider::try_from(RoleAuthorizerConfig {
-                policy_toml: POLICY.to_owned(),
-                scope_kinds: vec!["other".to_owned()],
-            })
-            .is_err()
+            RoleAuthorizer::builder()
+                .role("r", actions)
+                .build()
+                .is_err()
         );
+        let kinds = (0..=MAX_SCOPE_KINDS).map(|n| format!("k{n}"));
+        assert!(
+            RoleAuthorizer::builder()
+                .scope_kinds(kinds)
+                .build()
+                .is_err()
+        );
+        // At the bounds is fine.
+        let actions = (0..MAX_ROLE_ACTIONS).map(|n| format!("a{n}"));
+        assert!(RoleAuthorizer::builder().role("r", actions).build().is_ok());
     }
 
-    fn allowed_by(provider: &RoleAuthorizerProvider) -> bool {
-        provider
-            .authorize(AuthorizationRequest {
-                person: person("p", "admin", &[]),
-                action: "document.write".to_owned(),
-                resource: "site:north".to_owned(),
-            })
-            .unwrap()
-            .allowed
+    #[cfg(feature = "serde")]
+    #[test]
+    fn a_policy_is_plain_data_in_whatever_format_the_caller_picks() {
+        let policy: RolePolicy = toml::from_str(
+            r#"
+            scope_kinds = ["site"]
+            [[roles]]
+            name = "viewer"
+            actions = ["document.read"]
+            [[rules]]
+            subject = "group:staff"
+            scope = "site:north"
+            role = "viewer"
+            "#,
+        )
+        .unwrap();
+        let authorizer = RoleAuthorizer::new(policy.clone()).unwrap();
+        assert!(allowed(
+            &authorizer,
+            &person("i", "n", &["staff"]),
+            "document.read",
+            "site:north"
+        ));
+        assert!(toml::from_str::<RolePolicy>("surprise = 1").is_err());
+        assert_eq!(
+            toml::from_str::<RolePolicy>(&toml::to_string(&policy).unwrap()).unwrap(),
+            policy
+        );
     }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "coqui-roles"
-description = "First-match role authorizer with configurable scope kinds, as a library and a provider"
+description = "First-match role authorizer with configurable scope kinds, built in code"
 readme = "README.md"
 version.workspace = true
 edition.workspace = true
@@ -12,5 +12,11 @@ exclude = [".*", "*.local.*"]
 
 [dependencies]
 coqui-access.workspace = true
-serde.workspace = true
+serde = { workspace = true, optional = true }
+
+[features]
+# Serialize and Deserialize on the policy types, for whatever format a caller picks.
+serde = ["dep:serde"]
+
+[dev-dependencies]
 toml.workspace = true
