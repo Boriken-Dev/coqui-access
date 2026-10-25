@@ -1,0 +1,42 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/*",
+    "providers/access/*",
+    "providers/access/*/plugin",
+    "crates/coqui-roles/plugin",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89"
+license = "MPL-2.0"
+repository = "https://github.com/Boriken-Dev/coqui-access"
+publish = false
+
+[workspace.dependencies]
+coqui-access = { path = "crates/coqui-access" }
+coqui-access-kit = { path = "crates/coqui-access-kit" }
+coqui-peer = { path = "crates/coqui-peer" }
+coqui-roles = { path = "crates/coqui-roles" }
+coqui-net-acl = { path = "crates/coqui-net-acl" }
+
+# guatiao main, pinned until a release carries what these crates use.
+guatiao = { git = "https://github.com/Boriken-Dev/guatiao", rev = "c68361008a0e58c644fb0a3c4cfe107114cf22e9" }
+guatiao-serde = { git = "https://github.com/Boriken-Dev/guatiao", rev = "c68361008a0e58c644fb0a3c4cfe107114cf22e9" }
+
+serde = { version = "1", default-features = false, features = ["derive", "std"] }
+toml = "0.9"
+sha2 = { version = "0.11.1", default-features = false }
+subtle = "2.6"
+getrandom = "0.3"
+argon2 = "0.6"
+ldap3 = { version = "0.12", default-features = false, features = ["sync", "tls-rustls-ring"] }
+rustls = { version = "0.23", default-features = false, features = ["std", "ring"] }
+tokio = { version = "1", default-features = false }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
+rcgen = "0.14"
+x509-parser = "0.18"
+globset = "0.4"
+tempfile = "3"
