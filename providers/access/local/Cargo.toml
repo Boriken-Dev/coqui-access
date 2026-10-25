@@ -1,0 +1,20 @@
+[package]
+name = "coqui-access-local"
+description = "Local accounts in a TOML file: Argon2id passwords, authenticator, directory and account management"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+exclude = [".*", "*.local.*"]
+
+[dependencies]
+coqui-access.workspace = true
+coqui-access-kit.workspace = true
+argon2.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

@@ -1,0 +1,19 @@
+[package]
+name = "coqui-access-local-plugin"
+description = "coqui-access-local as a library a host loads"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+exclude = [".*", "*.local.*"]
+
+# A cdylib and nothing else: it exports the Guatiao entry symbol, and anything that
+# linked it as Rust would export that symbol as its own.
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+coqui-access.workspace = true
+coqui-access-local = { path = ".." }

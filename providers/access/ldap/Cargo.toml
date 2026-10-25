@@ -1,0 +1,19 @@
+[package]
+name = "coqui-access-ldap"
+description = "Authenticate against LDAP or Active Directory and resolve names and groups from it"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+exclude = [".*", "*.local.*"]
+
+[dependencies]
+coqui-access.workspace = true
+ldap3.workspace = true
+rustls.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
