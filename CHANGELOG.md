@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Waiting entries are recorded only after the peer proves it holds the certificate's key
+  (`coqui-peer`, including a CA policy beside pins).
+
 ### Added
 
 - `coqui-access`: the kinds `coqui_authenticator`, `coqui_directory`, `coqui_authorizer` and
