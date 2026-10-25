@@ -59,6 +59,11 @@ pub fn hash(secret: &str, domain: Option<&str>) -> String {
     hex(&digest.finalize())
 }
 
+/// The SHA-256 of `bytes` as 64 lowercase hexadecimal characters.
+pub fn hash_bytes(bytes: &[u8]) -> String {
+    hex(&Sha256::digest(bytes))
+}
+
 /// Compares two strings in time that does not depend on where they differ.
 pub fn same(a: &str, b: &str) -> bool {
     bool::from(a.as_bytes().ct_eq(b.as_bytes()))

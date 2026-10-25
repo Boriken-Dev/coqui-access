@@ -16,4 +16,10 @@ crate-type = ["cdylib"]
 
 [dependencies]
 coqui-access.workspace = true
-coqui-access-peer = { path = ".." }
+coqui-access-peer = { path = "..", features = ["serde"] }
+coqui-access-kit.workspace = true
+coqui-access-plugin-support.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+coqui-peer-tls = { workspace = true, features = ["generate"] }

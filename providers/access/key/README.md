@@ -7,16 +7,21 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/Boriken-Dev/coqui-access/test.yml)](https://github.com/Boriken-Dev/coqui-access/actions/workflows/test.yml)
 
 **Bearer keys** for clients that have nobody to type a password: a relay, a script, a device.
-A key is 256 random bits made here, shown once, and kept only as its SHA-256. Each key can be
-disabled, expire or be removed alone. Authenticator, directory and `Accounts` provider over
-one TOML file that is read again whenever it changes.
+A key is 256 random bits made here and shown once; only a self-describing hash of it is kept
+(`sha256:<hex>` by default, or Argon2id). Each key can be disabled, expire or be removed alone.
+An authenticator, directory and `Accounts` provider over one `Table` of key records, read
+again whenever the table reports a change.
 
 ## Features
 
-- **Hash only** — the table holds digests; a leaked table presents nothing.
-- **Your prefix** — keys begin with a configurable prefix (default `ck_`), so a key is
+- **Code first** - `Keys::builder()` works out of the box with an in-memory table.
+- **Any source** - hand it an `Arc<dyn Table<KeyRecord>>` from `coqui-access-kit`.
+- **Hash only** - the table holds digests; a leaked table presents nothing.
+- **A choice of hash** - SHA-256 (the default) or Argon2id, per provider; records name their
+  own algorithm, so one table mixes both.
+- **Your prefix** - keys begin with a configurable prefix (default `ck_`), so a key is
   recognized where it turns up.
-- **Rotation** — `put` with nothing else said makes the account another key and the old one
+- **Rotation** - `put` with nothing else said makes the account another key and the old one
   stops being taken.
 
 ## Installation
@@ -29,30 +34,39 @@ Build `coqui-access-key-plugin` for the loadable library.
 
 ## Quick start
 
-Provider id `coqui_access_key`, configuration:
+```rust
+use coqui_access::{AccountPut, Accounts, Attempt, Authenticator, Verdict};
+use coqui_access_key::Keys;
 
-```toml
-path = "/etc/example/keys.toml"
-prefix = "ck_"          # optional
+let keys = Keys::builder().prefix("ck_").build().unwrap();
+let made = keys
+    .put(AccountPut { name: "relay".into(), ..AccountPut::default() })
+    .unwrap();
+let verdict = keys
+    .authenticate(Attempt { secret: made.secret, ..Attempt::default() })
+    .unwrap();
+assert!(matches!(verdict, Verdict::Valid(_)));
 ```
 
-The file:
+Records of your own come from a table:
+`Keys::builder().table(table).key_hash(KeyHash::argon2id()).max_keys(500).build()?`, where
+`table` is a `MemoryTable::from_records([KeyRecord::new(id, name, hash)])` or your own
+`Table<KeyRecord>`. The hash comes from `coqui_access_kit::KeyHash::hash`, and
+`verify_key` checks one, with or without this provider. `KeyRecord` derives serde behind the
+`serde` feature.
 
-```toml
-[[keys]]
-id = "robot-1"
-name = "relay"
-hash = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"   # SHA-256 of the key
-groups = ["station"]
-```
+The loadable plugin (provider id `coqui_access_key`) is configured with a `source`, for example
+`{ "source": { "file": { "path": "keys.toml" } }, "prefix": "ck_", "key_hash": "sha256" }`;
+with no `source` the keys live in memory.
 
 ## API overview
 
 | Item | Purpose |
 | --- | --- |
-| `Keys` | The provider: `open(path, prefix)`, `new_key`, and the three kinds. |
-| `KeysConfig` | The Guatiao configuration: `path`, `prefix`. |
-| `DEFAULT_PREFIX` | `"ck_"`. |
+| `Keys` | The provider: `builder()`, `new_key`, and the three kinds. |
+| `KeysBuilder` | Options: `table`, `prefix`, `key_hash`, `max_keys`; `build`. |
+| `KeyRecord` | One key account as a table keeps it; `serde` feature. |
+| `DEFAULT_PREFIX`, `DEFAULT_MAX_KEYS` | `"ck_"`, 10 000. |
 
 ## Development
 

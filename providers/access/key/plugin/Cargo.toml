@@ -16,4 +16,9 @@ crate-type = ["cdylib"]
 
 [dependencies]
 coqui-access.workspace = true
-coqui-access-key = { path = ".." }
+coqui-access-key = { path = "..", features = ["serde"] }
+coqui-access-kit.workspace = true
+coqui-access-plugin-support.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

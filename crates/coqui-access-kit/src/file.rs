@@ -106,7 +106,7 @@ mod tests {
     #[test]
     fn files_are_written_whole_private_and_read_back_within_a_bound() {
         let directory = tempfile::tempdir().unwrap();
-        let file = directory.path().join("kept.toml");
+        let file = directory.path().join("kept.dat");
         assert_eq!(read_bounded(&file, 100), Ok(None));
         assert_eq!(stamp(&file), Ok(None));
         write_private(&file, b"first").unwrap();
@@ -130,7 +130,7 @@ mod tests {
             }
         }
         assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 1);
-        let nowhere = directory.path().join("missing").join("kept.toml");
+        let nowhere = directory.path().join("missing").join("kept.dat");
         assert!(write_private(&nowhere, b"x").is_err());
     }
 

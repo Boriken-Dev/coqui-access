@@ -18,6 +18,7 @@ publish = false
 [workspace.dependencies]
 coqui-access = { path = "crates/coqui-access" }
 coqui-access-kit = { path = "crates/coqui-access-kit" }
+coqui-access-plugin-support = { path = "providers/access/plugin-support" }
 coqui-peer-tls = { git = "https://github.com/Boriken-Dev/coqui-peer-tls", rev = "fa409d770baf5086619480d68fadfc9dc7cfa6dd" }
 coqui-roles = { path = "crates/coqui-roles" }
 

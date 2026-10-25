@@ -1,7 +1,8 @@
-//! Hashed bearer keys for clients that have nobody to type a password.
+//! Hashed bearer keys for clients that have nobody to type a password, kept in any [`Table`].
 //!
-//! A key is 256 random bits made here, said once, and kept only as its SHA-256. Each key
-//! can be disabled or removed alone and may have a time it stops being taken.
+//! A key is 256 random bits made here, said once, and kept only as a self-describing hash
+//! (`sha256:<hex>` by default, or Argon2id). Each key can be disabled or removed alone and
+//! may have a time it stops being taken. Build the provider in code with [`Keys::builder`].
 #![doc = include_str!("../README.md")]
 #![forbid(unsafe_code)]
 #![warn(missing_debug_implementations)]
@@ -9,61 +10,129 @@
 
 use std::collections::BTreeSet;
 use std::fmt;
-use std::path::Path;
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use coqui_access::guatiao::library::ProviderError;
-use coqui_access::guatiao::{FromValue, Provider, Schema, ToValue};
 use coqui_access::{
     AccountInfo, AccountPut, Accounts, Attempt, Authenticator, Description, Directory, Lookup,
     Person, PutOutcome, Verdict, error, takes,
 };
-use coqui_access_kit::{Store, secret};
-use serde::{Deserialize, Serialize};
+use coqui_access_kit::{
+    KeyHash, Keyed, MemoryTable, Reloading, SourceError, Table, check_keys, generate_key,
+    is_key_hash, secret, verify_key,
+};
 
-const MAX_KEYS: usize = 10_000;
+/// The most keys a table may hold unless the builder says otherwise.
+pub const DEFAULT_MAX_KEYS: usize = 10_000;
 const MAX_FIELD_BYTES: usize = 1024;
 
-/// The prefix of keys made when the configuration names none.
+/// The prefix of keys made when the builder names none.
 pub const DEFAULT_PREFIX: &str = "ck_";
 
-/// Guatiao configuration for the key table.
-#[derive(Debug, Clone, FromValue, Schema, ToValue)]
-#[map(crate = ::coqui_access::guatiao)]
+/// One key account as a [`Table`] keeps it, keyed by [`name`](KeyRecord::name).
+///
+/// With the `serde` feature it derives `Serialize` and `Deserialize`.
+#[derive(Clone, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(deny_unknown_fields)
+)]
 #[non_exhaustive]
-pub struct KeysConfig {
-    /// TOML file containing key hashes and account metadata. Created, owner readable only,
-    /// when the first key is made.
-    pub path: String,
-    /// What every key made here begins with, so a key is recognized where it turns up and
-    /// nothing else is looked up among them.
-    #[map(default = String::from(DEFAULT_PREFIX))]
-    pub prefix: String,
+pub struct KeyRecord {
+    /// Stable identity; what a [`Verdict::Valid`] lookup names.
+    pub id: String,
+    /// The account name; unique in the table.
+    pub name: String,
+    /// What is kept of the key: `sha256:<hex>` or an Argon2id hash, as [`KeyHash::hash`]
+    /// writes it. One table may mix both.
+    pub hash: String,
+    /// Email address.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub email: Option<String>,
+    /// Directory groups.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Vec::is_empty")
+    )]
+    pub groups: Vec<String>,
+    /// A disabled key is not taken.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "std::ops::Not::not")
+    )]
+    pub disabled: bool,
+    /// When it was made, in seconds since the Unix epoch.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub made_unix: Option<i64>,
+    /// When it stops being taken, in seconds since the Unix epoch.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub expires_unix: Option<i64>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Document {
-    #[serde(default)]
-    keys: Vec<KeyRecord>,
+impl KeyRecord {
+    /// An enabled key account with no groups. `hash` comes from [`KeyHash::hash`].
+    pub fn new(id: impl Into<String>, name: impl Into<String>, hash: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            name: name.into(),
+            hash: hash.into(),
+            email: None,
+            groups: Vec::new(),
+            disabled: false,
+            made_unix: None,
+            expires_unix: None,
+        }
+    }
+
+    /// Sets the directory groups.
+    #[must_use]
+    pub fn groups(mut self, groups: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.groups = groups.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Sets the email address.
+    #[must_use]
+    pub fn email(mut self, email: impl Into<String>) -> Self {
+        self.email = Some(email.into());
+        self
+    }
+
+    /// Sets whether the key is disabled.
+    #[must_use]
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
+    }
+
+    /// Sets when the key stops being taken.
+    #[must_use]
+    pub fn expires_unix(mut self, expires: i64) -> Self {
+        self.expires_unix = Some(expires);
+        self
+    }
+
+    /// Whether it is taken now: not disabled and not past its time.
+    fn taken(&self) -> bool {
+        !self.disabled && self.expires_unix.is_none_or(|expires| now() < expires)
+    }
 }
 
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct KeyRecord {
-    id: String,
-    name: String,
-    hash: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    email: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    groups: Vec<String>,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    disabled: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    made_unix: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    expires_unix: Option<i64>,
+impl Keyed for KeyRecord {
+    fn key(&self) -> &str {
+        &self.name
+    }
 }
 
 impl fmt::Debug for KeyRecord {
@@ -80,13 +149,6 @@ impl fmt::Debug for KeyRecord {
     }
 }
 
-impl KeyRecord {
-    /// Whether it is taken now: not disabled and not past its time.
-    fn taken(&self) -> bool {
-        !self.disabled && self.expires_unix.is_none_or(|expires| now() < expires)
-    }
-}
-
 fn now() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -95,39 +157,114 @@ fn now() -> i64 {
         .unwrap_or_default()
 }
 
-/// A key table as an Authenticator, Directory and Accounts provider.
-///
-/// The file is read again whenever another process writes it.
-#[derive(Debug, Provider)]
-#[provider(
-    Authenticator,
-    Directory,
-    Accounts,
-    id = "coqui_access_key",
-    name = "Bearer keys",
-    config = KeysConfig,
-    crate = ::coqui_access::guatiao
-)]
-pub struct Keys {
+/// Options for [`Keys`]; every one has a default.
+pub struct KeysBuilder {
+    table: Option<Arc<dyn Table<KeyRecord>>>,
     prefix: String,
-    store: Store<Document>,
+    hash: KeyHash,
+    max_keys: usize,
 }
 
-impl Keys {
-    /// Opens the key table with keys prefixed `prefix`; a missing file means no keys.
+impl fmt::Debug for KeysBuilder {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("KeysBuilder")
+            .field("prefix", &self.prefix)
+            .field("hash", &self.hash)
+            .field("max_keys", &self.max_keys)
+            .finish_non_exhaustive()
+    }
+}
+
+impl KeysBuilder {
+    /// Keeps the keys in `table` instead of in memory.
+    #[must_use]
+    pub fn table(mut self, table: Arc<dyn Table<KeyRecord>>) -> Self {
+        self.table = Some(table);
+        self
+    }
+
+    /// What every key made here begins with, so a key is recognized where it turns up and
+    /// nothing else is looked up among them. Default [`DEFAULT_PREFIX`].
+    #[must_use]
+    pub fn prefix(mut self, prefix: impl Into<String>) -> Self {
+        self.prefix = prefix.into();
+        self
+    }
+
+    /// How keys made from now on are kept. Default [`KeyHash::Sha256`]. Keys already in the
+    /// table keep the algorithm their stored string names.
+    #[must_use]
+    pub fn key_hash(mut self, hash: KeyHash) -> Self {
+        self.hash = hash;
+        self
+    }
+
+    /// The most keys the table may hold. Default [`DEFAULT_MAX_KEYS`].
+    #[must_use]
+    pub fn max_keys(mut self, max: usize) -> Self {
+        self.max_keys = max;
+        self
+    }
+
+    /// Loads the table and makes the provider.
     ///
     /// # Errors
     ///
-    /// Returns an error when the prefix is empty or the file is unreadable, malformed or out
-    /// of bounds.
-    pub fn open(path: impl AsRef<Path>, prefix: &str) -> Result<Self, String> {
-        if prefix.is_empty() || prefix.chars().any(char::is_control) {
-            return Err("prefix must be a non-empty printable string".to_owned());
+    /// Returns an error when the prefix is empty or not printable, or the table cannot be
+    /// loaded or holds an invalid or duplicated key.
+    pub fn build(self) -> Result<Keys, SourceError> {
+        if self.prefix.is_empty() || self.prefix.chars().any(char::is_control) {
+            return Err(SourceError::invalid(
+                "prefix must be a non-empty printable string",
+            ));
         }
-        Ok(Self {
-            prefix: prefix.to_owned(),
-            store: Store::open(path, validate)?,
+        let table = self
+            .table
+            .unwrap_or_else(|| Arc::new(MemoryTable::<KeyRecord>::new()));
+        let max = self.max_keys;
+        Ok(Keys {
+            prefix: self.prefix,
+            hash: self.hash,
+            keys: Reloading::new(table, move |records| validate(records, max))?,
         })
+    }
+}
+
+/// A key table as an Authenticator, Directory and Accounts implementation.
+///
+/// The table is read again whenever it reports a change.
+///
+/// ```
+/// use coqui_access::{AccountPut, Accounts, Attempt, Authenticator, Verdict};
+/// use coqui_access_key::Keys;
+///
+/// let keys = Keys::builder().build().unwrap();
+/// let made = keys
+///     .put(AccountPut { name: "relay".into(), ..AccountPut::default() })
+///     .unwrap();
+/// let verdict = keys
+///     .authenticate(Attempt { secret: made.secret, ..Attempt::default() })
+///     .unwrap();
+/// assert!(matches!(verdict, Verdict::Valid(_)));
+/// ```
+#[derive(Debug)]
+pub struct Keys {
+    prefix: String,
+    hash: KeyHash,
+    keys: Reloading<KeyRecord>,
+}
+
+impl Keys {
+    /// Options for a key table, kept in memory unless [`table`](KeysBuilder::table) says
+    /// otherwise.
+    pub fn builder() -> KeysBuilder {
+        KeysBuilder {
+            table: None,
+            prefix: DEFAULT_PREFIX.to_owned(),
+            hash: KeyHash::default(),
+            max_keys: DEFAULT_MAX_KEYS,
+        }
     }
 
     /// Makes a fresh 256-bit key with this table's prefix.
@@ -136,24 +273,20 @@ impl Keys {
     ///
     /// Returns an error when the operating system random source is unavailable.
     pub fn new_key(&self) -> Result<String, String> {
-        secret::generate(&self.prefix)
+        generate_key(&self.prefix)
     }
 }
 
-impl TryFrom<KeysConfig> for Keys {
-    type Error = ProviderError;
-
-    fn try_from(config: KeysConfig) -> Result<Self, Self::Error> {
-        if config.path.trim().is_empty() {
-            return Err(error::bad_value("path must name the key table"));
-        }
-        Self::open(config.path, &config.prefix)
-            .map_err(|reason| error::bad_value(&format!("key table: {reason}")))
-    }
-}
-
-fn unreadable(reason: String) -> ProviderError {
+fn unreadable(reason: SourceError) -> ProviderError {
     error::internal(&format!("key table: {reason}"))
+}
+
+fn refused(reason: SourceError) -> ProviderError {
+    match reason {
+        SourceError::ReadOnly => error::unsupported("the key table is read only"),
+        SourceError::Invalid(reason) => error::bad_value(&format!("key table: {reason}")),
+        other => unreadable(other),
+    }
 }
 
 impl Authenticator for Keys {
@@ -161,14 +294,13 @@ impl Authenticator for Keys {
         let Some(presented) = attempt.secret.filter(|key| key.starts_with(&self.prefix)) else {
             return Ok(Verdict::Unknown);
         };
-        let digest = secret::hash(&presented, None);
         let found = self
-            .store
-            .read(|document| {
-                // Every record is compared, each in the same time whatever it is.
+            .keys
+            .read(|records| {
+                // Every record is checked, none stopping the others.
                 let mut found = None;
-                for record in &document.keys {
-                    if secret::same(&record.hash, &digest) {
+                for record in records {
+                    if verify_key(&record.hash, presented.as_bytes()) {
                         found = Some(record.clone());
                     }
                 }
@@ -195,10 +327,9 @@ impl Authenticator for Keys {
 
 impl Directory for Keys {
     fn lookup(&self, lookup: Lookup) -> Result<Option<Person>, ProviderError> {
-        self.store
-            .read(|document| {
-                document
-                    .keys
+        self.keys
+            .read(|records| {
+                records
                     .iter()
                     .find(|record| {
                         record.taken()
@@ -224,10 +355,9 @@ impl Directory for Keys {
 
 impl Accounts for Keys {
     fn accounts(&self) -> Result<Vec<AccountInfo>, ProviderError> {
-        self.store
-            .read(|document| {
-                document
-                    .keys
+        self.keys
+            .read(|records| {
+                records
                     .iter()
                     .map(|record| AccountInfo {
                         id: record.id.clone(),
@@ -255,31 +385,21 @@ impl Accounts for Keys {
         let unchanged = account.groups.is_none()
             && account.disabled.is_none()
             && account.expires_unix.is_none();
-        self.store
-            .change(|document| {
-                let at = document
-                    .keys
-                    .iter()
-                    .position(|record| record.name == account.name);
-                if at.is_none() {
-                    document.keys.push(KeyRecord {
-                        id: secret::identifier()?,
-                        name: account.name.clone(),
-                        hash: String::new(),
-                        email: None,
-                        groups: Vec::new(),
-                        disabled: false,
-                        made_unix: None,
-                        expires_unix: None,
-                    });
-                }
-                let at = at.unwrap_or(document.keys.len() - 1);
-                let is_new = document.keys[at].hash.is_empty();
-                let record = &mut document.keys[at];
+        self.keys
+            .put_with(|records| {
+                let existing = records.iter().find(|record| record.name == account.name);
+                let mut record = match existing {
+                    Some(record) => record.clone(),
+                    None => KeyRecord::new(
+                        secret::identifier().map_err(SourceError::unavailable)?,
+                        account.name.clone(),
+                        "",
+                    ),
+                };
                 let mut made = None;
-                if is_new || unchanged {
-                    let key = secret::generate(&self.prefix)?;
-                    record.hash = secret::hash(&key, None);
+                if existing.is_none() || unchanged {
+                    let key = generate_key(&self.prefix).map_err(SourceError::unavailable)?;
+                    record.hash = self.hash.hash(&key).map_err(SourceError::unavailable)?;
                     record.made_unix = Some(now());
                     made = Some(key);
                 }
@@ -292,19 +412,15 @@ impl Accounts for Keys {
                 if let Some(expires) = account.expires_unix {
                     record.expires_unix = Some(expires);
                 }
-                Ok(PutOutcome { secret: made })
+                Ok((record, PutOutcome { secret: made }))
             })
-            .map_err(|reason| error::bad_value(&format!("key table: {reason}")))
+            .map_err(refused)
     }
 
     fn remove(&self, name: String) -> Result<(), ProviderError> {
-        self.store
-            .change(|document| {
-                let before = document.keys.len();
-                document.keys.retain(|record| record.name != name);
-                Ok(document.keys.len() < before)
-            })
-            .map_err(unreadable)
+        self.keys
+            .remove(&name)
+            .map_err(refused)
             .and_then(|removed| {
                 removed
                     .then_some(())
@@ -313,19 +429,15 @@ impl Accounts for Keys {
     }
 }
 
-fn validate(document: &Document) -> Result<(), String> {
-    if document.keys.len() > MAX_KEYS {
-        return Err("too many keys".to_owned());
-    }
+fn validate(records: &[KeyRecord], max: usize) -> Result<(), SourceError> {
+    check_keys(records, max)?;
     let mut ids = BTreeSet::new();
-    let mut names = BTreeSet::new();
     let mut hashes = BTreeSet::new();
-    for record in &document.keys {
+    for record in records {
         if !valid_field(&record.id)
             || !valid_field(&record.name)
-            || !secret::is_hash(&record.hash)
+            || !is_key_hash(&record.hash)
             || !ids.insert(&record.id)
-            || !names.insert(&record.name)
             || !hashes.insert(&record.hash)
             || record.groups.len() > 256
             || record.groups.iter().any(|group| !valid_field(group))
@@ -334,7 +446,7 @@ fn validate(document: &Document) -> Result<(), String> {
                 .as_ref()
                 .is_some_and(|email| email.is_empty() || email.len() > 320)
         {
-            return Err("a key entry is invalid or duplicated".to_owned());
+            return Err(SourceError::invalid("a key entry is invalid or duplicated"));
         }
     }
     Ok(())
@@ -346,7 +458,7 @@ fn valid_field(value: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
+    use coqui_access_kit::Argon2Params;
 
     use super::*;
 
@@ -364,18 +476,21 @@ mod tests {
         }
     }
 
+    fn keys_over(table: Arc<MemoryTable<KeyRecord>>) -> Keys {
+        Keys::builder().table(table).build().unwrap()
+    }
+
     #[test]
-    fn a_hand_written_table_authenticates_and_resolves() {
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("keys.toml");
-        let keys = Keys::open(&path, "ck_").unwrap();
+    fn a_table_built_in_code_authenticates_and_resolves() {
+        let table = Arc::new(MemoryTable::new());
+        let keys = keys_over(table.clone());
         let secret = keys.new_key().unwrap();
-        let digest = secret::hash(&secret, None);
-        fs::write(
-            &path,
-            format!("[[keys]]\nid='robot-1'\nname='relay'\nhash='{digest}'\ngroups=['station']\n"),
-        )
-        .unwrap();
+        table
+            .put(
+                KeyRecord::new("robot-1", "relay", KeyHash::Sha256.hash(&secret).unwrap())
+                    .groups(["station"]),
+            )
+            .unwrap();
         let Verdict::Valid(lookup) = keys.authenticate(presented(&secret)).unwrap() else {
             panic!("valid key was rejected");
         };
@@ -387,9 +502,7 @@ mod tests {
 
     #[test]
     fn unknown_disabled_and_foreign_keys_are_told_apart() {
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("keys.toml");
-        let keys = Keys::open(&path, "ck_").unwrap();
+        let keys = Keys::builder().build().unwrap();
         let key = keys.put(named("relay")).unwrap().secret.unwrap();
         keys.put(AccountPut {
             disabled: Some(true),
@@ -421,14 +534,13 @@ mod tests {
 
     #[test]
     fn keys_are_made_rotated_expired_and_removed() {
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("keys.toml");
-        let keys = Keys::open(&path, "ck_").unwrap();
+        let table = Arc::new(MemoryTable::new());
+        let keys = keys_over(table.clone());
         let first = keys.put(named("cabin")).unwrap().secret.unwrap();
         assert!(first.starts_with("ck_"));
-        let kept = fs::read_to_string(&path).unwrap();
-        assert!(!kept.contains(first.trim_start_matches("ck_")));
-        assert!(kept.contains(&secret::hash(&first, None)));
+        let kept = table.load().unwrap().records;
+        assert!(!kept[0].hash.contains(first.trim_start_matches("ck_")));
+        assert_eq!(kept[0].hash, KeyHash::Sha256.hash(&first).unwrap());
         // Changing what is said of it keeps the key; saying nothing makes another.
         let moved = keys
             .put(AccountPut {
@@ -473,11 +585,10 @@ mod tests {
     }
 
     #[test]
-    fn a_key_made_by_another_open_table_is_known_without_reopening() {
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("keys.toml");
-        let daemon = Keys::open(&path, "ck_").unwrap();
-        let command = Keys::open(&path, "ck_").unwrap();
+    fn a_key_made_through_another_handle_is_known_without_rebuilding() {
+        let table = Arc::new(MemoryTable::new());
+        let daemon = keys_over(table.clone());
+        let command = keys_over(table);
         let key = command.put(named("cabin")).unwrap().secret.unwrap();
         assert!(matches!(
             daemon.authenticate(presented(&key)).unwrap(),
@@ -486,11 +597,79 @@ mod tests {
     }
 
     #[test]
+    fn one_table_mixes_sha256_and_argon2id_keys() {
+        let cheap = KeyHash::Argon2id(Argon2Params::new(64, 1, 1).unwrap());
+        let table = Arc::new(MemoryTable::new());
+        let sha = Keys::builder().table(table.clone()).build().unwrap();
+        let slow = Keys::builder()
+            .table(table.clone())
+            .key_hash(cheap)
+            .build()
+            .unwrap();
+        let fast_key = sha.put(named("fast")).unwrap().secret.unwrap();
+        let slow_key = slow.put(named("slow")).unwrap().secret.unwrap();
+        let kept = table.load().unwrap().records;
+        assert!(kept[0].hash.starts_with("sha256:"));
+        assert!(kept[1].hash.starts_with("$argon2id$"));
+        for keys in [&sha, &slow] {
+            for (key, name) in [(&fast_key, "fast"), (&slow_key, "slow")] {
+                let Verdict::Valid(lookup) = keys.authenticate(presented(key)).unwrap() else {
+                    panic!("{name} was refused");
+                };
+                assert_eq!(keys.lookup(lookup).unwrap().unwrap().name, name);
+            }
+            // A key of the right prefix that is in neither is not known.
+            assert_eq!(
+                keys.authenticate(presented(&keys.new_key().unwrap()))
+                    .unwrap(),
+                Verdict::Unknown
+            );
+        }
+    }
+
+    #[test]
     fn a_malformed_table_or_prefix_is_refused() {
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("keys.toml");
-        assert!(Keys::open(&path, "").is_err());
-        fs::write(&path, "[[keys]]\nid='a'\nname='a'\nhash='short'\n").unwrap();
-        assert!(Keys::open(&path, "ck_").is_err());
+        assert!(Keys::builder().prefix("").build().is_err());
+        assert!(Keys::builder().prefix("a\nb").build().is_err());
+        assert!(Keys::builder().prefix("rk_").build().is_ok());
+        let build = |records: Vec<KeyRecord>, max: usize| {
+            Keys::builder()
+                .table(Arc::new(MemoryTable::from_records(records)))
+                .max_keys(max)
+                .build()
+        };
+        assert!(build(vec![KeyRecord::new("a", "a", "short")], 10).is_err());
+        // A bare digest names no algorithm.
+        assert!(build(vec![KeyRecord::new("a", "a", secret::hash("k", None))], 10).is_err());
+        let one = KeyHash::Sha256.hash("k").unwrap();
+        let two = KeyHash::Sha256.hash("l").unwrap();
+        assert!(
+            build(
+                vec![
+                    KeyRecord::new("a", "a", one.clone()),
+                    KeyRecord::new("b", "b", two.clone())
+                ],
+                10
+            )
+            .is_ok()
+        );
+        assert!(
+            build(
+                vec![
+                    KeyRecord::new("a", "a", one.clone()),
+                    KeyRecord::new("b", "b", one.clone())
+                ],
+                10
+            )
+            .is_err(),
+            "two accounts cannot share a key"
+        );
+        assert!(
+            build(
+                vec![KeyRecord::new("a", "a", one), KeyRecord::new("b", "b", two)],
+                1
+            )
+            .is_err()
+        );
     }
 }

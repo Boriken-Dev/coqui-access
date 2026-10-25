@@ -6,16 +6,18 @@
 [![Docs](https://img.shields.io/badge/docs-latest-blue.svg)](https://boriken-dev.github.io/coqui-access/rust/coqui_access_local/)
 [![CI](https://img.shields.io/github/actions/workflow/status/Boriken-Dev/coqui-access/test.yml)](https://github.com/Boriken-Dev/coqui-access/actions/workflows/test.yml)
 
-**Local accounts** in one TOML file: names and Argon2id password hashes, groups, and the
-account-management kind to make, change and remove them. It is an authenticator, a directory
-and an `Accounts` provider over the same file, which is read again whenever another process
-writes it.
+**Local accounts**: names and Argon2id password hashes, groups, and the account-management
+kind to make, change and remove them. An authenticator, a directory and an `Accounts` provider
+over one `Table` of account records. The table is any source you give it (memory by default,
+a file, a SQL database, an HTTP API) and is read again whenever it reports a change.
 
 ## Features
 
-- **Argon2id** hashes only; a name that is not kept costs the same time as a wrong password.
-- **One file** — bounded to 1 MiB, written atomically and owner-readable only.
-- **Account management** — `put` makes an account (a password is required for a new one),
+- **Code first** - `LocalAccounts::builder()` works out of the box with an in-memory table.
+- **Any source** - hand it an `Arc<dyn Table<AccountRecord>>` from `coqui-access-kit`.
+- **Argon2id** hashes only, with the costs configurable; a name that is not kept costs the
+  same time as a wrong password.
+- **Account management** - `put` makes an account (a password is required for a new one),
   changes groups or the disabled flag, or replaces the password.
 
 ## Installation
@@ -28,29 +30,46 @@ Build `coqui-access-local-plugin` for the loadable library.
 
 ## Quick start
 
-Provider id `coqui_access_local`, configuration:
+```rust
+use coqui_access::{AccountPut, Accounts, Attempt, Authenticator, Verdict};
+use coqui_access_local::LocalAccounts;
 
-```toml
-path = "/etc/example/accounts.toml"
+let accounts = LocalAccounts::builder().build().unwrap();
+accounts
+    .put(AccountPut {
+        name: "alice".into(),
+        secret: Some("correct horse".into()),
+        ..AccountPut::default()
+    })
+    .unwrap();
+let verdict = accounts
+    .authenticate(Attempt {
+        name: Some("alice".into()),
+        secret: Some("correct horse".into()),
+        ..Attempt::default()
+    })
+    .unwrap();
+assert!(matches!(verdict, Verdict::Valid(_)));
 ```
 
-The file:
+Records of your own come from a table:
+`LocalAccounts::builder().table(table).max_accounts(500).argon2(params).build()?`, where
+`table` is a `MemoryTable::from_records([AccountRecord::new(id, name, hash).groups(["staff"])])`
+or your own `Table<AccountRecord>`. Hashes come from `coqui_access_kit::PasswordHasher`, which
+you can use with your own data too. `AccountRecord` derives serde behind the `serde` feature.
 
-```toml
-[[accounts]]
-id = "person-1"
-name = "alice"
-password_hash = "$argon2id$..."   # made by coqui_access_local::hash_password or Accounts::put
-groups = ["staff"]
-```
+The loadable plugin (provider id `coqui_access_local`) is configured with a `source`, for
+example `{ "source": { "file": { "path": "accounts.toml", "format": "toml" } } }`; with no
+`source` the accounts live in memory.
 
 ## API overview
 
 | Item | Purpose |
 | --- | --- |
-| `LocalAccounts` | The provider: `open(path)`, and the `Authenticator`, `Directory` and `Accounts` kinds. |
-| `LocalAccountsConfig` | The Guatiao configuration: `path`. |
-| `hash_password` | Argon2id hash for an account record. |
+| `LocalAccounts` | The provider, and the `Authenticator`, `Directory` and `Accounts` kinds. `builder()` makes one. |
+| `LocalAccountsBuilder` | Options: `table`, `max_accounts`, `argon2`; `build`. |
+| `AccountRecord` | One account as a table keeps it; `serde` feature. |
+| `DEFAULT_MAX_ACCOUNTS` | 10 000. |
 
 ## Development
 

@@ -2,9 +2,10 @@
 //!
 //! The transport (see `coqui-peer-tls`) proves a peer holds the key of its certificate and
 //! hands the certificate's fingerprint in [`Attempt::certificate`]. This provider keeps the
-//! fingerprints that were accepted, each under a name and groups. A certificate nobody
-//! accepted is not authenticated and is kept for a while as waiting, so whoever runs the
-//! service can accept it.
+//! fingerprints that were accepted in a [`Table`], each under a name and groups. A
+//! certificate nobody accepted is not authenticated and is kept for a while as waiting, in a
+//! second table, so whoever runs the service can accept it. Build the provider in code with
+//! [`Peers::builder`].
 #![doc = include_str!("../README.md")]
 #![forbid(unsafe_code)]
 #![warn(missing_debug_implementations)]
@@ -13,59 +14,116 @@
 use std::collections::BTreeSet;
 use std::fmt;
 use std::net::{IpAddr, SocketAddr};
-use std::path::{Path, PathBuf};
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use coqui_access::guatiao::library::ProviderError;
-use coqui_access::guatiao::{FromValue, Provider, Schema, ToValue};
 use coqui_access::{
     AccountInfo, AccountPut, Accounts, Attempt, Authenticator, Description, Directory, Lookup,
     Person, PutOutcome, Verdict, Waiting, error, takes,
 };
-use coqui_access_kit::{Store, file, secret};
+use coqui_access_kit::{Keyed, MemoryTable, Reloading, SourceError, Table, check_keys, secret};
 use coqui_peer_tls::{Digest, Fingerprint};
-use serde::{Deserialize, Serialize};
 
-const MAX_PEERS: usize = 10_000;
+/// The most peers a table may hold unless the builder says otherwise.
+pub const DEFAULT_MAX_PEERS: usize = 10_000;
+/// How many unaccepted fingerprints are kept unless the builder says otherwise: the last ones
+/// seen.
+pub const DEFAULT_WAITING_PLACES: usize = 16;
+/// How long a waiting fingerprint is not written down again for, in seconds, unless the
+/// builder says otherwise.
+pub const DEFAULT_SEEN_EVERY_SECS: i64 = 60;
 const MAX_FIELD_BYTES: usize = 1024;
-/// How many unaccepted fingerprints are kept: the last ones seen.
-const WAITING: usize = 16;
-/// How long a waiting fingerprint is not written down again for, in seconds.
-const SEEN_EVERY: i64 = 60;
-const MAX_WAITING_BYTES: usize = 64 * 1024;
 
-/// Guatiao configuration for the verified peer table.
-#[derive(Debug, Clone, FromValue, Schema, ToValue)]
-#[map(crate = ::coqui_access::guatiao)]
+/// One accepted peer as a [`Table`] keeps it, keyed by [`name`](PeerRecord::name).
+///
+/// With the `serde` feature it derives `Serialize` and `Deserialize`.
+#[derive(Clone, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(deny_unknown_fields)
+)]
 #[non_exhaustive]
-pub struct PeersConfig {
-    /// TOML file mapping certificate fingerprints to directory people. Fingerprints that
-    /// wait are kept beside it in `<path>.waiting`.
-    pub path: String,
+pub struct PeerRecord {
+    /// Stable identity; what a [`Verdict::Valid`] lookup names.
+    pub id: String,
+    /// The peer's name; unique in the table.
+    pub name: String,
+    /// The SHA-256 fingerprint of its certificate, in any spelling `coqui-peer-tls` reads.
+    pub certificate: String,
+    /// Email address.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub email: Option<String>,
+    /// Directory groups.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Vec::is_empty")
+    )]
+    pub groups: Vec<String>,
+    /// A disabled peer is refused.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "std::ops::Not::not")
+    )]
+    pub disabled: bool,
+    /// When it was accepted, in seconds since the Unix epoch.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub made_unix: Option<i64>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Document {
-    #[serde(default)]
-    peers: Vec<PeerRecord>,
+impl PeerRecord {
+    /// An enabled peer with no groups, accepted by this fingerprint.
+    pub fn new(id: impl Into<String>, name: impl Into<String>, certificate: &Fingerprint) -> Self {
+        Self {
+            id: id.into(),
+            name: name.into(),
+            certificate: certificate.to_string(),
+            email: None,
+            groups: Vec::new(),
+            disabled: false,
+            made_unix: None,
+        }
+    }
+
+    /// Sets the directory groups.
+    #[must_use]
+    pub fn groups(mut self, groups: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.groups = groups.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Sets the email address.
+    #[must_use]
+    pub fn email(mut self, email: impl Into<String>) -> Self {
+        self.email = Some(email.into());
+        self
+    }
+
+    /// Sets whether the peer is disabled.
+    #[must_use]
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
+    }
+
+    fn is(&self, fingerprint: &Fingerprint) -> bool {
+        self.certificate
+            .parse::<Fingerprint>()
+            .is_ok_and(|own| own == *fingerprint)
+    }
 }
 
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct PeerRecord {
-    id: String,
-    name: String,
-    certificate: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    email: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    groups: Vec<String>,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    disabled: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    made_unix: Option<i64>,
+impl Keyed for PeerRecord {
+    fn key(&self) -> &str {
+        &self.name
+    }
 }
 
 impl fmt::Debug for PeerRecord {
@@ -82,65 +140,178 @@ impl fmt::Debug for PeerRecord {
     }
 }
 
-impl PeerRecord {
-    fn is(&self, fingerprint: &Fingerprint) -> bool {
-        self.certificate
-            .parse::<Fingerprint>()
-            .is_ok_and(|own| own == *fingerprint)
+/// A fingerprint shown to the service that nobody has accepted, keyed by
+/// [`fingerprint`](Unaccepted::fingerprint).
+///
+/// With the `serde` feature it derives `Serialize` and `Deserialize`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(deny_unknown_fields)
+)]
+#[non_exhaustive]
+pub struct Unaccepted {
+    /// The canonical fingerprint.
+    pub fingerprint: String,
+    /// The address it was shown from, when known.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub peer: Option<String>,
+    /// When it was last written down, in seconds since the Unix epoch.
+    pub seen_unix: i64,
+}
+
+impl Unaccepted {
+    /// A fingerprint seen at `seen_unix`, from `peer`.
+    pub fn new(fingerprint: &Fingerprint, peer: Option<String>, seen_unix: i64) -> Self {
+        Self {
+            fingerprint: fingerprint.canonical(),
+            peer,
+            seen_unix,
+        }
     }
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Waits {
-    #[serde(default)]
-    waiting: Vec<Unaccepted>,
+impl Keyed for Unaccepted {
+    fn key(&self) -> &str {
+        &self.fingerprint
+    }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Unaccepted {
-    fingerprint: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    peer: Option<String>,
-    seen_unix: i64,
+/// Options for [`Peers`]; every one has a default.
+pub struct PeersBuilder {
+    table: Option<Arc<dyn Table<PeerRecord>>>,
+    waiting: Option<Arc<dyn Table<Unaccepted>>>,
+    max_peers: usize,
+    waiting_places: usize,
+    seen_every_secs: i64,
 }
 
-/// Peers as an Authenticator, Directory and Accounts provider.
-///
-/// The file is read again whenever another process writes it.
-#[derive(Debug, Provider)]
-#[provider(
-    Authenticator,
-    Directory,
-    Accounts,
-    id = "coqui_access_peer",
-    name = "Verified peers",
-    config = PeersConfig,
-    crate = ::coqui_access::guatiao
-)]
-pub struct Peers {
-    store: Store<Document>,
-    waiting_path: PathBuf,
-    /// Held while the waiting file is read and written.
-    waiting: Mutex<()>,
+impl fmt::Debug for PeersBuilder {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PeersBuilder")
+            .field("max_peers", &self.max_peers)
+            .field("waiting_places", &self.waiting_places)
+            .field("seen_every_secs", &self.seen_every_secs)
+            .finish_non_exhaustive()
+    }
 }
 
-impl Peers {
-    /// Opens the peer table; a missing file means no peers are configured.
+impl PeersBuilder {
+    /// Keeps the accepted peers in `table` instead of in memory.
+    #[must_use]
+    pub fn table(mut self, table: Arc<dyn Table<PeerRecord>>) -> Self {
+        self.table = Some(table);
+        self
+    }
+
+    /// Keeps the waiting fingerprints in `table` instead of in memory. A table that cannot be
+    /// written means nobody waits.
+    #[must_use]
+    pub fn waiting(mut self, table: Arc<dyn Table<Unaccepted>>) -> Self {
+        self.waiting = Some(table);
+        self
+    }
+
+    /// The most peers the table may hold. Default [`DEFAULT_MAX_PEERS`].
+    #[must_use]
+    pub fn max_peers(mut self, max: usize) -> Self {
+        self.max_peers = max;
+        self
+    }
+
+    /// How many unaccepted fingerprints are kept. Default [`DEFAULT_WAITING_PLACES`].
+    #[must_use]
+    pub fn waiting_places(mut self, places: usize) -> Self {
+        self.waiting_places = places;
+        self
+    }
+
+    /// How long, in seconds, a waiting fingerprint from one address is not written down
+    /// again. Default [`DEFAULT_SEEN_EVERY_SECS`].
+    #[must_use]
+    pub fn seen_every_secs(mut self, seconds: i64) -> Self {
+        self.seen_every_secs = seconds;
+        self
+    }
+
+    /// Loads the table and makes the provider.
     ///
     /// # Errors
     ///
-    /// Returns an error when the file is unreadable, malformed or out of bounds.
-    pub fn open(path: impl AsRef<Path>) -> Result<Self, String> {
-        let path = path.as_ref();
-        let mut waiting_path = path.as_os_str().to_owned();
-        waiting_path.push(".waiting");
-        Ok(Self {
-            store: Store::open(path, validate)?,
-            waiting_path: PathBuf::from(waiting_path),
+    /// Returns an error when the table cannot be loaded or holds an invalid or duplicated
+    /// peer.
+    pub fn build(self) -> Result<Peers, SourceError> {
+        let table = self
+            .table
+            .unwrap_or_else(|| Arc::new(MemoryTable::<PeerRecord>::new()));
+        let max = self.max_peers;
+        Ok(Peers {
+            peers: Reloading::new(table, move |records| validate(records, max))?,
+            waiting_table: self
+                .waiting
+                .unwrap_or_else(|| Arc::new(MemoryTable::<Unaccepted>::new())),
             waiting: Mutex::new(()),
+            waiting_places: self.waiting_places,
+            seen_every_secs: self.seen_every_secs,
         })
+    }
+}
+
+/// Peers as an Authenticator, Directory and Accounts implementation.
+///
+/// The table is read again whenever it reports a change.
+///
+/// ```
+/// use coqui_access::{Attempt, Authenticator, Verdict};
+/// use coqui_access_peer::Peers;
+///
+/// let peers = Peers::builder().build().unwrap();
+/// let seen = peers
+///     .authenticate(Attempt {
+///         certificate: Some(
+///             "sha256:0000000000000000000000000000000000000000000000000000000000000000".into(),
+///         ),
+///         ..Attempt::default()
+///     })
+///     .unwrap();
+/// // Nobody accepted it: not authenticated, and kept as waiting.
+/// assert_eq!(seen, Verdict::Unknown);
+/// ```
+pub struct Peers {
+    peers: Reloading<PeerRecord>,
+    waiting_table: Arc<dyn Table<Unaccepted>>,
+    /// Held while the waiting table is read and written.
+    waiting: Mutex<()>,
+    waiting_places: usize,
+    seen_every_secs: i64,
+}
+
+impl fmt::Debug for Peers {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("Peers")
+            .field("waiting_places", &self.waiting_places)
+            .field("seen_every_secs", &self.seen_every_secs)
+            .finish_non_exhaustive()
+    }
+}
+
+impl Peers {
+    /// Options for a peer table, kept in memory unless [`table`](PeersBuilder::table) says
+    /// otherwise.
+    pub fn builder() -> PeersBuilder {
+        PeersBuilder {
+            table: None,
+            waiting: None,
+            max_peers: DEFAULT_MAX_PEERS,
+            waiting_places: DEFAULT_WAITING_PLACES,
+            seen_every_secs: DEFAULT_SEEN_EVERY_SECS,
+        }
     }
 
     /// Keeps a fingerprint nobody accepted as waiting: the last few seen, one to an
@@ -149,31 +320,30 @@ impl Peers {
     fn wait(&self, fingerprint: &Fingerprint, from: Option<String>) {
         let _one = self.waiting.lock().unwrap_or_else(PoisonError::into_inner);
         let shown = fingerprint.canonical();
-        let mut waits = self.waits();
+        let old = self.waits();
         let host = |peer: &Option<String>| peer.as_deref().and_then(host_of);
         let here = host(&from);
         let now = now();
-        if waits.iter().any(|had| {
-            had.fingerprint == shown && host(&had.peer) == here && now - had.seen_unix < SEEN_EVERY
+        if old.iter().any(|had| {
+            had.fingerprint == shown
+                && host(&had.peer) == here
+                && now - had.seen_unix < self.seen_every_secs
         }) {
             return;
         }
+        let mut waits = old.clone();
         waits.retain(|had| had.fingerprint != shown && (here.is_none() || host(&had.peer) != here));
-        waits.push(Unaccepted {
-            fingerprint: shown,
-            peer: from,
-            seen_unix: now,
-        });
-        let over = waits.len().saturating_sub(WAITING);
+        waits.push(Unaccepted::new(fingerprint, from, now));
+        let over = waits.len().saturating_sub(self.waiting_places);
         waits.drain(..over);
-        self.keep_waits(waits);
+        self.keep_waits(&old, waits);
     }
 
     /// Fingerprints that are accepted wait no more.
     fn waited(&self, accepted: &[Fingerprint]) {
         let _one = self.waiting.lock().unwrap_or_else(PoisonError::into_inner);
-        let waits = self.waits();
-        let still: Vec<Unaccepted> = waits
+        let old = self.waits();
+        let still: Vec<Unaccepted> = old
             .iter()
             .filter(|had| {
                 had.fingerprint
@@ -182,42 +352,45 @@ impl Peers {
             })
             .cloned()
             .collect();
-        if still.len() < waits.len() {
-            self.keep_waits(still);
+        if still.len() < old.len() {
+            self.keep_waits(&old, still);
         }
     }
 
-    /// The waiting entries, oldest first. A file that cannot be read is nobody waiting.
+    /// The waiting entries, oldest first. A table that cannot be read is nobody waiting.
     fn waits(&self) -> Vec<Unaccepted> {
-        file::read_bounded(&self.waiting_path, MAX_WAITING_BYTES)
-            .ok()
-            .flatten()
-            .and_then(|text| toml::from_str::<Waits>(&text).ok())
-            .map(|waits| waits.waiting)
+        self.waiting_table
+            .load()
+            .map(|snapshot| snapshot.records)
             .unwrap_or_default()
     }
 
-    fn keep_waits(&self, waiting: Vec<Unaccepted>) {
+    /// Makes the waiting table hold `new`, in order, touching only what differs.
+    fn keep_waits(&self, old: &[Unaccepted], new: Vec<Unaccepted>) {
         // Whether it could be written is not the peer's to be told.
-        if let Ok(text) = toml::to_string(&Waits { waiting }) {
-            let _ = file::write_private(&self.waiting_path, text.as_bytes());
+        for had in old {
+            if !new.contains(had) {
+                let _ = self.waiting_table.remove(&had.fingerprint);
+            }
+        }
+        for wait in new {
+            if !old.contains(&wait) {
+                let _ = self.waiting_table.put(wait);
+            }
         }
     }
 }
 
-impl TryFrom<PeersConfig> for Peers {
-    type Error = ProviderError;
-
-    fn try_from(config: PeersConfig) -> Result<Self, Self::Error> {
-        if config.path.trim().is_empty() {
-            return Err(error::bad_value("path must name the peer table"));
-        }
-        Self::open(config.path).map_err(|reason| error::bad_value(&format!("peer table: {reason}")))
-    }
-}
-
-fn unreadable(reason: String) -> ProviderError {
+fn unreadable(reason: SourceError) -> ProviderError {
     error::internal(&format!("peer table: {reason}"))
+}
+
+fn refused(reason: SourceError) -> ProviderError {
+    match reason {
+        SourceError::ReadOnly => error::unsupported("the peer table is read only"),
+        SourceError::Invalid(reason) => error::bad_value(&format!("peer table: {reason}")),
+        other => unreadable(other),
+    }
 }
 
 impl Authenticator for Peers {
@@ -231,10 +404,9 @@ impl Authenticator for Peers {
             return Ok(Verdict::Unknown);
         };
         let found = self
-            .store
-            .read(|document| {
-                document
-                    .peers
+            .peers
+            .read(|records| {
+                records
                     .iter()
                     .find(|peer| peer.is(&fingerprint))
                     .map(|peer| (peer.id.clone(), peer.disabled))
@@ -268,10 +440,9 @@ impl Directory for Peers {
         } else {
             None
         };
-        self.store
-            .read(|document| {
-                document
-                    .peers
+        self.peers
+            .read(|records| {
+                records
                     .iter()
                     .find(|peer| {
                         !peer.disabled
@@ -300,10 +471,9 @@ impl Directory for Peers {
 
 impl Accounts for Peers {
     fn accounts(&self) -> Result<Vec<AccountInfo>, ProviderError> {
-        self.store
-            .read(|document| {
-                document
-                    .peers
+        self.peers
+            .read(|records| {
+                records
                     .iter()
                     .map(|peer| AccountInfo {
                         id: peer.id.clone(),
@@ -341,39 +511,35 @@ impl Accounts for Peers {
             ));
         }
         let accepted = self
-            .store
-            .change(|document| {
+            .peers
+            .put_with(|records| {
                 if let Some(fingerprint) = &fingerprint
-                    && let Some(other) = document
-                        .peers
+                    && records
                         .iter()
-                        .find(|peer| peer.is(fingerprint) && peer.name != account.name)
+                        .any(|peer| peer.is(fingerprint) && peer.name != account.name)
                 {
-                    let _ = other;
-                    return Err("that certificate belongs to another peer".to_owned());
+                    return Err(SourceError::invalid(
+                        "that certificate belongs to another peer",
+                    ));
                 }
-                let at = document
-                    .peers
-                    .iter()
-                    .position(|peer| peer.name == account.name);
-                let peer = match (at, &fingerprint) {
-                    (Some(at), _) => &mut document.peers[at],
+                let mut peer = match (
+                    records.iter().find(|peer| peer.name == account.name),
+                    &fingerprint,
+                ) {
+                    (Some(peer), _) => peer.clone(),
                     (None, Some(fingerprint)) => {
-                        document.peers.push(PeerRecord {
-                            id: secret::identifier()?,
-                            name: account.name.clone(),
-                            certificate: fingerprint.to_string(),
-                            email: None,
-                            groups: Vec::new(),
-                            disabled: false,
-                            made_unix: Some(now()),
-                        });
-                        document.peers.last_mut().expect("it was just pushed")
+                        let mut peer = PeerRecord::new(
+                            secret::identifier().map_err(SourceError::unavailable)?,
+                            account.name.clone(),
+                            fingerprint,
+                        );
+                        peer.made_unix = Some(now());
+                        peer
                     }
                     (None, None) => {
-                        return Err(
-                            "a new peer is accepted by its certificate fingerprint".to_owned()
-                        );
+                        return Err(SourceError::invalid(
+                            "a new peer is accepted by its certificate fingerprint",
+                        ));
                     }
                 };
                 if let Some(fingerprint) = &fingerprint {
@@ -385,25 +551,23 @@ impl Accounts for Peers {
                 if let Some(disabled) = account.disabled {
                     peer.disabled = disabled;
                 }
-                Ok(document
-                    .peers
+                let accepted = records
                     .iter()
-                    .filter_map(|peer| peer.certificate.parse::<Fingerprint>().ok())
-                    .collect::<Vec<_>>())
+                    .filter(|other| other.name != peer.name)
+                    .chain(std::iter::once(&peer))
+                    .filter_map(|other| other.certificate.parse::<Fingerprint>().ok())
+                    .collect::<Vec<_>>();
+                Ok((peer, accepted))
             })
-            .map_err(|reason| error::bad_value(&format!("peer table: {reason}")))?;
+            .map_err(refused)?;
         self.waited(&accepted);
         Ok(PutOutcome::default())
     }
 
     fn remove(&self, name: String) -> Result<(), ProviderError> {
-        self.store
-            .change(|document| {
-                let before = document.peers.len();
-                document.peers.retain(|peer| peer.name != name);
-                Ok(document.peers.len() < before)
-            })
-            .map_err(unreadable)
+        self.peers
+            .remove(&name)
+            .map_err(refused)
             .and_then(|removed| {
                 removed
                     .then_some(())
@@ -442,24 +606,24 @@ fn now() -> i64 {
         .unwrap_or_default()
 }
 
-fn validate(document: &Document) -> Result<(), String> {
-    if document.peers.len() > MAX_PEERS {
-        return Err("too many peers".to_owned());
-    }
+fn validate(peers: &[PeerRecord], max: usize) -> Result<(), SourceError> {
+    check_keys(peers, max)?;
     let mut ids = BTreeSet::new();
-    let mut names = BTreeSet::new();
     let mut certificates = BTreeSet::new();
-    for peer in &document.peers {
+    for peer in peers {
         let Ok(fingerprint) = peer.certificate.parse::<Fingerprint>() else {
-            return Err("a peer entry has an invalid certificate".to_owned());
+            return Err(SourceError::invalid(
+                "a peer entry has an invalid certificate",
+            ));
         };
         if fingerprint.digest() != Digest::Sha256 {
-            return Err("a peer certificate is identified by its SHA-256 fingerprint".to_owned());
+            return Err(SourceError::invalid(
+                "a peer certificate is identified by its SHA-256 fingerprint",
+            ));
         }
         if !valid_field(&peer.id)
             || !valid_field(&peer.name)
             || !ids.insert(&peer.id)
-            || !names.insert(&peer.name)
             || !certificates.insert(fingerprint)
             || peer.groups.len() > 256
             || peer.groups.iter().any(|group| !valid_field(group))
@@ -468,7 +632,9 @@ fn validate(document: &Document) -> Result<(), String> {
                 .as_ref()
                 .is_some_and(|email| email.is_empty() || email.len() > 320)
         {
-            return Err("a peer entry is invalid or duplicated".to_owned());
+            return Err(SourceError::invalid(
+                "a peer entry is invalid or duplicated",
+            ));
         }
     }
     Ok(())
@@ -480,8 +646,6 @@ fn valid_field(value: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
-
     use coqui_peer_tls::Identity;
 
     use super::*;
@@ -497,17 +661,23 @@ mod tests {
         }
     }
 
+    fn fingerprint() -> Fingerprint {
+        Identity::generate().unwrap().fingerprint()
+    }
+
     #[test]
     fn authenticates_only_known_certificates_and_resolves_groups() {
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("peers.toml");
-        let certificate = Identity::generate().unwrap().fingerprint().to_string();
-        fs::write(
-            &path,
-            format!("[[peers]]\nid='service-1'\nname='site-a'\ncertificate='{certificate}'\ngroups=['site-a']\n"),
-        )
-        .unwrap();
-        let peers = Peers::open(&path).unwrap();
+        let known = fingerprint();
+        let certificate = known.to_string();
+        let peers = Peers::builder()
+            .table(Arc::new(MemoryTable::from_records([PeerRecord::new(
+                "service-1",
+                "site-a",
+                &known,
+            )
+            .groups(["site-a"])])))
+            .build()
+            .unwrap();
         let Verdict::Valid(lookup) = peers.authenticate(attempt(Some(&certificate))).unwrap()
         else {
             panic!("known certificate was rejected");
@@ -516,7 +686,7 @@ mod tests {
         assert_eq!(person.id, "service-1");
         assert_eq!(person.groups, vec!["site-a"]);
         // Any spelling of the fingerprint is the same certificate.
-        let hex = certificate.parse::<Fingerprint>().unwrap().canonical();
+        let hex = known.canonical();
         assert!(matches!(
             peers.authenticate(attempt(Some(&hex))).unwrap(),
             Verdict::Valid(_)
@@ -533,15 +703,17 @@ mod tests {
 
     #[test]
     fn disabled_peers_and_malformed_tables_are_refused() {
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("peers.toml");
-        let certificate = Identity::generate().unwrap().fingerprint().to_string();
-        fs::write(
-            &path,
-            format!("[[peers]]\nid='service-1'\nname='site-a'\ncertificate='{certificate}'\ndisabled=true\n"),
-        )
+        let known = fingerprint();
+        let certificate = known.to_string();
+        let build = |records: Vec<PeerRecord>| {
+            Peers::builder()
+                .table(Arc::new(MemoryTable::from_records(records)))
+                .build()
+        };
+        let peers = build(vec![
+            PeerRecord::new("service-1", "site-a", &known).disabled(true),
+        ])
         .unwrap();
-        let peers = Peers::open(&path).unwrap();
         assert_eq!(
             peers.authenticate(attempt(Some(&certificate))).unwrap(),
             Verdict::Invalid
@@ -555,19 +727,20 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
-        fs::write(
-            &path,
-            "[[peers]]\nid='service-1'\nname='site-a'\ncertificate='bad'\n",
-        )
-        .unwrap();
-        assert!(Peers::open(&path).is_err());
+        let mut bad = PeerRecord::new("service-1", "site-a", &known);
+        bad.certificate = "bad".to_owned();
+        assert!(build(vec![bad]).is_err());
+        let twice = vec![
+            PeerRecord::new("1", "a", &known),
+            PeerRecord::new("2", "b", &known),
+        ];
+        assert!(build(twice).is_err(), "one certificate is one peer");
     }
 
     #[test]
     fn an_unknown_certificate_waits_and_is_accepted_by_putting_it() {
-        let directory = tempfile::tempdir().unwrap();
-        let peers = Peers::open(directory.path().join("peers.toml")).unwrap();
-        let fingerprint = Identity::generate().unwrap().fingerprint();
+        let peers = Peers::builder().build().unwrap();
+        let fingerprint = fingerprint();
         let shown = fingerprint.to_string();
         assert_eq!(
             peers.authenticate(attempt(Some(&shown))).unwrap(),
@@ -618,12 +791,54 @@ mod tests {
 
     #[test]
     fn one_address_holds_one_waiting_place() {
-        let directory = tempfile::tempdir().unwrap();
-        let peers = Peers::open(directory.path().join("peers.toml")).unwrap();
+        let peers = Peers::builder().build().unwrap();
         for _ in 0..3 {
-            let shown = Identity::generate().unwrap().fingerprint().to_string();
+            let shown = fingerprint().to_string();
             peers.authenticate(attempt(Some(&shown))).unwrap();
         }
         assert_eq!(peers.waiting().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn the_waiting_places_and_the_waiting_table_are_the_callers() {
+        let waiting = Arc::new(MemoryTable::<Unaccepted>::new());
+        let peers = Peers::builder()
+            .waiting(waiting.clone())
+            .waiting_places(2)
+            .build()
+            .unwrap();
+        for last in 1..=3 {
+            let from = Attempt {
+                peer: Some(format!("192.0.2.{last}:4000")),
+                certificate: Some(fingerprint().to_string()),
+                ..Attempt::default()
+            };
+            peers.authenticate(from).unwrap();
+        }
+        let kept = waiting.load().unwrap().records;
+        assert_eq!(kept.len(), 2);
+        assert_eq!(kept[0].peer.as_deref(), Some("192.0.2.2:4000"));
+        assert_eq!(peers.waiting().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn a_waiting_table_that_cannot_be_written_means_nobody_waits() {
+        struct Fixed;
+        impl Table<Unaccepted> for Fixed {
+            fn load(&self) -> Result<coqui_access_kit::Snapshot<Unaccepted>, SourceError> {
+                Ok(coqui_access_kit::Snapshot::new(
+                    coqui_access_kit::Revision::default(),
+                    Vec::new(),
+                ))
+            }
+        }
+        let peers = Peers::builder().waiting(Arc::new(Fixed)).build().unwrap();
+        assert_eq!(
+            peers
+                .authenticate(attempt(Some(&fingerprint().to_string())))
+                .unwrap(),
+            Verdict::Unknown
+        );
+        assert!(peers.waiting().unwrap().is_empty());
     }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "coqui-access-local"
-description = "Local accounts in a TOML file: Argon2id passwords, authenticator, directory and account management"
+description = "Local accounts with Argon2id passwords in any table: authenticator, directory and account management"
 readme = "README.md"
 version.workspace = true
 edition.workspace = true
@@ -13,8 +13,8 @@ exclude = [".*", "*.local.*"]
 [dependencies]
 coqui-access.workspace = true
 coqui-access-kit.workspace = true
-argon2.workspace = true
-serde.workspace = true
+serde = { workspace = true, optional = true }
 
-[dev-dependencies]
-tempfile.workspace = true
+[features]
+# Serialize and Deserialize on the record types, for whatever format a caller picks.
+serde = ["dep:serde"]
