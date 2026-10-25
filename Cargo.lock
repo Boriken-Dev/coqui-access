@@ -260,16 +260,25 @@ dependencies = [
 ]
 
 [[package]]
-name = "coqui-peer-tls"
+name = "coqui-peer"
 version = "0.1.0"
-source = "git+https://github.com/Boriken-Dev/coqui-peer-tls?rev=b59e666f3d928ade281083b47cdb30c646d0bfcc#b59e666f3d928ade281083b47cdb30c646d0bfcc"
+source = "git+https://github.com/Boriken-Dev/coqui-peer?rev=ed5a5c401bc2da942c5c1f0de42c38e90927a8a9#ed5a5c401bc2da942c5c1f0de42c38e90927a8a9"
 dependencies = [
  "data-encoding",
- "rcgen",
- "rustls",
  "sha1",
  "sha2",
  "subtle",
+]
+
+[[package]]
+name = "coqui-peer-tls"
+version = "0.1.0"
+source = "git+https://github.com/Boriken-Dev/coqui-peer-tls?rev=fa409d770baf5086619480d68fadfc9dc7cfa6dd#fa409d770baf5086619480d68fadfc9dc7cfa6dd"
+dependencies = [
+ "coqui-peer",
+ "data-encoding",
+ "rcgen",
+ "rustls",
 ]
 
 [[package]]

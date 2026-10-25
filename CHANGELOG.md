@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   <https://github.com/Boriken-Dev/coqui-net-acl>. `coqui-access-peer` now depends on
   `coqui-peer-tls` by git revision. Replace `coqui_peer::` with `coqui_peer_tls::` in imports and
   depend on the new repositories instead of this one.
+- `coqui-peer-tls` is pinned at a revision that builds on
+  [Boriken-Dev/coqui-peer](https://github.com/Boriken-Dev/coqui-peer): the peer id (still
+  exported as `Fingerprint`) and the trust store come from that core crate. No source change
+  was needed here.
 
 ### Added
 
