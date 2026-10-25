@@ -9,8 +9,7 @@
 Shared building blocks for **who is asking and may they**: authentication, identity
 directory, authorization and account-management kinds on
 [Guatiao](https://github.com/Boriken-Dev/guatiao), ready-made providers for local accounts,
-bearer keys, LDAP, reverse-proxy headers and peer certificates, a role authorizer, and a
-mutual-TLS peer identity crate with an access control list. A host loads the providers it
+bearer keys, LDAP, reverse-proxy headers and peer certificates, and a role authorizer. A host loads the providers it
 wants; none of them knows the host. See the [documentation](https://boriken-dev.github.io/coqui-access/).
 
 ## Features
@@ -19,9 +18,8 @@ wants; none of them knows the host. See the [documentation](https://boriken-dev.
   (lookup to a person), `coqui_authorizer` (person, action, resource to a decision) and the
   optional `coqui_accounts` (list, put, remove, waiting).
 - **Providers as plugins** — each provider is an ordinary library plus a one-line `cdylib`.
-- **Mutual TLS between peers** — self-issued certificates told apart by fingerprint, with
-  pinned, CA and key-proof trust, strict or more permissive profiles, and no process-wide state.
-- **Ordered access control lists** — first match wins, evaluated before the first byte.
+- **Peer certificates as accounts** — fingerprints from [coqui-peer-tls](https://github.com/Boriken-Dev/coqui-peer-tls)
+  mapped to identities.
 
 ## Installation
 
@@ -29,8 +27,11 @@ The crates are not published; depend on them by git revision:
 
 ```toml
 coqui-access = { git = "https://github.com/Boriken-Dev/coqui-access", rev = "<commit>" }
-coqui-peer = { git = "https://github.com/Boriken-Dev/coqui-access", rev = "<commit>" }
 ```
+
+The mutual-TLS crate [coqui-peer-tls](https://github.com/Boriken-Dev/coqui-peer-tls) and the
+access control list crate [coqui-net-acl](https://github.com/Boriken-Dev/coqui-net-acl) live in
+their own repositories.
 
 Build the provider libraries with `cargo build --release -p coqui-access-key-plugin` (and the
 other `-plugin` crates) against the same Guatiao revision as the host.
@@ -52,8 +53,6 @@ calls `authenticate`. The per-crate READMEs show each provider's configuration.
 | --- | --- |
 | `coqui-access` | The kinds and models; re-exports `guatiao`. |
 | `coqui-access-kit` | Secret generation and hashing, private atomic files, reloading TOML tables. |
-| `coqui-peer` | Mutual-TLS identity, fingerprints, trust, trust store, policy profiles. |
-| `coqui-net-acl` | Ordered, first-match access control lists; no TLS. |
 | `coqui-roles` | First-match role authorizer with configurable scope kinds. |
 | `coqui-access-local` | Argon2id passwords in a TOML file. |
 | `coqui-access-key` | Hashed bearer keys in a TOML file. |
