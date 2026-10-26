@@ -17,11 +17,11 @@ pub const DEFAULT_SEEN_EVERY_SECS: i64 = 60;
 pub struct PeerRecord { pub id, pub name, pub certificate: String, pub email: Option<String>,
     pub groups: Vec<String>, pub disabled: bool, pub made_unix: Option<i64> }
                                           // non_exhaustive; Keyed by name; Debug redacts
-impl PeerRecord { pub fn new(id: impl Into<String>, name: impl Into<String>, certificate: &Fingerprint) -> Self;
+impl PeerRecord { pub fn new(id: impl Into<String>, name: impl Into<String>, certificate: &PeerId) -> Self;
                   pub fn groups(self, ..) -> Self; pub fn email(self, ..) -> Self; pub fn disabled(self, bool) -> Self; }
 pub struct Unaccepted { pub fingerprint: String, pub peer: Option<String>, pub seen_unix: i64 }
                                           // non_exhaustive; Keyed by fingerprint
-impl Unaccepted { pub fn new(fingerprint: &Fingerprint, peer: Option<String>, seen_unix: i64) -> Self; }
+impl Unaccepted { pub fn new(fingerprint: &PeerId, peer: Option<String>, seen_unix: i64) -> Self; }
 pub struct PeersBuilder;                  // Debug
 impl PeersBuilder {
     pub fn table(self, table: Arc<dyn Table<PeerRecord>>) -> Self;     // default: MemoryTable

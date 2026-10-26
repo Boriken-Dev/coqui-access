@@ -277,23 +277,25 @@ dependencies = [
 [[package]]
 name = "coqui-peer"
 version = "0.1.0"
-source = "git+https://github.com/Boriken-Dev/coqui-peer?rev=d01b6907859029fad23e5d97398146a03c313ffe#d01b6907859029fad23e5d97398146a03c313ffe"
+source = "git+https://github.com/Boriken-Dev/coqui-peer?rev=b3aa9bdb5a5534ede66d6fc2122604e72409d93f#b3aa9bdb5a5534ede66d6fc2122604e72409d93f"
 dependencies = [
  "data-encoding",
  "sha1",
  "sha2",
  "subtle",
+ "zeroize",
 ]
 
 [[package]]
 name = "coqui-peer-tls"
 version = "0.1.0"
-source = "git+https://github.com/Boriken-Dev/coqui-peer-tls?rev=d940fac026a7e93db153ff4584aee130f2a6b882#d940fac026a7e93db153ff4584aee130f2a6b882"
+source = "git+https://github.com/Boriken-Dev/coqui-peer-tls?rev=81c1fec13d75d9b4adca150940f4e88f7916b587#81c1fec13d75d9b4adca150940f4e88f7916b587"
 dependencies = [
  "coqui-peer",
  "data-encoding",
  "rcgen",
  "rustls",
+ "time",
 ]
 
 [[package]]

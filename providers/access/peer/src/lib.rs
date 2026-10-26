@@ -23,7 +23,7 @@ use coqui_access::{
     Person, PutOutcome, Verdict, Waiting, error, takes,
 };
 use coqui_access_kit::{Keyed, MemoryTable, Reloading, SourceError, Table, check_keys, secret};
-use coqui_peer_tls::{Digest, Fingerprint};
+use coqui_peer_tls::{Digest, PeerId};
 
 /// The most peers a table may hold unless the builder says otherwise.
 pub const DEFAULT_MAX_PEERS: usize = 10_000;
@@ -80,7 +80,7 @@ pub struct PeerRecord {
 
 impl PeerRecord {
     /// An enabled peer with no groups, accepted by this fingerprint.
-    pub fn new(id: impl Into<String>, name: impl Into<String>, certificate: &Fingerprint) -> Self {
+    pub fn new(id: impl Into<String>, name: impl Into<String>, certificate: &PeerId) -> Self {
         Self {
             id: id.into(),
             name: name.into(),
@@ -113,9 +113,9 @@ impl PeerRecord {
         self
     }
 
-    fn is(&self, fingerprint: &Fingerprint) -> bool {
+    fn is(&self, fingerprint: &PeerId) -> bool {
         self.certificate
-            .parse::<Fingerprint>()
+            .parse::<PeerId>()
             .is_ok_and(|own| own == *fingerprint)
     }
 }
@@ -166,7 +166,7 @@ pub struct Unaccepted {
 
 impl Unaccepted {
     /// A fingerprint seen at `seen_unix`, from `peer`.
-    pub fn new(fingerprint: &Fingerprint, peer: Option<String>, seen_unix: i64) -> Self {
+    pub fn new(fingerprint: &PeerId, peer: Option<String>, seen_unix: i64) -> Self {
         Self {
             fingerprint: fingerprint.canonical(),
             peer,
@@ -317,7 +317,7 @@ impl Peers {
     /// Keeps a fingerprint nobody accepted as waiting: the last few seen, one to an
     /// address, and not more often than once in a while. An address that shows another
     /// certificate takes its single place, so it cannot push everybody else out.
-    fn wait(&self, fingerprint: &Fingerprint, from: Option<String>) {
+    fn wait(&self, fingerprint: &PeerId, from: Option<String>) {
         let _one = self.waiting.lock().unwrap_or_else(PoisonError::into_inner);
         let shown = fingerprint.canonical();
         let old = self.waits();
@@ -339,15 +339,15 @@ impl Peers {
         self.keep_waits(&old, waits);
     }
 
-    /// Fingerprints that are accepted wait no more.
-    fn waited(&self, accepted: &[Fingerprint]) {
+    /// Peers that are accepted wait no more.
+    fn waited(&self, accepted: &[PeerId]) {
         let _one = self.waiting.lock().unwrap_or_else(PoisonError::into_inner);
         let old = self.waits();
         let still: Vec<Unaccepted> = old
             .iter()
             .filter(|had| {
                 had.fingerprint
-                    .parse::<Fingerprint>()
+                    .parse::<PeerId>()
                     .map_or(true, |own| !accepted.contains(&own))
             })
             .cloned()
@@ -398,7 +398,7 @@ impl Authenticator for Peers {
         let Some(fingerprint) = attempt
             .certificate
             .as_deref()
-            .and_then(|text| text.parse::<Fingerprint>().ok())
+            .and_then(|text| text.parse::<PeerId>().ok())
             .filter(|fingerprint| fingerprint.digest() == Digest::Sha256)
         else {
             return Ok(Verdict::Unknown);
@@ -436,7 +436,7 @@ impl Authenticator for Peers {
 impl Directory for Peers {
     fn lookup(&self, lookup: Lookup) -> Result<Option<Person>, ProviderError> {
         let by_certificate = if lookup.by == "certificate" {
-            lookup.value.parse::<Fingerprint>().ok()
+            lookup.value.parse::<PeerId>().ok()
         } else {
             None
         };
@@ -501,7 +501,7 @@ impl Accounts for Peers {
         let fingerprint = account
             .secret
             .as_deref()
-            .map(str::parse::<Fingerprint>)
+            .map(str::parse::<PeerId>)
             .transpose()
             .map_err(|_| error::bad_value("that is not a certificate fingerprint"))?
             .filter(|fingerprint| fingerprint.digest() == Digest::Sha256);
@@ -555,7 +555,7 @@ impl Accounts for Peers {
                     .iter()
                     .filter(|other| other.name != peer.name)
                     .chain(std::iter::once(&peer))
-                    .filter_map(|other| other.certificate.parse::<Fingerprint>().ok())
+                    .filter_map(|other| other.certificate.parse::<PeerId>().ok())
                     .collect::<Vec<_>>();
                 Ok((peer, accepted))
             })
@@ -611,7 +611,7 @@ fn validate(peers: &[PeerRecord], max: usize) -> Result<(), SourceError> {
     let mut ids = BTreeSet::new();
     let mut certificates = BTreeSet::new();
     for peer in peers {
-        let Ok(fingerprint) = peer.certificate.parse::<Fingerprint>() else {
+        let Ok(fingerprint) = peer.certificate.parse::<PeerId>() else {
             return Err(SourceError::invalid(
                 "a peer entry has an invalid certificate",
             ));
@@ -661,7 +661,7 @@ mod tests {
         }
     }
 
-    fn fingerprint() -> Fingerprint {
+    fn fingerprint() -> PeerId {
         Identity::generate().unwrap().fingerprint()
     }
 
