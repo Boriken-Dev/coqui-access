@@ -19,7 +19,7 @@ publish = false
 coqui-access = { path = "crates/coqui-access" }
 coqui-access-kit = { path = "crates/coqui-access-kit" }
 coqui-access-plugin-support = { path = "providers/access/plugin-support" }
-coqui-peer-tls = { git = "https://github.com/Boriken-Dev/coqui-peer-tls", rev = "fa409d770baf5086619480d68fadfc9dc7cfa6dd" }
+coqui-peer-tls = { git = "https://github.com/Boriken-Dev/coqui-peer-tls", rev = "d940fac026a7e93db153ff4584aee130f2a6b882" }
 coqui-roles = { path = "crates/coqui-roles" }
 
 # guatiao main, pinned until a release carries what these crates use.
