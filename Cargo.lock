@@ -144,12 +144,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a"
 
 [[package]]
-name = "const-oid"
-version = "0.10.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a6ef517f0926dd24a1582492c791b6a4818a4d94e789a334894aa15b0d12f55c"
-
-[[package]]
 name = "coqui-access"
 version = "0.1.0"
 dependencies = [
@@ -276,8 +270,9 @@ dependencies = [
 
 [[package]]
 name = "coqui-peer"
-version = "0.1.0"
-source = "git+https://github.com/Boriken-Dev/coqui-peer?rev=b3aa9bdb5a5534ede66d6fc2122604e72409d93f#b3aa9bdb5a5534ede66d6fc2122604e72409d93f"
+version = "0.0.0-alpha.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2af45ca87c29c957642b6e314f405649a3054759931dbd87967487878abeb96a"
 dependencies = [
  "data-encoding",
  "sha1",
@@ -288,11 +283,11 @@ dependencies = [
 
 [[package]]
 name = "coqui-peer-tls"
-version = "0.1.0"
-source = "git+https://github.com/Boriken-Dev/coqui-peer-tls?rev=81c1fec13d75d9b4adca150940f4e88f7916b587#81c1fec13d75d9b4adca150940f4e88f7916b587"
+version = "0.0.0-alpha.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "34ab9999193f5f28303f2128faadcff3498f3204365c8db05fc98aab373fa5bf"
 dependencies = [
  "coqui-peer",
- "data-encoding",
  "rcgen",
  "rustls",
  "time",
@@ -391,7 +386,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f1dd6dbb5841937940781866fa1281a1ff7bd3bf827091440879f9994983d5c2"
 dependencies = [
  "block-buffer",
- "const-oid",
  "crypto-common",
  "ctutils",
 ]

@@ -34,8 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   SHA-256) picks the algorithm for new keys, and one table may hold both. The key prefix is
   configurable (default `ck_`).
 - `coqui-access-peer`: verifies peers through
-  [`coqui-peer-tls`](https://github.com/Boriken-Dev/coqui-peer-tls), a git dependency pinned
-  by revision.
+  [`coqui-peer-tls`](https://crates.io/crates/coqui-peer-tls) `=0.0.0-alpha.0` from
+  crates.io.
 - `coqui-access-local-plugin`, `-key-plugin`, `-peer-plugin`: configured with a `source` object
   (`{ "file": { "path", "format": "toml" } }`); no `source` means memory. Key also takes
   `prefix`, `key_hash`, `argon2` and `max_keys`; local takes `max_accounts` and `argon2`; peer
