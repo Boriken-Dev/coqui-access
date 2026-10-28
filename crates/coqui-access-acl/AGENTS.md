@@ -150,10 +150,62 @@ at }`), a deny in `Additive`, `Posix` or `MostSpecific` (`DenyNotAllowed`), `Mas
   mask (`granted` reports their union); else `Everyone`. The mask comes from the entries
   whoever asks.
 - `MostSpecific` on one ACL: the requester's own entries (`account:`, `person:`, `Owner`)
-  beat the rest, and the winning tier is unioned.
+  beat the rest, and the winning tier is unioned. A walk over parents is `AclStore::check`.
 - Owner rights: `Context::owner_rights` go to the owner unless an entry names `Owner`; a
   deny does not take them back.
 - `allowed` is `wanted ⊆ granted` (Posix: as above); an empty `wanted` is allowed.
+
+## Copied inheritance (`Child`, `Acl::inherited_by`)
+
+```rust
+pub enum Child { Item, Container }
+impl Acl { pub fn inherited_by(&self, child: Child, explicit: &Acl, creator: Option<&Subject>) -> Acl; }
+```
+
+The ACL a new child gets (Windows, NFSv4, POSIX default ACLs): `explicit`'s own entries
+first, then this ACL's copies marked `inherited`, in `explicit`'s mode. Entries `explicit`
+had inherited are replaced; a `protected` `explicit` is returned as it is. Copies follow
+Microsoft's table (`items` = OI, `containers` = CI):
+
+| parent entry | to an item | to a container |
+| --- | --- | --- |
+| `items` | applies, no flags | inherit-only, keeps `items` |
+| `containers` | nothing | applies, keeps `containers` |
+| both | applies, no flags | applies, keeps both |
+| with `no_propagate` | applies, no flags (if `items`) | applies, no flags (if `containers`), else nothing |
+
+A parent's `inherit_only` entry is copied the same way and the copy applies. With a
+`creator`, an `Owner` entry (CREATOR OWNER) becomes an entry for the creator, and a
+container also keeps an inherit-only `Owner` copy to pass on; without one, `Owner` stays and
+resolves against each item's owner. Nothing walks at check time: store the result.
+
+## Walked inheritance (`AclStore`)
+
+```rust
+pub trait AclStore {
+    fn acl(&self, item: &str) -> Result<Option<ItemAcl>, ProviderError>;
+    fn parent(&self, item: &str) -> Result<Option<String>, ProviderError>;   // None at the root
+    fn check(&self, item: &str, context: &Context<'_>, wanted: &Rights)
+        -> Result<Decision, AclError>;                                       // provided
+}
+```
+
+- `check`: an item whose own ACL is not `MostSpecific` is decided by that ACL alone (owner
+  from the item). Otherwise the ancestors are collected through `parent` and walked from
+  the root down (Proxmox): at an ancestor only entries with `inherit.containers` (Proxmox
+  `propagate`) count, at the item every entry but `inherit_only` ones; at each level the
+  requester's own entries (`account:`, `person:`, `Owner`) beat groups, `Everyone` and
+  `Authenticated`, and the winning tier's rights are unioned (Proxmox unions the user's
+  groups at one level); a level where something applies replaces what came from above, a
+  level where nothing does leaves it. A cancelling name refuses everything only if its
+  level is the one in force: a deeper grant replaces it. Owner rights come from the item's
+  ACL.
+- No ACL on the item or above it: `Options::on_missing` (`Deny`: nothing; `AllowAll`:
+  every right, a NULL DACL).
+- Errors: `Store(ProviderError)` when the store fails ("could not find out", never a
+  denial); `Cycle` when `parent` loops (always, whatever the limits); `TooDeep` past
+  `Limits::depth` levels counting the item (default 64; `None` lifts it); `ModeMismatch` for
+  a non-`MostSpecific` ACL met on a walk; what `Acl::check` refuses.
 
 ## Options (`Options`, `Limits`, `OnMissing`, `Weakening`)
 

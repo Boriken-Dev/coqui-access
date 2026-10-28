@@ -59,7 +59,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   modes, `Ordered`, `DenyOverrides` (the default), `Additive`, `Posix` and `MostSpecific`,
   into a `Decision` naming what was granted, what was denied and the deciding entry. Bounds
   (`Limits`: 1 024 entries, 1 024 rights) are options; `OnMissing::AllowAll` and an
-  `Everyone` allow are reported as `Weakening`s.
+  `Everyone` allow are reported as `Weakening`s. Inheritance both ways: `Acl::inherited_by`
+  copies entries into a new child by Windows' flag table (with CREATOR OWNER mapped to the
+  creator), and `AclStore::check` walks the consumer's tree from the root down as Proxmox
+  does (a deeper level replaces, a user's entries beat its groups', `propagate`, cancelling
+  names), within `Limits::depth` (64) and refusing a cycle.
 - `coqui-roles`: a first-match role authorizer with configurable scope kinds, built with
   `RoleAuthorizer::builder()` or `RoleAuthorizer::new(RolePolicy)`. `RolePolicy`, `Role` and
   `Rule` are plain data with serde behind a `serde` feature; the role, action, rule and
