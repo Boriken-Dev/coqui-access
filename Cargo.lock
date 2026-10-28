@@ -563,7 +563,7 @@ dependencies = [
 [[package]]
 name = "guatiao"
 version = "0.0.0-alpha.1"
-source = "git+https://github.com/Boriken-Dev/guatiao?rev=1738fa73a2871df2f355c631026a8c6dbb94fa92#1738fa73a2871df2f355c631026a8c6dbb94fa92"
+source = "git+https://github.com/Boriken-Dev/guatiao?rev=a67fd4be0aa319795614ac6fe12d35d856ec3d8b#a67fd4be0aa319795614ac6fe12d35d856ec3d8b"
 dependencies = [
  "guatiao-derive",
  "libloading",
@@ -573,7 +573,7 @@ dependencies = [
 [[package]]
 name = "guatiao-derive"
 version = "0.0.0-alpha.1"
-source = "git+https://github.com/Boriken-Dev/guatiao?rev=1738fa73a2871df2f355c631026a8c6dbb94fa92#1738fa73a2871df2f355c631026a8c6dbb94fa92"
+source = "git+https://github.com/Boriken-Dev/guatiao?rev=a67fd4be0aa319795614ac6fe12d35d856ec3d8b#a67fd4be0aa319795614ac6fe12d35d856ec3d8b"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -583,7 +583,7 @@ dependencies = [
 [[package]]
 name = "guatiao-serde"
 version = "0.0.0-alpha.1"
-source = "git+https://github.com/Boriken-Dev/guatiao?rev=1738fa73a2871df2f355c631026a8c6dbb94fa92#1738fa73a2871df2f355c631026a8c6dbb94fa92"
+source = "git+https://github.com/Boriken-Dev/guatiao?rev=a67fd4be0aa319795614ac6fe12d35d856ec3d8b#a67fd4be0aa319795614ac6fe12d35d856ec3d8b"
 dependencies = [
  "guatiao",
  "serde",
