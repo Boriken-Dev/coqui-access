@@ -387,6 +387,13 @@ mod tests {
     }
 
     #[test]
+    fn a_logon_as_an_account_nobody_has_is_refused_not_an_error() {
+        let config = SystemAccountsConfig::default();
+        let checked = check_password("coqui-no-such-account-x", "not a password", &config);
+        assert!(matches!(checked, Ok(false)), "{checked:?}");
+    }
+
+    #[test]
     fn names_carrying_a_domain_are_not_looked_up() {
         let config = SystemAccountsConfig::default();
         assert_eq!(by_name("DOMAIN\\someone", &config).unwrap(), None);
