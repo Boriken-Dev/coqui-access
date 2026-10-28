@@ -25,6 +25,7 @@ pub use guatiao;
 pub mod error;
 mod kind;
 mod model;
+mod subject;
 
 pub use kind::{
     Accounts, AccountsVtable, Authenticator, AuthenticatorVtable, Authorizer, AuthorizerVtable,
@@ -34,6 +35,7 @@ pub use model::{
     AccountInfo, AccountPut, Attempt, AuthorizationDecision, AuthorizationRequest, Description,
     Lookup, Person, PutOutcome, Verdict, Waiting, takes,
 };
+pub use subject::{Subject, SubjectError};
 
 /// The prefix of every kind name in this crate. A host scanning a directory keeps the
 /// libraries that declare a kind beginning with it.

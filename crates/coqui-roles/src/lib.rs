@@ -30,7 +30,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use coqui_access::guatiao::library::ProviderError;
-use coqui_access::{AuthorizationDecision, AuthorizationRequest, Authorizer, Person};
+use coqui_access::{AuthorizationDecision, AuthorizationRequest, Authorizer, Subject};
 
 /// The most roles a policy may define.
 pub const MAX_ROLES: usize = 256;
@@ -185,13 +185,6 @@ struct CompiledRule {
     role: String,
 }
 
-#[derive(Clone)]
-enum Subject {
-    Account(String),
-    Person(String),
-    Group(String),
-}
-
 /// An invalid role policy.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -267,19 +260,13 @@ impl RoleAuthorizer {
 
         let mut rules = Vec::with_capacity(policy.rules.len());
         for rule in policy.rules {
-            let (kind, value) = rule
+            let subject: Subject = rule
                 .subject
-                .split_once(':')
-                .ok_or_else(|| fail("rule subject needs a kind and value"))?;
-            if !name(value) {
+                .parse()
+                .map_err(|_| fail("rule subject must be account, person or group:<value>"))?;
+            if !name(subject.value()) {
                 return Err(fail("rule subject value is invalid"));
             }
-            let subject = match kind {
-                "account" => Subject::Account(value.to_owned()),
-                "person" => Subject::Person(value.to_owned()),
-                "group" => Subject::Group(value.to_owned()),
-                _ => return Err(fail("rule subject must be account, person or group")),
-            };
             if rule.scope != "*" {
                 let allowed = rule.scope.split_once(':').is_some_and(|(kind, id)| {
                     name(id)
@@ -313,7 +300,7 @@ impl RoleAuthorizer {
             .iter()
             .find(|rule| {
                 (rule.scope == "*" || rule.scope == request.resource)
-                    && subject_matches(&rule.subject, &request.person)
+                    && rule.subject.matches(&request.person)
             })
             .is_some_and(|rule| {
                 self.roles
@@ -336,14 +323,6 @@ impl Authorizer for RoleAuthorizer {
     }
 }
 
-fn subject_matches(subject: &Subject, person: &Person) -> bool {
-    match subject {
-        Subject::Account(name) => name == &person.name,
-        Subject::Person(id) => id == &person.id,
-        Subject::Group(group) => person.groups.iter().any(|member| member == group),
-    }
-}
-
 fn name(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 256
@@ -353,6 +332,8 @@ fn name(value: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use coqui_access::Person;
+
     use super::*;
 
     fn person(id: &str, name: &str, groups: &[&str]) -> Person {

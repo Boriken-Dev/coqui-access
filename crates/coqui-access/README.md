@@ -56,6 +56,7 @@ impl Authenticator for Always {
 | --- | --- |
 | `Authenticator`, `Directory`, `Authorizer`, `Accounts` | The four kinds. |
 | `Attempt`, `Verdict`, `Lookup`, `Person` | Authentication and lookup models. |
+| `Subject` | `account:<name>`, `person:<id>` or `group:<name>`, as policies write who they name. |
 | `AuthorizationRequest`, `AuthorizationDecision` | Authorization models. |
 | `AccountInfo`, `AccountPut`, `PutOutcome`, `Waiting` | Account management models. |
 | `Description`, `takes` | What a provider says it is and takes. |

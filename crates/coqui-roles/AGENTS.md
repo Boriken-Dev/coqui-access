@@ -37,7 +37,8 @@ impl Authorizer for RoleAuthorizer { /* authorize */ }
 pub struct RolePolicyError;                     // Display, Error
 ```
 
-- `subject` is `account:<name>` | `person:<id>` | `group:<name>`; `scope` is `*` or
+- `subject` is `account:<name>` | `person:<id>` | `group:<name>`, read as `coqui_access::Subject`
+  (the value also has no whitespace and is at most 256 bytes); `scope` is `*` or
   `<kind>:<id>`; `role` must name a defined role.
 - `scope_kinds` lists the kinds a rule scope may use; an empty list allows any kind. `*` is
   always allowed.
