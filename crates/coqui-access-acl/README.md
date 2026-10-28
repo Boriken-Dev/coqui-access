@@ -21,6 +21,8 @@ evaluates. See the [narrative docs](https://boriken-dev.github.io/coqui-access/a
 - **Five evaluation modes** - `Ordered`, `DenyOverrides` (the default, since no order can be
   wrong), `Additive`, `Posix`, `MostSpecific`. A `Decision` says what was granted, what was
   denied and which entry decided.
+- **Inheritance, both ways** - copied at creation (`Acl::inherited_by`, Windows' flag table)
+  or walked at check time (`AclStore`, Proxmox paths).
 - **Options, not floors** - every bound is a default the caller lifts, and what weakens a
   decision (`OnMissing::AllowAll`, an `Everyone` allow) is reported as data.
 
@@ -65,6 +67,7 @@ assert_eq!(decision.deciding, Some(1));
 | `Principal`, `Entry`, `Effect`, `Inherit` | One line of a list: who, allow or deny, which rights, how it is inherited. |
 | `Acl`, `Mode`, `ItemAcl` | A list, how its entries combine, and an item's list with its owner. |
 | `Context`, `Decision` | Who asks and with what options; what the check came to. |
+| `Child`, `AclStore` | Copied inheritance for a new child; walked inheritance over the consumer's tree. |
 | `Options`, `Limits`, `OnMissing`, `Weakening` | Bounds and choices, and what they weaken. |
 | `Conditions`, `Truth` | The consumer's decision on an entry's condition. |
 | `AclError` | Why a schema, list or walk could not be used. |
