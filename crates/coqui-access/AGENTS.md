@@ -78,6 +78,27 @@ fields. Unknown keys are skipped when reading.
 the canonical text `coqui-peer-tls` writes (`sha256:<hex>`). `Debug` of `Attempt`, `Lookup`,
 `Person`, `AccountPut` and `PutOutcome` shows no secret and no identity value.
 
+## Subjects
+
+```rust
+#[non_exhaustive]
+pub enum Subject { Account(String), Person(String), Group(String) }  // Clone, Eq, Ord, Hash
+impl Subject {
+    pub fn kind(&self) -> &'static str;          // "account" | "person" | "group"
+    pub fn value(&self) -> &str;
+    pub fn matches(&self, person: &Person) -> bool;
+}
+impl FromStr for Subject { type Err = SubjectError; }   // "account:<name>", "person:<id>", "group:<name>"
+impl Display for Subject;                               // the same text
+pub struct SubjectError;                                // non_exhaustive, Error
+```
+
+- `Account` matches `Person::name`, `Person` matches `Person::id`, `Group` any of
+  `Person::groups`; all compare exact strings.
+- The value after the first colon may hold colons; empty or holding a control character is
+  refused. Policies add their own length and character rules.
+- `Debug` shows the kind only: the value is an identity.
+
 ## Errors (`coqui_access::error`)
 
 `bad_value`, `not_found`, `unsupported`, `internal`: each `fn(&str) -> ProviderError` with the
