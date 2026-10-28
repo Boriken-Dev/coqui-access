@@ -31,6 +31,9 @@ Each is an ordinary library, built in code with a builder over a table you suppl
 default), and a `cdylib` (`coqui-access-<name>-plugin`) that builds it from a Guatiao config
 whose `source` object says where the records live.
 
+[`coqui-access-acl`](acl.md) decides requests against access control lists kept on items,
+and answers `coqui_authorizer` over the consumer's store.
+
 ## Peers and access lists
 
 [`coqui-peer-tls`](https://github.com/Boriken-Dev/coqui-peer-tls) gives two services a

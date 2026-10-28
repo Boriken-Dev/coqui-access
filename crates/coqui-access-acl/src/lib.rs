@@ -10,6 +10,7 @@
 
 extern crate alloc;
 
+mod authorizer;
 mod check;
 mod condition;
 mod entry;
@@ -20,6 +21,7 @@ mod path;
 mod principal;
 mod rights;
 
+pub use authorizer::AclAuthorizer;
 pub use check::{Context, Decision};
 pub use condition::{Conditions, Truth};
 pub use entry::{Acl, Effect, Entry, Inherit, ItemAcl, Mode};

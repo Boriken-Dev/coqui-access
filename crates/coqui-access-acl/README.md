@@ -23,6 +23,11 @@ evaluates. See the [narrative docs](https://boriken-dev.github.io/coqui-access/a
   denied and which entry decided.
 - **Inheritance, both ways** - copied at creation (`Acl::inherited_by`, Windows' flag table)
   or walked at check time (`AclStore`, Proxmox paths).
+- **An `Authorizer`** - `AclAuthorizer` answers coqui-access's authorizer kind over any
+  `AclStore`; a store that cannot answer is an error, never a denial.
+- **Conditions and tokens** - entry conditions are the consumer's callback (unknown: an allow
+  is skipped, a deny applies); `Decision::intersect` narrows a person's decision to a
+  token's, `Decision::union_where_unset` adds a second parent's (a Proxmox pool).
 - **Options, not floors** - every bound is a default the caller lifts, and what weakens a
   decision (`OnMissing::AllowAll`, an `Everyone` allow) is reported as data.
 
@@ -67,6 +72,7 @@ assert_eq!(decision.deciding, Some(1));
 | `Principal`, `Entry`, `Effect`, `Inherit` | One line of a list: who, allow or deny, which rights, how it is inherited. |
 | `Acl`, `Mode`, `ItemAcl` | A list, how its entries combine, and an item's list with its owner. |
 | `Context`, `Decision` | Who asks and with what options; what the check came to. |
+| `AclAuthorizer` | coqui-access's `Authorizer` kind over an `AclStore`. |
 | `Child`, `AclStore` | Copied inheritance for a new child; walked inheritance over the consumer's tree. |
 | `Options`, `Limits`, `OnMissing`, `Weakening` | Bounds and choices, and what they weaken. |
 | `Conditions`, `Truth` | The consumer's decision on an entry's condition. |

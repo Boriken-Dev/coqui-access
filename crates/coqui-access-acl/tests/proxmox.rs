@@ -6,11 +6,15 @@
 
 mod support;
 
-use coqui_access::Person;
+use std::sync::Arc;
+
+use coqui_access::guatiao::library::ProviderError;
+use coqui_access::{AuthorizationRequest, Authorizer, Person};
 use coqui_access_acl::{
-    Acl, AclError, AclStore, Context, Decision, Entry, Inherit, ItemAcl, Limits, Mode, Options,
-    Rights, RightsSchema,
+    Acl, AclAuthorizer, AclError, AclStore, Context, Decision, Entry, Inherit, ItemAcl, Limits,
+    Mode, Options, Rights, RightsSchema,
 };
+use coqui_access_kit::{Keyed, MemoryTable, Table};
 use support::{PathStore, person, subject};
 
 fn privileges() -> RightsSchema {
@@ -242,4 +246,168 @@ fn a_walk_refuses_an_acl_in_another_mode_and_a_broken_store_is_an_error() {
         store.check("/vms/100", &context, &Rights::new()),
         Err(AclError::Store(_))
     ));
+}
+
+/// A pool's roles reach its members as Proxmox's `compile_acl_path` does: each role the
+/// path did not set, a `NoAccess` on the path kept, a `NoAccess` on the pool winning.
+fn with_pool(store: &PathStore, vm: &str, pool: &str, who: &Person, wanted: &[&str]) -> Decision {
+    let path = decide(store, vm, who, wanted);
+    let pooled = decide(store, pool, who, wanted);
+    path.union_where_unset(&pooled)
+}
+
+#[test]
+fn a_pools_roles_join_its_members_and_no_access_wins_from_either_side() {
+    let mut store = PathStore::default();
+    at(
+        &mut store,
+        "/vms/100",
+        [line("account:p@pve", "PVEAuditor", true)],
+    );
+    at(
+        &mut store,
+        "/pool/web",
+        [line("account:p@pve", "PVEVMUser", true)],
+    );
+    let user = person("p@pve", &[]);
+    assert!(with_pool(&store, "/vms/100", "/pool/web", &user, &["VM.Console"]).allowed);
+    assert!(with_pool(&store, "/vms/100", "/pool/web", &user, &["VM.Audit"]).allowed);
+    at(
+        &mut store,
+        "/pool/web",
+        [line("account:p@pve", "NoAccess", true)],
+    );
+    assert!(!with_pool(&store, "/vms/100", "/pool/web", &user, &["VM.Audit"]).allowed);
+    at(
+        &mut store,
+        "/pool/web",
+        [line("account:p@pve", "PVEVMUser", true)],
+    );
+    at(
+        &mut store,
+        "/vms/100",
+        [line("account:p@pve", "NoAccess", true)],
+    );
+    assert!(!with_pool(&store, "/vms/100", "/pool/web", &user, &["VM.Console"]).allowed);
+}
+
+#[test]
+fn a_privilege_separated_token_gets_what_both_it_and_its_user_hold() {
+    let mut store = PathStore::default();
+    at(
+        &mut store,
+        "/vms",
+        [line("account:u@pve", "PVEVMAdmin", true)],
+    );
+    // The token's own ACL, kept in a store of its own here.
+    let mut tokens = PathStore::default();
+    at(
+        &mut tokens,
+        "/",
+        [line("account:u@pve!ci", "Administrator", true)],
+    );
+    let user = person("u@pve", &[]);
+    let token = person("u@pve!ci", &[]);
+    for (wanted, allowed) in [(["VM.PowerMgmt"], true), (["Sys.Audit"], false)] {
+        let both = decide(&store, "/vms/7", &user, &wanted)
+            .intersect(&decide(&tokens, "/vms/7", &token, &wanted));
+        assert_eq!(both.allowed, allowed, "{wanted:?}");
+    }
+}
+
+/// Paths and their ACLs in a coqui-access-kit table, as a consumer might keep them.
+#[derive(Clone)]
+struct Kept {
+    path: String,
+    acl: ItemAcl,
+}
+
+impl Keyed for Kept {
+    fn key(&self) -> &str {
+        &self.path
+    }
+}
+
+struct TableStore(Arc<MemoryTable<Kept>>);
+
+impl AclStore for TableStore {
+    fn acl(&self, item: &str) -> Result<Option<ItemAcl>, ProviderError> {
+        let snapshot = self
+            .0
+            .load()
+            .map_err(|reason| coqui_access::error::internal(&reason.to_string()))?;
+        Ok(snapshot
+            .records
+            .into_iter()
+            .find(|kept| kept.path == item)
+            .map(|kept| kept.acl))
+    }
+
+    fn parent(&self, item: &str) -> Result<Option<String>, ProviderError> {
+        PathStore::default().parent(item)
+    }
+}
+
+#[test]
+fn an_authorizer_over_a_table_answers_through_the_kind() {
+    let table = Arc::new(MemoryTable::<Kept>::new());
+    let mut acl = Acl::new(Mode::MostSpecific);
+    acl.extend([line("group:ops", "PVEVMUser", true)]);
+    table
+        .put(Kept {
+            path: "/vms".to_owned(),
+            acl: ItemAcl::new(acl),
+        })
+        .unwrap();
+    let authorizer = AclAuthorizer::new(TableStore(table), privileges());
+    let ask = |who: &Person, action: &str, resource: &str| {
+        authorizer.authorize(AuthorizationRequest {
+            person: who.clone(),
+            action: action.to_owned(),
+            resource: resource.to_owned(),
+        })
+    };
+    let op = person("o@pve", &["ops"]);
+    assert!(ask(&op, "VM.Console", "/vms/100").unwrap().allowed);
+    assert!(!ask(&op, "VM.Config.Disk", "/vms/100").unwrap().allowed);
+    assert!(!ask(&op, "VM.Console", "/storage/local").unwrap().allowed);
+    assert!(
+        !ask(&op, "NoAccess", "/vms/100").unwrap().allowed,
+        "a name with no right"
+    );
+    assert!(
+        !ask(&op, "Sys.Reboot", "/vms/100").unwrap().allowed,
+        "unknown"
+    );
+    let decision = authorizer.decide(&op, "VM.Console", "/vms/100").unwrap();
+    assert_eq!(decision.deciding, Some(0));
+}
+
+#[test]
+fn a_store_that_cannot_answer_is_an_error_never_a_denial() {
+    let store = PathStore {
+        broken: true,
+        ..PathStore::default()
+    };
+    let authorizer = AclAuthorizer::new(store, privileges());
+    let refused = authorizer.authorize(AuthorizationRequest {
+        person: person("o@pve", &[]),
+        action: "VM.Audit".to_owned(),
+        resource: "/vms/100".to_owned(),
+    });
+    let error = refused.unwrap_err();
+    assert_eq!(error.message(), "unreachable");
+    // An ACL the schema cannot read is an error too.
+    let mut store = PathStore::default();
+    at(&mut store, "/vms", [line("group:ops", "PVEUnknown", true)]);
+    let authorizer = AclAuthorizer::new(store, privileges());
+    assert!(
+        authorizer
+            .authorize(AuthorizationRequest {
+                person: person("o@pve", &["ops"]),
+                action: "VM.Audit".to_owned(),
+                resource: "/vms/100".to_owned(),
+            })
+            .is_err()
+    );
 }

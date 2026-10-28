@@ -28,6 +28,7 @@ theme:
 
 nav:
   - Home: index.md
+  - Access control lists: acl.md
   - Rust API: https://boriken-dev.github.io/coqui-access/rust/index.html
 
 markdown_extensions:
