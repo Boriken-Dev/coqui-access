@@ -42,3 +42,15 @@ rcgen = "0.14"
 x509-parser = "0.18"
 globset = "0.4"
 tempfile = "3"
+# coqui-access-system: Unix accounts and groups through NSS (getpwnam, getgrouplist).
+uzers = { version = "0.12.2", default-features = false }
+# coqui-access-system: PAM conversations. Pre-1.0, chosen because it binds Linux-PAM,
+# OpenPAM (FreeBSD, macOS) and Sun PAM alike; `link` links the system libpam.
+nonstick = { version = "0.1.2", default-features = false, features = ["link"] }
+# coqui-access-system: LogonUserW, the NetUser API and SID text on Windows.
+windows-sys = { version = "0.61", default-features = false, features = [
+    "Win32_Foundation",
+    "Win32_NetworkManagement_NetManagement",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+] }
