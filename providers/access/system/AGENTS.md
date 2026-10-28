@@ -85,9 +85,12 @@ impl Directory for SystemAccounts;       // by "id" or "name"
 
 - **Checking another account's password needs root under `pam_unix`** (Linux, FreeBSD): run
   unprivileged, it can check only the caller's own account (through `unix_chkpwd` on Linux)
-  and refuses the rest.
-- **The PAM service needs a file**: with no `/etc/pam.d/<pam_service>`, Linux-PAM uses
-  `other`, which refuses everyone on most distributions. See the README for one.
+  and answers `Invalid` for the rest, right password or not. macOS's `pam_opendirectory`
+  needs no root.
+- **The PAM service needs a file**: with no `/etc/pam.d/<pam_service>`, Linux-PAM and OpenPAM
+  use `other`, which refuses everyone on Fedora and macOS, so every password is `Invalid`.
+  See the README for one. On macOS the stock `chkpasswd` service checks any local account's
+  password without root.
 - **Every call blocks**: PAM may sleep seconds after a wrong password (`pam_faildelay`), and a
   directory behind NSS may be remote. Call it from a blocking thread.
 - **An unknown name is `Unknown`, sooner than a wrong password is `Invalid`**: the time
