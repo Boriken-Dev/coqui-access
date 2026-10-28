@@ -31,8 +31,8 @@ pub enum AclError {
         /// The entry.
         entry: usize,
     },
-    /// Entry `entry` names a principal its mode does not take: `Mask` outside `Posix` or
-    /// twice, `Authenticated` in `Posix`.
+    /// Entry `entry` names a principal its mode does not take: `Mask` outside `Posix`, a
+    /// second `Mask` in force (or a second inherit-only one), `Authenticated` in `Posix`.
     PrincipalNotAllowed {
         /// The entry.
         entry: usize,

@@ -269,7 +269,7 @@ impl Acl {
         {
             return Err(AclError::TooManyEntries);
         }
-        let mut masks = 0;
+        let mut masks = [0u8; 2];
         self.entries
             .iter()
             .enumerate()
@@ -280,9 +280,11 @@ impl Acl {
                 }
                 let posix = self.mode == Mode::Posix;
                 let refused = match entry.principal {
+                    // One mask in force and one passed to children (a POSIX default ACL).
                     Principal::Mask => {
-                        masks += 1;
-                        !posix || masks > 1
+                        let slot = usize::from(entry.inherit.inherit_only);
+                        masks[slot] += 1;
+                        !posix || masks[slot] > 1
                     }
                     Principal::Authenticated => posix,
                     _ => false,

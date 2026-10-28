@@ -132,7 +132,8 @@ pub struct Decision { pub allowed: bool, pub wanted: Rights, pub granted: Rights
 `check` first compiles every entry, refusing (`Err`, never a denial): more entries than
 `Limits::entries` (default 1 024), a name the schema lacks (`UnknownRight { entry: Some(i),
 at }`), a deny in `Additive`, `Posix` or `MostSpecific` (`DenyNotAllowed`), `Mask` outside
-`Posix` or twice, or `Authenticated` in `Posix` (`PrincipalNotAllowed`). Then:
+`Posix`, a second `Mask` in force (or a second inherit-only one, the default ACL's), or
+`Authenticated` in `Posix` (`PrincipalNotAllowed`). Then:
 
 - An entry applies when its principal matches and it is not `inherit_only`. A condition
   must come to `Truth::True` for an allow and anything but `False` for a deny.
@@ -207,6 +208,47 @@ pub trait AclStore {
   `Limits::depth` levels counting the item (default 64; `None` lifts it); `ModeMismatch` for
   a non-`MostSpecific` ACL met on a walk; what `Acl::check` refuses.
 
+## Combining decisions
+
+```rust
+impl Decision {
+    pub fn intersect(&self, other: &Decision) -> Decision;          // a token: both must allow
+    pub fn union_where_unset(&self, other: &Decision) -> Decision;  // a second parent: a pool
+}
+```
+
+- `intersect`: granted ∩, denied ∪, `allowed` only if both are, `cancelled` if either is;
+  `deciding` is the first refusing side's, else `self`'s. A Proxmox privilege-separated
+  token (its own ACL), a NetBox token with `write_enabled` false (an ACL granting `view`).
+- `union_where_unset`: rights `self` neither granted nor denied are taken from `other`; a
+  cancelled side wins, `self` first (Proxmox: a path's `NoAccess` is kept, a pool's
+  `NoAccess` beats the path's grants). `allowed` is recomputed as `wanted ⊆ granted`.
+
+## Authorizer (`AclAuthorizer`)
+
+```rust
+pub struct AclAuthorizer<S>;             // Debug shows counts only
+impl<S: AclStore> AclAuthorizer<S> {
+    pub fn new(store: S, schema: RightsSchema) -> Self;  // default options, no owner rights, no conditions
+    pub fn options(self, Options) -> Self;
+    pub fn owner_rights(self, Rights) -> Self;
+    pub fn conditions(self, impl Conditions + 'static) -> Self;
+    pub fn store(&self) -> &S;  pub fn schema(&self) -> &RightsSchema;
+    pub fn decide(&self, person: &Person, action: &str, item: &str) -> Result<Decision, AclError>;
+}
+impl<S: AclStore + Send + Sync> Authorizer for AclAuthorizer<S>;
+```
+
+- `authorize`: `resource` is the item, `action` one right or alias name, the person the
+  requester (signed in). An action the schema lacks, or one naming no right (a cancelling
+  name), is `allowed: false` with no error. Otherwise `AclStore::check`'s decision; `limits`
+  is empty.
+- A store error is returned as the store's `ProviderError` (its status kept); an ACL the
+  schema cannot read is `GUATIAO_ERR_INTERNAL`. Neither is a denial: a host treats them as
+  "could not find out".
+- A superuser (NetBox superuser, Proxmox `root@pam`) is the caller's check before asking;
+  there is no bypass option here.
+
 ## Options (`Options`, `Limits`, `OnMissing`, `Weakening`)
 
 ```rust
@@ -245,6 +287,10 @@ every condition is `Unknown`: an allow is skipped, a deny applies.
 `Cycle`, `Store(ProviderError)` (its `source`). Messages give positions, never names.
 
 ## Gotchas
+
+- The crate matches people (`Subject`, owner, groups), never hosts or addresses. A
+  condition about a client address or a certificate is the consumer's `Conditions` to
+  decide.
 
 - Bits are positions in one schema: never compare `Rights` from two schemas.
 - `Subject` and `Principal` `Debug` show the kind only; `Display` is the full text.

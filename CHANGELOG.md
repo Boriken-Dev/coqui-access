@@ -63,7 +63,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   copies entries into a new child by Windows' flag table (with CREATOR OWNER mapped to the
   creator), and `AclStore::check` walks the consumer's tree from the root down as Proxmox
   does (a deeper level replaces, a user's entries beat its groups', `propagate`, cancelling
-  names), within `Limits::depth` (64) and refusing a cycle.
+  names), within `Limits::depth` (64) and refusing a cycle. `AclAuthorizer` answers the
+  `coqui_authorizer` kind over any `AclStore` (a store error is an error, never a denial);
+  entry conditions are decided by the consumer's `Conditions` (unknown: an allow is skipped,
+  a deny applies); `Decision::intersect` and `union_where_unset` combine a token's or a
+  pool's decision. Conformance suites write NetBox, Windows, TrueNAS and Proxmox examples in
+  this model.
 - `coqui-roles`: a first-match role authorizer with configurable scope kinds, built with
   `RoleAuthorizer::builder()` or `RoleAuthorizer::new(RolePolicy)`. `RolePolicy`, `Role` and
   `Rule` are plain data with serde behind a `serde` feature; the role, action, rule and
