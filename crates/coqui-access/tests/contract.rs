@@ -161,7 +161,7 @@ fn the_committed_description_is_what_this_build_describes() {
     );
 }
 
-const PINNED_AUTHENTICATOR: u32 = 4_205_343_784;
-const PINNED_DIRECTORY: u32 = 1_937_390_361;
+const PINNED_AUTHENTICATOR: u32 = 3_375_864_644;
+const PINNED_DIRECTORY: u32 = 2_407_154_769;
 const PINNED_AUTHORIZER: u32 = 2_693_612_885;
-const PINNED_ACCOUNTS: u32 = 985_906_492;
+const PINNED_ACCOUNTS: u32 = 610_858_279;

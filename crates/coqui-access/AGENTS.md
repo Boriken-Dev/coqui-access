@@ -16,13 +16,13 @@ appending methods with default bodies after the required ones. The hash of a kin
 required methods only.
 
 ```rust
-#[guatiao::kind(name = "coqui_authenticator")]   // floor hash 0xfaa87428
+#[guatiao::kind(name = "coqui_authenticator")]   // floor hash 0xc9379b44
 pub trait Authenticator: Send + Sync {
     fn authenticate(&self, attempt: Attempt) -> Result<Verdict, ProviderError>;
     fn describe(&self) -> Result<Description, ProviderError>; // default: Description::default()
 }
 
-#[guatiao::kind(name = "coqui_directory")]       // floor hash 0x737a3b19
+#[guatiao::kind(name = "coqui_directory")]       // floor hash 0x8f7a4451
 pub trait Directory: Send + Sync {
     fn lookup(&self, lookup: Lookup) -> Result<Option<Person>, ProviderError>;
     fn describe(&self) -> Result<Description, ProviderError>; // default: Description::default()
@@ -33,7 +33,7 @@ pub trait Authorizer: Send + Sync {
     fn authorize(&self, request: AuthorizationRequest) -> Result<AuthorizationDecision, ProviderError>;
 }
 
-#[guatiao::kind(name = "coqui_accounts")]        // floor hash 0x3ac3bd3c
+#[guatiao::kind(name = "coqui_accounts")]        // floor hash 0x2468f527
 pub trait Accounts: Send + Sync {
     fn accounts(&self) -> Result<Vec<AccountInfo>, ProviderError>;
     fn put(&self, account: AccountPut) -> Result<PutOutcome, ProviderError>;

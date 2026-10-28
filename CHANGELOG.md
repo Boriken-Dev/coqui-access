@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `coqui-access`: the kinds `coqui_authenticator`, `coqui_directory`, `coqui_authorizer` and
   the optional `coqui_accounts`, with their models. `Attempt::headers` is an ordered list of
   `(name, value)` pairs; `describe` has a default body. Floor hashes are pinned by a contract
-  test and `kinds.json`: `0xfaa87428`, `0x737a3b19`, `0xa08d4555`, `0x3ac3bd3c`.
+  test and `kinds.json`: `0xc9379b44`, `0x8f7a4451`, `0xa08d4555`, `0x2468f527`.
 - `coqui-access-kit`: prefixed 256-bit secrets, SHA-256 of a secret with optional domain
   separation (`secret::hash`) and of raw bytes (`secret::hash_bytes`), constant-time
   comparison, atomic owner-only file writes and bounded reads. `KeyHash` (`Sha256`, `Argon2id`), `verify_key`, `is_key_hash`, `generate_key`,

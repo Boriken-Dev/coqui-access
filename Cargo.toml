@@ -23,8 +23,8 @@ coqui-peer-tls = "=0.0.0-alpha.0"
 coqui-roles = { path = "crates/coqui-roles" }
 
 # guatiao main, pinned until a release carries what these crates use.
-guatiao = { git = "https://github.com/Boriken-Dev/guatiao", rev = "1738fa73a2871df2f355c631026a8c6dbb94fa92" }
-guatiao-serde = { git = "https://github.com/Boriken-Dev/guatiao", rev = "1738fa73a2871df2f355c631026a8c6dbb94fa92" }
+guatiao = { git = "https://github.com/Boriken-Dev/guatiao", rev = "a67fd4be0aa319795614ac6fe12d35d856ec3d8b" }
+guatiao-serde = { git = "https://github.com/Boriken-Dev/guatiao", rev = "a67fd4be0aa319795614ac6fe12d35d856ec3d8b" }
 
 serde = { version = "1", default-features = false, features = ["derive", "std"] }
 toml = "0.9"

@@ -3,7 +3,7 @@
   "kinds": [
     {
       "name": "coqui_authenticator",
-      "floor_hash": 4205343784,
+      "floor_hash": 3375864644,
       "object": false,
       "doc": "Checks credentials and returns only a [`Lookup`] reference.",
       "slots": [
@@ -37,7 +37,7 @@
     },
     {
       "name": "coqui_directory",
-      "floor_hash": 1937390361,
+      "floor_hash": 2407154769,
       "object": false,
       "doc": "Resolves an authenticated reference into the authoritative [`Person`] record.",
       "slots": [
@@ -95,7 +95,7 @@
     },
     {
       "name": "coqui_accounts",
-      "floor_hash": 985906492,
+      "floor_hash": 610858279,
       "object": false,
       "doc": "Account management for a provider that keeps its own accounts.\n\nA separate kind, so authentication providers that keep nothing (an LDAP client, a\nreverse-proxy header reader) do not implement it. A provider offering this kind is\nusually also an [`Authenticator`] and a [`Directory`] over the same store.",
       "slots": [
