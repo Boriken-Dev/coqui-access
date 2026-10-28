@@ -1,4 +1,14 @@
-//! Private files: written whole and atomically, read within a bound, told apart by stamp.
+//! Private files: written whole and atomically, read within a bound, told apart by stamp;
+//! and [`FileTable`], a [`Table`](crate::Table) kept in one of them in a serde format the
+//! caller supplies through a [`Codec`].
+//!
+//! Needs the `file` feature.
+
+mod source;
+mod table;
+
+pub use source::{FileSource, Source};
+pub use table::{Codec, CodecError, DEFAULT_MAX_BYTES, FileTable};
 
 use std::fs::{self, OpenOptions};
 use std::io::{ErrorKind, Read, Write};
