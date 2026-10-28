@@ -1,0 +1,21 @@
+[package]
+name = "coqui-access-system"
+description = "The operating system's own accounts: PAM and NSS on Unix, LogonUserW and the NetUser API on Windows"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+exclude = [".*", "*.local.*"]
+
+[dependencies]
+coqui-access.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+nonstick.workspace = true
+uzers.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys.workspace = true

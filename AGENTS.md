@@ -9,7 +9,7 @@ README; those headers describe the public API and ship with the crate.
 | `crates/coqui-access-kit/AGENTS.md` | Secrets, private files, reloading tables. |
 | `crates/coqui-roles/AGENTS.md` | Role authorizer. |
 | `crates/coqui-access-acl/AGENTS.md` | Access control lists on items: rights, entries, evaluation modes, inheritance, `AclAuthorizer`. |
-| `providers/access/<name>/AGENTS.md` | One provider each: local, key, ldap, proxy, peer. |
+| `providers/access/<name>/AGENTS.md` | One provider each: local, key, ldap, proxy, peer, system. |
 
 ## Layout
 

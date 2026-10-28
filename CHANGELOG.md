@@ -69,6 +69,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   a deny applies); `Decision::intersect` and `union_where_unset` combine a token's or a
   pool's decision. Conformance suites write NetBox, Windows, TrueNAS and Proxmox examples in
   this model.
+- `coqui-access-system`: the operating system's own accounts as an Authenticator and a
+  Directory (id `coqui_access_system`, read only), with `coqui-access-system-plugin`. On Unix,
+  NSS for accounts and groups and PAM (`pam_authenticate`, then `pam_acct_mgmt`) for
+  passwords; on Windows, `LogonUserW` with a network logon, the NetUser API and SID strings as
+  ids. Options `pam_service` (default `coqui-access`), `min_uid` (default the platform's first
+  person uid: Linux 1000, FreeBSD 1001, macOS 501), `groups` (empty admits any) and `domain`
+  (Windows, default `.`); `weakenings()` reports a `min_uid` that admits root or service
+  accounts. Building on Unix links the system `libpam`.
 - `coqui-roles`: a first-match role authorizer with configurable scope kinds, built with
   `RoleAuthorizer::builder()` or `RoleAuthorizer::new(RolePolicy)`. `RolePolicy`, `Role` and
   `Rule` are plain data with serde behind a `serde` feature; the role, action, rule and
