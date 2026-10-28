@@ -5,10 +5,15 @@ signature, contract and gotchas, so the crate can be used without reading its so
 ships inside the package and is self-contained. Development documentation lives with the
 source at <https://github.com/Boriken-Dev/coqui-access>.
 
-MSRV Rust 1.89. No Cargo features. Depends on `argon2`, `getrandom`, `sha2` and `subtle`: no
-serde and no format crate; the kit never parses a format. No `unsafe` code. Public modules:
-`table`, `hash`, `secret`, `file`; the main items are re-exported at the root. Table errors are
-`SourceError`; helpers elsewhere return plain `String`s. Neither contains file contents or
+| Feature | Adds | Default |
+| --- | --- | --- |
+| `file` | module `file`: `FileTable`, `Codec`, `Source`, private writes; `serde` and `guatiao-serde` with no format feature | no |
+
+MSRV Rust 1.89. A default build depends on `coqui-access` (for guatiao), `argon2`, `getrandom`,
+`sha2` and `subtle`. No feature adds a format crate: a caller supplies its own codec. No
+`unsafe` code. Public modules: `table`, `hash`, `secret`, `file` (feature `file`); the main
+items of the first three are re-exported at the root. Table errors are `SourceError`; codecs
+answer `CodecError`; helpers elsewhere return plain `String`s. None contains file contents or
 secrets.
 
 ## Secrets (`coqui_access_kit::secret`)
@@ -31,9 +36,32 @@ pub fn is_hash(value: &str) -> bool;
 - `same` compares in time independent of where the strings differ. `is_hash` checks the
   64-lowercase-hex shape.
 
-## Files (`coqui_access_kit::file`)
+## Files (`coqui_access_kit::file`, feature `file`)
 
 ```rust
+pub const DEFAULT_MAX_BYTES: usize = 1024 * 1024;
+pub struct CodecError;                  // non_exhaustive, Copy, Error; CodecError::new()
+pub trait Codec: Send + Sync {
+    fn name(&self) -> &'static str;                                  // "TOML", for errors
+    fn presentation(&self) -> guatiao_serde::Presentation;           // default Presentation::new()
+    fn write<D: Serialize + ?Sized>(&self, document: &D) -> Result<String, CodecError>;
+    fn read<'de, S: DeserializeSeed<'de>>(&self, text: &'de str, seed: S) -> Result<S::Value, CodecError>;
+}
+pub struct FileTable<T, C>;             // Debug (path, section, format name)
+impl<T, C> FileTable<T, C> {
+    pub fn new(path: impl Into<PathBuf>, section: impl Into<String>, codec: C) -> Self;
+    pub fn max_bytes(self, max: usize) -> Self;                      // default DEFAULT_MAX_BYTES
+    pub fn path(&self) -> &Path;
+}
+impl<T: Keyed + Clone + Send + Walk + FromWalk, C: Codec> Table<T> for FileTable<T, C>;
+pub struct Source<F> { pub file: Option<FileSource<F>> }             // guatiao derives, deny_unknown_fields
+pub struct FileSource<F> { pub path: String, pub format: F }         // guatiao derives, deny_unknown_fields
+impl<F> Source<F> {
+    pub fn file(path: impl Into<String>, format: F) -> Self;
+    pub fn sibling(&self, suffix: &str) -> Self where F: Clone;      // "<path>.<suffix>", same format
+    pub fn open<T>(&self, section: &str) -> Result<Arc<dyn Table<T>>, SourceError>
+        where F: Codec + Clone + 'static, T: Keyed + Clone + Send + Walk + FromWalk + 'static;
+}
 pub struct Stamp;                       // Debug, Clone, Copy, PartialEq, Eq
 pub fn stamp(path: &Path) -> Result<Option<Stamp>, String>;
 pub fn read_bounded(path: &Path, max_bytes: usize) -> Result<Option<String>, String>;
@@ -46,6 +74,19 @@ pub fn write_private(path: &Path, bytes: &[u8]) -> Result<(), String>;
   `max_bytes`, or non-UTF-8 content.
 - `write_private` writes `bytes` to a fresh file beside `path` (created new, `0600` on Unix),
   syncs, and renames over `path`. The directory must exist.
+- `FileTable` writes `{ <section>: [record, ..] }` through `C::write` and reads it back
+  through `C::read` with a seed of its own; each record crosses with guatiao-serde's
+  `Walked` and `from_deserializer`, so `T` needs `#[derive(ToValue, FromValue)]` (which also
+  stream). Every read compares the file's stamp, so another process's write is a new
+  revision. A missing file is empty. Over `max_bytes` (read, or about to be written), an
+  unknown top-level key, a refused record or a document the codec refuses is a `SourceError`
+  in the kit's own words (`file has an unknown top-level key`, `a record in the file is
+  invalid`, `file is not a valid <name> table`): a codec's error, which may quote the
+  document, is never shown. Atomic within one process; across processes the last writer wins.
+- A codec reads with `seed.deserialize(..)` and should refuse trailing text (serde_json's
+  `Deserializer::end`). Through a self-describing format's `deserialize_any` a byte string is
+  only what the codec's `Presentation` spells; the providers' records hold no bytes.
+- `Source::open` is `Invalid` for no kind or a blank path, and reads nothing yet.
 
 ## Tables (`coqui_access_kit::table`)
 
@@ -86,7 +127,7 @@ pub fn check_keys<T: Keyed>(records: &[T], max: usize) -> Result<(), SourceError
 
 ```rust
 pub const MAX_PASSWORD_BYTES: usize = 4096;
-pub struct Argon2Params;                // Copy; Default = 19456 KiB, 2 passes, 1 lane
+pub struct Argon2Params;                // Copy, FromValue, ToValue, Schema; Default = 19456 KiB, 2 passes, 1 lane
 impl Argon2Params { pub fn new(memory_kib: u32, iterations: u32, parallelism: u32) -> Result<Self, String>;
                     pub fn memory_kib(&self) -> u32; pub fn iterations(&self) -> u32; pub fn parallelism(&self) -> u32; }
 pub enum KeyHash { Sha256 /* default */, Argon2id(Argon2Params) }          // non_exhaustive
@@ -112,6 +153,10 @@ pub fn is_password_hash(stored: &str) -> bool;
   Argon2id keys cost one verification per Argon2id record they are tried against.
 - `Argon2Params::new` rejects what Argon2 refuses (memory under 8 KiB per lane, zero counts).
   Stored hashes verify with the costs they carry.
+- As configuration `Argon2Params` is `{ memory_kib, iterations, parallelism }`, every key
+  optional with the default above (the schema says so) and an unknown key refused.
+  `FromValue` checks the combination: one Argon2 refuses is `MapError::BadValue` with
+  `argon2 parameters are out of range`, the words `new` returns.
 - `PasswordHasher::new` makes a dummy hash with the same costs; `verify(None, ..)` does the
   same work and answers `false`, so an unknown name costs what a wrong password does.
   `hash` rejects empty and over-long passwords; `verify_password` ignores them.

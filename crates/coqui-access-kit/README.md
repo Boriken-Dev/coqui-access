@@ -7,8 +7,9 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/Boriken-Dev/coqui-access/test.yml)](https://github.com/Boriken-Dev/coqui-access/actions/workflows/test.yml)
 
 The **small, boring parts every access provider needs**, written once: typed tables a
-provider reads its records through, key and password hashing, generated secrets, and private
-atomic file writes. It never parses a format and has no plugin-host dependency.
+provider reads its records through, key and password hashing, generated secrets, and a table
+kept in one private file. It names no format: a file table is written in the serde format
+the caller hands it.
 
 ## Features
 
@@ -18,14 +19,19 @@ atomic file writes. It never parses a format and has no plugin-host dependency.
 - **Hashing** - `sha256:<hex>` or Argon2id, self-describing, constant-time verification.
 - **Secrets** - a prefix plus 256 random bits, SHA-256 with optional domain separation,
   constant-time comparison.
-- **Private files** - written whole beside the target and renamed into place, `0600` on Unix.
-  They move bytes and know no format.
+- **File tables** (feature `file`) - `FileTable` keeps a table in one private file, written
+  whole beside the target and renamed into place (`0600` on Unix), in any serde format the
+  caller supplies as a `Codec`. Records cross through their guatiao derives.
 
 ## Installation
 
 ```bash
 cargo add coqui-access-kit --git https://github.com/Boriken-Dev/coqui-access
 ```
+
+| Feature | Adds | Needed for | Default |
+| --- | --- | --- | --- |
+| `file` | `serde`, `guatiao-serde` (no format) | `FileTable`, `Codec`, `Source`, private writes, bounded reads, stamps | no |
 
 ## Quick start
 
@@ -65,7 +71,9 @@ assert!(!hasher.verify(None, "correct horse"));          // no such account
 `Argon2id` costs one verification per Argon2id record a presented key is checked against, and
 is for keys a person might have chosen. `verify_key` branches only on the algorithm prefix of
 the stored string; a string naming no known algorithm never matches. `Argon2Params::default()`
-is 19 MiB, 2 passes, 1 lane.
+is 19 MiB, 2 passes, 1 lane. As configuration, `Argon2Params` is a map of `memory_kib`,
+`iterations` and `parallelism`, each defaulting to that value; reading it refuses a
+combination Argon2 would.
 
 ## API overview
 
@@ -74,7 +82,21 @@ is 19 MiB, 2 passes, 1 lane.
 | `table` | `Table<T>`, `Keyed`, `Snapshot`, `Revision`, `SourceError`, `MemoryTable`, `Reloading`, `check_keys`. |
 | `hash` | `KeyHash`, `Argon2Params`, `verify_key`, `is_key_hash`, `PasswordHasher`, `verify_password`, `is_password_hash`, `generate_key`. |
 | `secret` | `generate`, `identifier`, `hash`, `hash_bytes`, `same`, `is_hash`. |
-| `file` | `write_private`, `read_bounded`, `stamp`, `Stamp`. |
+| `file` | Feature `file`. `FileTable`, `Codec`, `CodecError`, `Source`, `FileSource`, `DEFAULT_MAX_BYTES`, `write_private`, `read_bounded`, `stamp`, `Stamp`. |
+
+## A table in a file
+
+`FileTable<T, C>` keeps records of a type deriving guatiao's `ToValue` and `FromValue` under
+one key of a document, written with the codec `C`. The kit depends on no format crate: the
+caller implements `Codec` over the one it picks (`toml`, `serde_json`, …), and records cross
+through guatiao-serde's bridge with no tree in between.
+
+```rust,ignore
+let table = FileTable::<AccountRecord, _>::new("accounts.toml", "accounts", MyToml);
+```
+
+A missing file is an empty table; a file that is unreadable, larger than `max_bytes` (1 MiB by
+default) or invalid is an error that quotes none of its contents.
 
 ## Development
 

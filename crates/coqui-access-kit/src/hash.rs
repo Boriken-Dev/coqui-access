@@ -13,6 +13,7 @@
 use argon2::password_hash::phc::PasswordHash;
 use argon2::password_hash::{PasswordHasher as _, PasswordVerifier as _};
 use argon2::{Algorithm, Argon2, Params, Version};
+use coqui_access::guatiao::{FromValue, Kinds, Map, MapError, Schema, ToValue, Value};
 
 use crate::secret;
 
@@ -23,10 +24,21 @@ const SHA256_PREFIX: &str = "sha256:";
 const ARGON2ID_PREFIX: &str = "$argon2id$";
 
 /// The cost of an Argon2id hash. The default is the Argon2 crate's: 19 MiB, 2 passes, 1 lane.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// As configuration it is a map of `memory_kib`, `iterations` and `parallelism`, each
+/// defaulting to the library's value, so a config may give any of them or none. Reading it
+/// checks the combination, as [`Argon2Params::new`] does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Schema, ToValue)]
+#[map(crate = ::coqui_access::guatiao, deny_unknown_fields)]
 pub struct Argon2Params {
+    /// Memory in KiB.
+    #[map(default = Params::DEFAULT_M_COST)]
     memory_kib: u32,
+    /// Passes over the memory.
+    #[map(default = Params::DEFAULT_T_COST)]
     iterations: u32,
+    /// Lanes.
+    #[map(default = Params::DEFAULT_P_COST)]
     parallelism: u32,
 }
 
@@ -40,6 +52,36 @@ impl Default for Argon2Params {
     }
 }
 
+const OUT_OF_RANGE: &str = "argon2 parameters are out of range";
+
+/// Reads each field the derive's way and then checks the combination, so a config Argon2
+/// would refuse fails as it is read.
+impl FromValue for Argon2Params {
+    const KINDS: Kinds = Kinds::MAP;
+
+    fn from_value(value: &Value) -> Result<Self, MapError> {
+        const FIELDS: [&str; 3] = ["memory_kib", "iterations", "parallelism"];
+        let map = <&Map>::try_from(value)?;
+        if let Some(entry) = map.iter().find(|entry| !FIELDS.contains(&entry.key())) {
+            return Err(
+                MapError::bad_value("one of memory_kib, iterations, parallelism")
+                    .under(entry.key()),
+            );
+        }
+        let default = Self::default();
+        let field = |key: &str, default: u32| match map.get(key) {
+            Some(field) => u32::from_value(field).map_err(|error| error.under(key)),
+            None => Ok(default),
+        };
+        Self::new(
+            field(FIELDS[0], default.memory_kib)?,
+            field(FIELDS[1], default.iterations)?,
+            field(FIELDS[2], default.parallelism)?,
+        )
+        .map_err(|_| MapError::bad_value(OUT_OF_RANGE))
+    }
+}
+
 impl Argon2Params {
     /// Memory in KiB, passes over it and lanes.
     ///
@@ -49,7 +91,7 @@ impl Argon2Params {
     /// a zero count.
     pub fn new(memory_kib: u32, iterations: u32, parallelism: u32) -> Result<Self, String> {
         Params::new(memory_kib, iterations, parallelism, None)
-            .map_err(|_| "argon2 parameters are out of range".to_owned())?;
+            .map_err(|_| OUT_OF_RANGE.to_owned())?;
         Ok(Self {
             memory_kib,
             iterations,
@@ -74,7 +116,7 @@ impl Argon2Params {
 
     fn hash(&self, secret: &[u8]) -> Result<String, String> {
         let params = Params::new(self.memory_kib, self.iterations, self.parallelism, None)
-            .map_err(|_| "argon2 parameters are out of range".to_owned())?;
+            .map_err(|_| OUT_OF_RANGE.to_owned())?;
         Argon2::new(Algorithm::Argon2id, Version::V0x13, params)
             .hash_password(secret)
             .map(|hash| hash.to_string())
@@ -319,6 +361,43 @@ mod tests {
             .hash("k")
             .unwrap();
         assert!(stored.contains("m=64,t=2,p=1"));
+    }
+
+    fn costs_from(json: &str) -> Result<Argon2Params, MapError> {
+        let value =
+            guatiao_serde::from_serde(&mut serde_json::Deserializer::from_str(json)).unwrap();
+        Argon2Params::from_value(&value)
+    }
+
+    #[test]
+    fn argon2_costs_read_from_configuration_default_each_field_and_are_checked() {
+        assert_eq!(costs_from("{}").unwrap(), Argon2Params::default());
+        let set = costs_from(r#"{"memory_kib": 64, "iterations": 1}"#).unwrap();
+        assert_eq!(set, Argon2Params::new(64, 1, 1).unwrap());
+        assert_eq!(
+            Argon2Params::from_value(&set.to_value().unwrap()).unwrap(),
+            set
+        );
+        let refused = costs_from(r#"{"iterations": 0}"#).unwrap_err();
+        assert_eq!(refused, MapError::bad_value(OUT_OF_RANGE));
+        assert!(costs_from(r#"{"memory_kib": 4}"#).is_err());
+        assert_eq!(costs_from(r#"{"memory": 64}"#).unwrap_err().key(), "memory");
+        assert_eq!(
+            costs_from(r#"{"lanes": 1}"#).unwrap_err(),
+            MapError::bad_value("one of memory_kib, iterations, parallelism").under("lanes")
+        );
+        assert_eq!(
+            costs_from(r#"{"iterations": "2"}"#).unwrap_err().key(),
+            "iterations"
+        );
+        assert!(costs_from("[]").is_err());
+    }
+
+    #[test]
+    fn argon2_costs_describe_their_defaults() {
+        let schema = Argon2Params::schema().unwrap();
+        let text = guatiao_serde::text::json::to_string(&schema, Default::default()).unwrap();
+        assert!(text.contains("\"default\":19456"), "{text}");
     }
 
     #[test]

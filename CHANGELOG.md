@@ -15,14 +15,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   test and `kinds.json`: `0xc9379b44`, `0x8f7a4451`, `0xa08d4555`, `0x2468f527`.
 - `coqui-access-kit`: prefixed 256-bit secrets, SHA-256 of a secret with optional domain
   separation (`secret::hash`) and of raw bytes (`secret::hash_bytes`), constant-time
-  comparison, atomic owner-only file writes and bounded reads. `KeyHash` (`Sha256`, `Argon2id`), `verify_key`, `is_key_hash`, `generate_key`,
+  comparison. `KeyHash` (`Sha256`, `Argon2id`), `verify_key`, `is_key_hash`, `generate_key`,
   `PasswordHasher` (Argon2id with a dummy-hash path for unknown accounts), `verify_password`,
   `Argon2Params` and `is_password_hash`: hashing and constant-time verification to use with
-  your own data.
+  your own data. `Argon2Params` is also configuration (guatiao `FromValue`, `ToValue`,
+  `Schema`): each cost defaults to the library's, and reading refuses a combination Argon2
+  would.
 - `coqui-access-kit`: `Table<T>`, a typed source trait (`load`, `changes_since`, `put`,
   `remove`; the last two default to `ReadOnly`), with `MemoryTable`, `Reloading`, `Keyed`,
-  `Snapshot`, `Revision`, `SourceError` and `check_keys`. The kit depends on neither `serde` nor
-  `toml` and parses no format; its file helpers know no format either.
+  `Snapshot`, `Revision`, `SourceError` and `check_keys`.
+- `coqui-access-kit` feature `file`: `FileTable<T, C>`, a table kept in one private file
+  (atomic owner-only writes, bounded reads, change stamps; `max_bytes`, default 1 MiB), written
+  in any serde format through a caller-supplied `Codec`, with records crossing through their
+  guatiao derives and guatiao-serde's bridge. `Source<F>`/`FileSource<F>` are the
+  `{ "file": { "path", "format" } }` configuration a plugin names its table with. The kit
+  depends on no format crate under any feature.
 - `coqui-access-local`, `-key`, `-ldap`, `-proxy`, `-peer`: providers, each with a `-plugin`
   library crate. Local, key and peer also implement `coqui_accounts` and are built with
   `LocalAccounts::builder()`, `Keys::builder()` and `Peers::builder()` over an

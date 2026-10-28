@@ -12,9 +12,25 @@ exclude = [".*", "*.local.*"]
 
 [dependencies]
 argon2.workspace = true
+coqui-access.workspace = true
 getrandom.workspace = true
+guatiao-serde = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
 sha2.workspace = true
 subtle.workspace = true
 
+[features]
+default = []
+# Records kept in one private file, in any serde format the caller supplies: paths, change
+# stamps, owner-only writes and `FileTable`.
+file = ["dep:guatiao-serde", "dep:serde"]
+
 [dev-dependencies]
+guatiao-serde = { workspace = true, features = ["json"] }
+serde_json.workspace = true
 tempfile.workspace = true
+toml.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
