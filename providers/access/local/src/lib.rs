@@ -14,6 +14,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use coqui_access::guatiao::library::ProviderError;
+use coqui_access::guatiao::{FromValue, Schema, ToValue};
 use coqui_access::{
     AccountInfo, AccountPut, Accounts, Attempt, Authenticator, Description, Directory, Lookup,
     Person, PutOutcome, Verdict, error, takes,
@@ -29,13 +30,10 @@ const MAX_NAME_BYTES: usize = 256;
 
 /// One local account as a [`Table`] keeps it, keyed by [`name`](AccountRecord::name).
 ///
-/// With the `serde` feature it derives `Serialize` and `Deserialize`.
-#[derive(Clone, PartialEq, Eq)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Serialize, serde::Deserialize),
-    serde(deny_unknown_fields)
-)]
+/// It derives guatiao's `ToValue`, `FromValue` and `Schema`, so a [`Table`] may keep it in
+/// any format.
+#[derive(Clone, PartialEq, Eq, FromValue, Schema, ToValue)]
+#[map(crate = ::coqui_access::guatiao, deny_unknown_fields)]
 #[non_exhaustive]
 pub struct AccountRecord {
     /// Stable identity; what a [`Verdict::Valid`] lookup names.
@@ -45,34 +43,16 @@ pub struct AccountRecord {
     /// The Argon2id hash of the password, as [`PasswordHasher::hash`] makes it.
     pub password_hash: String,
     /// Human-readable name.
-    #[cfg_attr(
-        feature = "serde",
-        serde(default, skip_serializing_if = "Option::is_none")
-    )]
     pub display_name: Option<String>,
     /// Email address.
-    #[cfg_attr(
-        feature = "serde",
-        serde(default, skip_serializing_if = "Option::is_none")
-    )]
     pub email: Option<String>,
     /// Directory groups.
-    #[cfg_attr(
-        feature = "serde",
-        serde(default, skip_serializing_if = "Vec::is_empty")
-    )]
+    #[map(default, skip_serializing_if = Vec::is_empty)]
     pub groups: Vec<String>,
     /// A disabled account neither authenticates nor resolves.
-    #[cfg_attr(
-        feature = "serde",
-        serde(default, skip_serializing_if = "std::ops::Not::not")
-    )]
+    #[map(default, skip_serializing_if = core::ops::Not::not)]
     pub disabled: bool,
     /// When it was made, in seconds since the Unix epoch.
-    #[cfg_attr(
-        feature = "serde",
-        serde(default, skip_serializing_if = "Option::is_none")
-    )]
     pub made_unix: Option<i64>,
 }
 

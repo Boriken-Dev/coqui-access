@@ -34,8 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   library crate. Local, key and peer also implement `coqui_accounts` and are built with
   `LocalAccounts::builder()`, `Keys::builder()` and `Peers::builder()` over an
   `Arc<dyn Table<Record>>` (memory by default). The record types (`AccountRecord`,
-  `KeyRecord`, `PeerRecord`, `Unaccepted`) are public and derive serde behind a `serde`
-  feature. The peer waiting list is a table of its own.
+  `KeyRecord`, `PeerRecord`, `Unaccepted`) are public and derive guatiao's `ToValue`,
+  `FromValue` and `Schema`, so any table keeps them. The peer waiting list is a table of its own.
 - `coqui-access-local`: the Argon2id costs are an option. `coqui-access-key`: a stored hash is
   a self-describing string, `sha256:<hex>` or `$argon2id$...`; the builder's `KeyHash` (default
   SHA-256) picks the algorithm for new keys, and one table may hold both. The key prefix is
@@ -44,12 +44,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   [`coqui-peer-tls`](https://crates.io/crates/coqui-peer-tls) `=0.0.0-alpha.0` from
   crates.io.
 - `coqui-access-local-plugin`, `-key-plugin`, `-peer-plugin`: configured with a `source` object
-  (`{ "file": { "path", "format": "toml" } }`); no `source` means memory. Key also takes
+  (`{ "file": { "path", "format" } }`, `format` being `toml` or `json`, each plugin's own codec
+  over the kit's `FileTable`); no `source` means memory. Key also takes
   `prefix`, `key_hash`, `argon2` and `max_keys`; local takes `max_accounts` and `argon2`; peer
   takes `waiting`, `max_peers`, `waiting_places` and `seen_every_secs`. Peer's `waiting`
   defaults to a file beside a file source (`<path>.waiting`) and to memory otherwise.
-- `providers/access/plugin-support` (not published): the plugins' `source` config and a
-  file-backed `Table` with a TOML codec.
 - `coqui-roles`: a first-match role authorizer with configurable scope kinds, built with
   `RoleAuthorizer::builder()` or `RoleAuthorizer::new(RolePolicy)`. `RolePolicy`, `Role` and
   `Rule` are plain data with serde behind a `serde` feature; the role, action, rule and

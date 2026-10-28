@@ -18,6 +18,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use coqui_access::guatiao::library::ProviderError;
+use coqui_access::guatiao::{FromValue, Schema, ToValue};
 use coqui_access::{
     AccountInfo, AccountPut, Accounts, Attempt, Authenticator, Description, Directory, Lookup,
     Person, PutOutcome, Verdict, Waiting, error, takes,
@@ -37,13 +38,10 @@ const MAX_FIELD_BYTES: usize = 1024;
 
 /// One accepted peer as a [`Table`] keeps it, keyed by [`name`](PeerRecord::name).
 ///
-/// With the `serde` feature it derives `Serialize` and `Deserialize`.
-#[derive(Clone, PartialEq, Eq)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Serialize, serde::Deserialize),
-    serde(deny_unknown_fields)
-)]
+/// It derives guatiao's `ToValue`, `FromValue` and `Schema`, so a [`Table`] may keep it in
+/// any format.
+#[derive(Clone, PartialEq, Eq, FromValue, Schema, ToValue)]
+#[map(crate = ::coqui_access::guatiao, deny_unknown_fields)]
 #[non_exhaustive]
 pub struct PeerRecord {
     /// Stable identity; what a [`Verdict::Valid`] lookup names.
@@ -53,28 +51,14 @@ pub struct PeerRecord {
     /// The SHA-256 fingerprint of its certificate, in any spelling `coqui-peer-tls` reads.
     pub certificate: String,
     /// Email address.
-    #[cfg_attr(
-        feature = "serde",
-        serde(default, skip_serializing_if = "Option::is_none")
-    )]
     pub email: Option<String>,
     /// Directory groups.
-    #[cfg_attr(
-        feature = "serde",
-        serde(default, skip_serializing_if = "Vec::is_empty")
-    )]
+    #[map(default, skip_serializing_if = Vec::is_empty)]
     pub groups: Vec<String>,
     /// A disabled peer is refused.
-    #[cfg_attr(
-        feature = "serde",
-        serde(default, skip_serializing_if = "std::ops::Not::not")
-    )]
+    #[map(default, skip_serializing_if = core::ops::Not::not)]
     pub disabled: bool,
     /// When it was accepted, in seconds since the Unix epoch.
-    #[cfg_attr(
-        feature = "serde",
-        serde(default, skip_serializing_if = "Option::is_none")
-    )]
     pub made_unix: Option<i64>,
 }
 
@@ -143,22 +127,15 @@ impl fmt::Debug for PeerRecord {
 /// A fingerprint shown to the service that nobody has accepted, keyed by
 /// [`fingerprint`](Unaccepted::fingerprint).
 ///
-/// With the `serde` feature it derives `Serialize` and `Deserialize`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Serialize, serde::Deserialize),
-    serde(deny_unknown_fields)
-)]
+/// It derives guatiao's `ToValue`, `FromValue` and `Schema`, so a [`Table`] may keep it in
+/// any format.
+#[derive(Debug, Clone, PartialEq, Eq, FromValue, Schema, ToValue)]
+#[map(crate = ::coqui_access::guatiao, deny_unknown_fields)]
 #[non_exhaustive]
 pub struct Unaccepted {
     /// The canonical fingerprint.
     pub fingerprint: String,
     /// The address it was shown from, when known.
-    #[cfg_attr(
-        feature = "serde",
-        serde(default, skip_serializing_if = "Option::is_none")
-    )]
     pub peer: Option<String>,
     /// When it was last written down, in seconds since the Unix epoch.
     pub seen_unix: i64,

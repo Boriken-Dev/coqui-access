@@ -17,7 +17,7 @@ use crate::table::{Keyed, SourceError, Table};
 /// { "file": { "path": "accounts.toml", "format": "toml" } }
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, FromValue, Schema, ToValue)]
-#[map(crate = ::coqui_access::guatiao, deny_unknown_fields)]
+#[map(crate = ::coqui_access::guatiao)]
 pub struct Source<F> {
     /// Records in one private file.
     pub file: Option<FileSource<F>>,
@@ -25,7 +25,7 @@ pub struct Source<F> {
 
 /// A table kept in one private file.
 #[derive(Debug, Clone, PartialEq, Eq, FromValue, Schema, ToValue)]
-#[map(crate = ::coqui_access::guatiao, deny_unknown_fields)]
+#[map(crate = ::coqui_access::guatiao)]
 pub struct FileSource<F> {
     /// The file. Created, readable by its owner alone, when the first record is put; a
     /// missing file is an empty table.

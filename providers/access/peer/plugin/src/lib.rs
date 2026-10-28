@@ -1,11 +1,11 @@
 //! `coqui-access-peer` as a library a host loads: the Guatiao entry point and the config that
 //! builds the provider.
 //!
-//! The config names where peers come from in `source` (see `coqui-access-plugin-support`):
+//! The config names where peers come from in `source`, a file in `toml` or `json`:
 //!
 //! ```json
 //! { "source": { "file": { "path": "peers.toml", "format": "toml" } },
-//!   "waiting": { "file": { "path": "peers.toml.waiting" } },
+//!   "waiting": { "file": { "path": "peers.toml.waiting", "format": "toml" } },
 //!   "max_peers": 10000, "waiting_places": 16, "seen_every_secs": 60 }
 //! ```
 //!
@@ -13,23 +13,30 @@
 //! fingerprints nobody accepted are kept, defaults to a file beside a file source
 //! (`<path>.waiting`) and to memory otherwise.
 
+mod format;
+
+use std::sync::Arc;
+
 use coqui_access::guatiao::library::ProviderError;
-use coqui_access::guatiao::{FromValue, Provider, Schema, ToValue};
+use coqui_access::guatiao::{FromValue, FromWalk, Provider, Schema, ToValue, Walk};
 use coqui_access::{
     AccountInfo, AccountPut, Accounts, Attempt, Authenticator, Description, Directory, Lookup,
-    Person, PutOutcome, Verdict, Waiting,
+    Person, PutOutcome, Verdict, Waiting, error,
 };
+use coqui_access_kit::file::Source;
+use coqui_access_kit::{Keyed, MemoryTable, SourceError, Table};
 use coqui_access_peer::{PeerRecord, Peers, Unaccepted};
-use coqui_access_plugin_support::{SourceConfig, build_failed, open_table};
+
+pub use format::Format;
 
 /// Guatiao configuration for the verified peer provider.
 #[derive(Debug, Clone, Default, FromValue, Schema, ToValue)]
 #[map(crate = ::coqui_access::guatiao)]
 pub struct PeersConfig {
     /// Where the accepted peers are kept; memory when absent.
-    pub source: Option<SourceConfig>,
+    pub source: Option<Source<Format>>,
     /// Where the fingerprints waiting to be accepted are kept.
-    pub waiting: Option<SourceConfig>,
+    pub waiting: Option<Source<Format>>,
     /// The most peers the table may hold; the library default when absent.
     pub max_peers: Option<u32>,
     /// How many unaccepted fingerprints are kept; the library default when absent.
@@ -37,6 +44,24 @@ pub struct PeersConfig {
     /// Seconds before a waiting fingerprint from one address is written down again; the
     /// library default when absent.
     pub seen_every_secs: Option<i64>,
+}
+
+fn refused(reason: &SourceError) -> ProviderError {
+    error::bad_value(&format!("peer table: {reason}"))
+}
+
+/// The table `source` names, or one in memory.
+fn open<T>(
+    source: Option<&Source<Format>>,
+    section: &str,
+) -> Result<Arc<dyn Table<T>>, ProviderError>
+where
+    T: Keyed + Clone + Send + Walk + FromWalk + 'static,
+{
+    match source {
+        Some(source) => source.open(section).map_err(|reason| refused(&reason)),
+        None => Ok(Arc::new(MemoryTable::new())),
+    }
 }
 
 /// The peer provider a host loads.
@@ -63,11 +88,8 @@ impl TryFrom<PeersConfig> for PeersProvider {
                 .map(|source| source.sibling("waiting"))
         });
         let mut builder = Peers::builder()
-            .table(open_table::<PeerRecord>(config.source.as_ref(), "peers")?)
-            .waiting(open_table::<Unaccepted>(
-                waiting_source.as_ref(),
-                "waiting",
-            )?);
+            .table(open::<PeerRecord>(config.source.as_ref(), "peers")?)
+            .waiting(open::<Unaccepted>(waiting_source.as_ref(), "waiting")?);
         if let Some(max) = config.max_peers {
             builder = builder.max_peers(max as usize);
         }
@@ -77,10 +99,7 @@ impl TryFrom<PeersConfig> for PeersProvider {
         if let Some(seconds) = config.seen_every_secs {
             builder = builder.seen_every_secs(seconds);
         }
-        builder
-            .build()
-            .map(Self)
-            .map_err(|reason| build_failed("peer table", &reason))
+        builder.build().map(Self).map_err(|reason| refused(&reason))
     }
 }
 
@@ -132,7 +151,7 @@ mod tests {
 
     fn config(path: &std::path::Path) -> PeersConfig {
         PeersConfig {
-            source: Some(SourceConfig::toml_file(path.to_str().unwrap())),
+            source: Some(Source::file(path.to_str().unwrap(), Format::Toml)),
             ..PeersConfig::default()
         }
     }
@@ -216,7 +235,7 @@ mod tests {
         let path = directory.path().join("peers.toml");
         let apart = directory.path().join("seen.toml");
         let provider = PeersProvider::try_from(PeersConfig {
-            waiting: Some(SourceConfig::toml_file(apart.to_str().unwrap())),
+            waiting: Some(Source::file(apart.to_str().unwrap(), Format::Toml)),
             ..config(&path)
         })
         .unwrap();

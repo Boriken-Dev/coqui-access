@@ -157,7 +157,6 @@ version = "0.1.0"
 dependencies = [
  "coqui-access",
  "coqui-access-kit",
- "serde",
 ]
 
 [[package]]
@@ -167,8 +166,11 @@ dependencies = [
  "coqui-access",
  "coqui-access-key",
  "coqui-access-kit",
- "coqui-access-plugin-support",
+ "guatiao-serde",
+ "serde",
+ "serde_json",
  "tempfile",
+ "toml",
 ]
 
 [[package]]
@@ -211,7 +213,6 @@ version = "0.1.0"
 dependencies = [
  "coqui-access",
  "coqui-access-kit",
- "serde",
 ]
 
 [[package]]
@@ -221,8 +222,10 @@ dependencies = [
  "coqui-access",
  "coqui-access-kit",
  "coqui-access-local",
- "coqui-access-plugin-support",
+ "serde",
+ "serde_json",
  "tempfile",
+ "toml",
 ]
 
 [[package]]
@@ -232,7 +235,6 @@ dependencies = [
  "coqui-access",
  "coqui-access-kit",
  "coqui-peer-tls",
- "serde",
 ]
 
 [[package]]
@@ -242,18 +244,9 @@ dependencies = [
  "coqui-access",
  "coqui-access-kit",
  "coqui-access-peer",
- "coqui-access-plugin-support",
  "coqui-peer-tls",
- "tempfile",
-]
-
-[[package]]
-name = "coqui-access-plugin-support"
-version = "0.1.0"
-dependencies = [
- "coqui-access",
- "coqui-access-kit",
  "serde",
+ "serde_json",
  "tempfile",
  "toml",
 ]

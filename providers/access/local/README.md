@@ -56,11 +56,12 @@ Records of your own come from a table:
 `LocalAccounts::builder().table(table).max_accounts(500).argon2(params).build()?`, where
 `table` is a `MemoryTable::from_records([AccountRecord::new(id, name, hash).groups(["staff"])])`
 or your own `Table<AccountRecord>`. Hashes come from `coqui_access_kit::PasswordHasher`, which
-you can use with your own data too. `AccountRecord` derives serde behind the `serde` feature.
+you can use with your own data too. `AccountRecord` derives guatiao's value traits, so any
+table keeps it.
 
 The loadable plugin (provider id `coqui_access_local`) is configured with a `source`, for
-example `{ "source": { "file": { "path": "accounts.toml", "format": "toml" } } }`; with no
-`source` the accounts live in memory.
+example `{ "source": { "file": { "path": "accounts.toml", "format": "toml" } } }` (`format` is
+`toml` or `json`), `max_accounts` and `argon2`; with no `source` the accounts live in memory.
 
 ## API overview
 
@@ -68,7 +69,7 @@ example `{ "source": { "file": { "path": "accounts.toml", "format": "toml" } } }
 | --- | --- |
 | `LocalAccounts` | The provider, and the `Authenticator`, `Directory` and `Accounts` kinds. `builder()` makes one. |
 | `LocalAccountsBuilder` | Options: `table`, `max_accounts`, `argon2`; `build`. |
-| `AccountRecord` | One account as a table keeps it; `serde` feature. |
+| `AccountRecord` | One account as a table keeps it; guatiao value traits. |
 | `DEFAULT_MAX_ACCOUNTS` | 10 000. |
 
 ## Development

@@ -14,11 +14,7 @@ exclude = [".*", "*.local.*"]
 coqui-access.workspace = true
 coqui-access-kit.workspace = true
 coqui-peer-tls.workspace = true
-serde = { workspace = true, optional = true }
 
-[features]
-# Serialize and Deserialize on the record types, for whatever format a caller picks.
-serde = ["dep:serde"]
 
 [dev-dependencies]
 coqui-peer-tls = { workspace = true, features = ["generate"] }

@@ -1,7 +1,7 @@
 //! `coqui-access-key` as a library a host loads: the Guatiao entry point and the config that
 //! builds the provider.
 //!
-//! The config names where keys come from in `source` (see `coqui-access-plugin-support`):
+//! The config names where keys come from in `source`, a file in `toml` or `json`:
 //!
 //! ```json
 //! { "source": { "file": { "path": "keys.toml", "format": "toml" } },
@@ -15,15 +15,21 @@
 //! default, or `argon2id`) is how keys made from now on are kept; `argon2` sets the Argon2id
 //! costs. Keys already in the table keep the algorithm their stored string names.
 
+mod format;
+
+use std::sync::Arc;
+
 use coqui_access::guatiao::library::ProviderError;
 use coqui_access::guatiao::{FromValue, Provider, Schema, ToValue};
 use coqui_access::{
     AccountInfo, AccountPut, Accounts, Attempt, Authenticator, Description, Directory, Lookup,
-    Person, PutOutcome, Verdict,
+    Person, PutOutcome, Verdict, error,
 };
 use coqui_access_key::{DEFAULT_PREFIX, KeyRecord, Keys};
-use coqui_access_kit::KeyHash;
-use coqui_access_plugin_support::{Argon2Config, SourceConfig, build_failed, open_table};
+use coqui_access_kit::file::Source;
+use coqui_access_kit::{Argon2Params, KeyHash, MemoryTable, SourceError, Table};
+
+pub use format::Format;
 
 /// Which algorithm new keys are kept with.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, FromValue, Schema, ToValue)]
@@ -41,7 +47,7 @@ pub enum KeyHashKind {
 #[map(crate = ::coqui_access::guatiao)]
 pub struct KeysConfig {
     /// Where the keys are kept; memory when absent.
-    pub source: Option<SourceConfig>,
+    pub source: Option<Source<Format>>,
     /// What every key made here begins with.
     #[map(default = String::from(DEFAULT_PREFIX))]
     pub prefix: String,
@@ -49,9 +55,13 @@ pub struct KeysConfig {
     #[map(default)]
     pub key_hash: KeyHashKind,
     /// Argon2id costs for `key_hash = "argon2id"`.
-    pub argon2: Option<Argon2Config>,
+    pub argon2: Option<Argon2Params>,
     /// The most keys the table may hold; the library default when absent.
     pub max_keys: Option<u32>,
+}
+
+fn refused(reason: &SourceError) -> ProviderError {
+    error::bad_value(&format!("key table: {reason}"))
 }
 
 /// The key provider a host loads.
@@ -73,24 +83,20 @@ impl TryFrom<KeysConfig> for KeysProvider {
     fn try_from(config: KeysConfig) -> Result<Self, Self::Error> {
         let hash = match config.key_hash {
             KeyHashKind::Sha256 => KeyHash::Sha256,
-            KeyHashKind::Argon2id => KeyHash::Argon2id(
-                config
-                    .argon2
-                    .as_ref()
-                    .map_or_else(|| Ok(Default::default()), Argon2Config::params)?,
-            ),
+            KeyHashKind::Argon2id => KeyHash::Argon2id(config.argon2.unwrap_or_default()),
+        };
+        let table: Arc<dyn Table<KeyRecord>> = match &config.source {
+            Some(source) => source.open("keys").map_err(|reason| refused(&reason))?,
+            None => Arc::new(MemoryTable::new()),
         };
         let mut builder = Keys::builder()
-            .table(open_table::<KeyRecord>(config.source.as_ref(), "keys")?)
+            .table(table)
             .prefix(config.prefix)
             .key_hash(hash);
         if let Some(max) = config.max_keys {
             builder = builder.max_keys(max as usize);
         }
-        builder
-            .build()
-            .map(Self)
-            .map_err(|reason| build_failed("key table", &reason))
+        builder.build().map(Self).map_err(|reason| refused(&reason))
     }
 }
 
@@ -132,13 +138,11 @@ coqui_access::guatiao::providers!(KeysProvider);
 
 #[cfg(test)]
 mod tests {
-    use coqui_access_plugin_support::Argon2Config;
-
     use super::*;
 
     fn config(path: &std::path::Path) -> KeysConfig {
         KeysConfig {
-            source: Some(SourceConfig::toml_file(path.to_str().unwrap())),
+            source: Some(Source::file(path.to_str().unwrap(), Format::Toml)),
             prefix: DEFAULT_PREFIX.to_owned(),
             ..KeysConfig::default()
         }
@@ -194,11 +198,7 @@ mod tests {
         let fast = KeysProvider::try_from(config(&path)).unwrap();
         let slow = KeysProvider::try_from(KeysConfig {
             key_hash: KeyHashKind::Argon2id,
-            argon2: Some(Argon2Config {
-                memory_kib: Some(64),
-                iterations: Some(1),
-                parallelism: None,
-            }),
+            argon2: Some(Argon2Params::new(64, 1, 1).unwrap()),
             ..config(&path)
         })
         .unwrap();
@@ -222,16 +222,12 @@ mod tests {
         assert!(KeysProvider::try_from(config(&path)).is_err());
         let memory = KeysConfig::default();
         assert!(KeysProvider::try_from(memory).is_err(), "an empty prefix");
-        let costs = KeysConfig {
-            prefix: "ck_".to_owned(),
-            key_hash: KeyHashKind::Argon2id,
-            argon2: Some(Argon2Config {
-                iterations: Some(0),
-                ..Argon2Config::default()
-            }),
-            ..KeysConfig::default()
-        };
-        assert!(KeysProvider::try_from(costs).is_err());
+        let costs = r#"{"prefix": "ck_", "key_hash": "argon2id", "argon2": {"iterations": 0}}"#;
+        let costs = guatiao_serde::from_serde(&mut serde_json::Deserializer::from_str(costs));
+        assert!(
+            KeysConfig::from_value(&costs.unwrap()).is_err(),
+            "Argon2 refuses the costs"
+        );
     }
 
     #[test]
