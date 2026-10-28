@@ -75,9 +75,11 @@ auth     include  system-auth
 account  include  system-auth
 ```
 
-and on FreeBSD `auth include system` / `account include system`. With no such file,
-Linux-PAM uses `other`, which refuses everyone on most distributions. Under `pam_unix`
-(Linux, FreeBSD) checking another account's password needs root.
+and on FreeBSD `auth include system` / `account include system`. On macOS the stock
+`chkpasswd` service does the job: set `pam_service = "chkpasswd"`. With no such file,
+Linux-PAM and OpenPAM use `other`, which refuses everyone on Fedora and macOS. Under
+`pam_unix` (Linux, FreeBSD) checking another account's password needs root; macOS's
+`pam_opendirectory` does not.
 
 ## Development
 
