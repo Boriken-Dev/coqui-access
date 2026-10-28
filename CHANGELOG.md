@@ -52,6 +52,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `prefix`, `key_hash`, `argon2` and `max_keys`; local takes `max_accounts` and `argon2`; peer
   takes `waiting`, `max_peers`, `waiting_places` and `seen_every_secs`. Peer's `waiting`
   defaults to a file beside a file source (`<path>.waiting`) and to memory otherwise.
+- `coqui-access-acl`: access control lists on items. `RightsSchema` names the rights of an
+  item type as bits of a growable `Rights` set, with aliases and cancelling names; `Entry`
+  (a `Principal`, allow or deny, rights, inheritance flags, a condition), `Acl` and
+  `ItemAcl` are plain data with guatiao derives. `Acl::check` evaluates in one of five
+  modes, `Ordered`, `DenyOverrides` (the default), `Additive`, `Posix` and `MostSpecific`,
+  into a `Decision` naming what was granted, what was denied and the deciding entry. Bounds
+  (`Limits`: 1 024 entries, 1 024 rights) are options; `OnMissing::AllowAll` and an
+  `Everyone` allow are reported as `Weakening`s.
 - `coqui-roles`: a first-match role authorizer with configurable scope kinds, built with
   `RoleAuthorizer::builder()` or `RoleAuthorizer::new(RolePolicy)`. `RolePolicy`, `Role` and
   `Rule` are plain data with serde behind a `serde` feature; the role, action, rule and

@@ -152,6 +152,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "coqui-access-acl"
+version = "0.1.0"
+dependencies = [
+ "coqui-access",
+ "coqui-access-kit",
+ "guatiao-serde",
+]
+
+[[package]]
 name = "coqui-access-key"
 version = "0.1.0"
 dependencies = [
