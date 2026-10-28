@@ -29,7 +29,7 @@ const ARGON2ID_PREFIX: &str = "$argon2id$";
 /// defaulting to the library's value, so a config may give any of them or none. Reading it
 /// checks the combination, as [`Argon2Params::new`] does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Schema, ToValue)]
-#[map(crate = ::coqui_access::guatiao, deny_unknown_fields)]
+#[map(crate = ::coqui_access::guatiao)]
 pub struct Argon2Params {
     /// Memory in KiB.
     #[map(default = Params::DEFAULT_M_COST)]
@@ -60,23 +60,16 @@ impl FromValue for Argon2Params {
     const KINDS: Kinds = Kinds::MAP;
 
     fn from_value(value: &Value) -> Result<Self, MapError> {
-        const FIELDS: [&str; 3] = ["memory_kib", "iterations", "parallelism"];
         let map = <&Map>::try_from(value)?;
-        if let Some(entry) = map.iter().find(|entry| !FIELDS.contains(&entry.key())) {
-            return Err(
-                MapError::bad_value("one of memory_kib, iterations, parallelism")
-                    .under(entry.key()),
-            );
-        }
         let default = Self::default();
         let field = |key: &str, default: u32| match map.get(key) {
             Some(field) => u32::from_value(field).map_err(|error| error.under(key)),
             None => Ok(default),
         };
         Self::new(
-            field(FIELDS[0], default.memory_kib)?,
-            field(FIELDS[1], default.iterations)?,
-            field(FIELDS[2], default.parallelism)?,
+            field("memory_kib", default.memory_kib)?,
+            field("iterations", default.iterations)?,
+            field("parallelism", default.parallelism)?,
         )
         .map_err(|_| MapError::bad_value(OUT_OF_RANGE))
     }
@@ -381,10 +374,10 @@ mod tests {
         let refused = costs_from(r#"{"iterations": 0}"#).unwrap_err();
         assert_eq!(refused, MapError::bad_value(OUT_OF_RANGE));
         assert!(costs_from(r#"{"memory_kib": 4}"#).is_err());
-        assert_eq!(costs_from(r#"{"memory": 64}"#).unwrap_err().key(), "memory");
+        // Reading is lenient about keys it does not know; the schema a host validates with is not.
         assert_eq!(
-            costs_from(r#"{"lanes": 1}"#).unwrap_err(),
-            MapError::bad_value("one of memory_kib, iterations, parallelism").under("lanes")
+            costs_from(r#"{"lanes": 1}"#).unwrap(),
+            Argon2Params::default()
         );
         assert_eq!(
             costs_from(r#"{"iterations": "2"}"#).unwrap_err().key(),

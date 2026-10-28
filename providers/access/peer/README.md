@@ -45,10 +45,11 @@ assert_eq!(verdict, Verdict::Unknown);
 Peers of your own come from a table: `Peers::builder().table(table).build()?`, where `table`
 is a `MemoryTable::from_records([PeerRecord::new(id, name, &fingerprint)])` or your own
 `Table<PeerRecord>`; `.waiting(table)` keeps the waiting list somewhere else. The records
-derive serde behind the `serde` feature.
+derive guatiao's value traits, so any table keeps them.
 
 The loadable plugin (provider id `coqui_access_peer`) is configured with a `source`, for example
-`{ "source": { "file": { "path": "peers.toml" } } }`; the waiting list defaults to
+`{ "source": { "file": { "path": "peers.toml", "format": "toml" } } }` (`format` is `toml` or
+`json`); the waiting list defaults to
 `peers.toml.waiting` beside a file source and can be given its own `waiting` source. With no
 `source` both live in memory.
 
@@ -58,7 +59,7 @@ The loadable plugin (provider id `coqui_access_peer`) is configured with a `sour
 | --- | --- |
 | `Peers` | The provider: `builder()` and the three kinds. |
 | `PeersBuilder` | Options: `table`, `waiting`, `max_peers`, `waiting_places`, `seen_every_secs`; `build`. |
-| `PeerRecord`, `Unaccepted` | The records the two tables keep; `serde` feature. |
+| `PeerRecord`, `Unaccepted` | The records the two tables keep; guatiao value traits. |
 
 ## Development
 

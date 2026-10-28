@@ -18,7 +18,6 @@ publish = false
 [workspace.dependencies]
 coqui-access = { path = "crates/coqui-access" }
 coqui-access-kit = { path = "crates/coqui-access-kit" }
-coqui-access-plugin-support = { path = "providers/access/plugin-support" }
 coqui-peer-tls = "=0.0.0-alpha.0"
 coqui-roles = { path = "crates/coqui-roles" }
 
@@ -28,6 +27,7 @@ guatiao = { git = "https://github.com/Boriken-Dev/guatiao", rev = "a67fd4be0aa31
 guatiao-serde = { git = "https://github.com/Boriken-Dev/guatiao", rev = "a67fd4be0aa319795614ac6fe12d35d856ec3d8b", default-features = false }
 
 serde = { version = "1", default-features = false, features = ["derive", "std"] }
+# The formats the plugins write their file tables in; no library crate names one.
 toml = "1"
 serde_json = "1"
 sha2 = { version = "0.11.1", default-features = false }

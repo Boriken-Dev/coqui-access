@@ -52,11 +52,12 @@ Records of your own come from a table:
 `Keys::builder().table(table).key_hash(KeyHash::argon2id()).max_keys(500).build()?`, where
 `table` is a `MemoryTable::from_records([KeyRecord::new(id, name, hash)])` or your own
 `Table<KeyRecord>`. The hash comes from `coqui_access_kit::KeyHash::hash`, and
-`verify_key` checks one, with or without this provider. `KeyRecord` derives serde behind the
-`serde` feature.
+`verify_key` checks one, with or without this provider. `KeyRecord` derives guatiao's value
+traits, so any table keeps it.
 
 The loadable plugin (provider id `coqui_access_key`) is configured with a `source`, for example
-`{ "source": { "file": { "path": "keys.toml" } }, "prefix": "ck_", "key_hash": "sha256" }`;
+`{ "source": { "file": { "path": "keys.toml", "format": "toml" } }, "prefix": "ck_" }` (`format`
+is `toml` or `json`);
 with no `source` the keys live in memory.
 
 ## API overview
@@ -65,7 +66,7 @@ with no `source` the keys live in memory.
 | --- | --- |
 | `Keys` | The provider: `builder()`, `new_key`, and the three kinds. |
 | `KeysBuilder` | Options: `table`, `prefix`, `key_hash`, `max_keys`; `build`. |
-| `KeyRecord` | One key account as a table keeps it; `serde` feature. |
+| `KeyRecord` | One key account as a table keeps it; guatiao value traits. |
 | `DEFAULT_PREFIX`, `DEFAULT_MAX_KEYS` | `"ck_"`, 10 000. |
 
 ## Development

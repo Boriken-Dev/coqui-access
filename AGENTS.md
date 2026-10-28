@@ -16,8 +16,7 @@ README; those headers describe the public API and ship with the crate.
 | --- | --- |
 | `crates/` | Library crates: kinds, kit, roles. The TLS peer crate and the access control list crate live in their own repositories and come from crates.io. |
 | `providers/access/<name>/` | A provider as an ordinary library. |
-| `providers/access/<name>/plugin/`, `crates/coqui-roles/plugin/` | The same provider as a `cdylib`: its Guatiao config, the `providers!` line, and (local, key, peer) the choice of storage format. |
-| `providers/access/plugin-support/` | Not a library API (`publish = false`): the plugins' `source` config and the file-backed `Table` with a TOML codec. |
+| `providers/access/<name>/plugin/`, `crates/coqui-roles/plugin/` | The same provider as a `cdylib`: its Guatiao config, the `providers!` line, and (local, key, peer) the storage formats it offers (`toml`, `json`) as a kit `Codec`. |
 | `docs/`, `mkdocs.yml` | Narrative site; Rust API docs are published under `/rust/`. |
 
 ## Commands
@@ -41,11 +40,11 @@ Regenerate the kind description after a deliberate contract change:
 - `coqui-peer-tls` is pinned to an exact crates.io version (`=0.0.0-alpha.0`) in
   `[workspace.dependencies]`. A change it needs that is not published yet pins a commit of
   that repository's `main` by git revision, never a branch, until it is released.
-- The shared libraries are code first: builders over `coqui_access_kit::Table`, serde only
-  behind a `serde` feature, no `from_toml`/`from_json`, no format crate in a normal
-  dependency (a dev-dependency for tests is fine), nothing read from a file or the
-  environment unless the caller asks. A storage format is chosen only in a `-plugin` crate
-  or `plugin-support`.
+- The shared libraries are code first: builders over `coqui_access_kit::Table`, records and
+  configuration with guatiao derives, no `from_toml`/`from_json`, no format crate in a normal
+  dependency under any feature (a dev-dependency for tests is fine), nothing read from a file
+  or the environment unless the caller asks. A storage format is chosen only in a `-plugin`
+  crate, which implements the kit's `Codec` over the format crate it depends on.
 - A secret never reaches a log, a `Debug` output or an error message.
 - Limits are defaults the caller can change; do not add a refusal a caller cannot lift.
 

@@ -5,9 +5,9 @@ signature, contract and gotchas, so the crate can be used without reading its so
 ships inside the package and is self-contained. Development documentation lives with the
 source at <https://github.com/Boriken-Dev/coqui-access>.
 
-MSRV Rust 1.89. Feature `serde` (off by default): `Serialize`/`Deserialize` on the record
-types. Depends on `coqui-access`, `coqui-access-kit` and `coqui-peer-tls` (fingerprint parsing
-only), and `serde` when enabled. No `unsafe` code. It reads no file and no environment
+MSRV Rust 1.89. No Cargo features. Depends on `coqui-access`, `coqui-access-kit` and
+`coqui-peer-tls` (fingerprint parsing only). The record types derive guatiao's `ToValue`, `FromValue` and `Schema`, so any table
+keeps them. No `unsafe` code. It reads no file and no environment
 variable. The loadable library is the separate crate `coqui-access-peer-plugin`.
 
 ```rust

@@ -16,9 +16,12 @@ crate-type = ["cdylib"]
 
 [dependencies]
 coqui-access.workspace = true
-coqui-access-local = { path = "..", features = ["serde"] }
-coqui-access-kit.workspace = true
-coqui-access-plugin-support.workspace = true
+coqui-access-local = { path = ".." }
+coqui-access-kit = { workspace = true, features = ["file"] }
+# The formats a file source may be written in: this plugin's choice, not the libraries'.
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

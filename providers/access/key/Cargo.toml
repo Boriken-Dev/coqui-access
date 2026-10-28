@@ -13,8 +13,4 @@ exclude = [".*", "*.local.*"]
 [dependencies]
 coqui-access.workspace = true
 coqui-access-kit.workspace = true
-serde = { workspace = true, optional = true }
 
-[features]
-# Serialize and Deserialize on the record types, for whatever format a caller picks.
-serde = ["dep:serde"]

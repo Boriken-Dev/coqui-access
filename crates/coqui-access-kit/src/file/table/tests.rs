@@ -263,13 +263,18 @@ fn a_source_names_one_kind_and_a_sibling_beside_it() {
 }
 
 #[test]
-fn a_source_reads_from_configuration_and_refuses_unknown_keys() {
+fn a_source_reads_from_configuration_and_needs_a_format() {
     let written = Source::file("items.json", Format::Json).to_value().unwrap();
     assert_eq!(
         Source::<Format>::from_value(&written).unwrap(),
         Source::file("items.json", Format::Json)
     );
-    let text = r#"{"file": {"path": "items.json", "format": "json", "extra": 1}}"#;
-    let value = guatiao_serde::from_serde(&mut serde_json::Deserializer::from_str(text)).unwrap();
-    assert!(Source::<Format>::from_value(&value).is_err());
+    let read = |text: &str| {
+        let value =
+            guatiao_serde::from_serde(&mut serde_json::Deserializer::from_str(text)).unwrap();
+        Source::<Format>::from_value(&value)
+    };
+    assert!(read(r#"{"file": {"path": "items.json", "format": "json"}}"#).is_ok());
+    assert!(read(r#"{"file": {"path": "items.json"}}"#).is_err());
+    assert!(read(r#"{"file": {"path": "items.json", "format": "yaml"}}"#).is_err());
 }

@@ -19,7 +19,8 @@ wants; none of them knows the host. See the [documentation](https://boriken-dev.
   optional `coqui_accounts` (list, put, remove, waiting).
 - **Code first** — every provider is built with a builder over a typed `Table` of records
   (memory by default; a file, a SQL database or an HTTP API are tables you supply). The
-  libraries never parse a format; serde derives sit behind an optional `serde` feature.
+  libraries name no format: records derive guatiao's value traits, and a plugin hands the
+  kit's file table the serde format it offers.
 - **Providers as plugins** — each provider library has a `cdylib` plugin crate, which is where
   a storage format is chosen from its Guatiao config.
 - **Peer certificates as accounts** — fingerprints from [coqui-peer-tls](https://github.com/Boriken-Dev/coqui-peer-tls)

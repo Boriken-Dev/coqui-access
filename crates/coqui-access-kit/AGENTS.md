@@ -54,8 +54,8 @@ impl<T, C> FileTable<T, C> {
     pub fn path(&self) -> &Path;
 }
 impl<T: Keyed + Clone + Send + Walk + FromWalk, C: Codec> Table<T> for FileTable<T, C>;
-pub struct Source<F> { pub file: Option<FileSource<F>> }             // guatiao derives, deny_unknown_fields
-pub struct FileSource<F> { pub path: String, pub format: F }         // guatiao derives, deny_unknown_fields
+pub struct Source<F> { pub file: Option<FileSource<F>> }             // guatiao derives
+pub struct FileSource<F> { pub path: String, pub format: F }         // guatiao derives; format required
 impl<F> Source<F> {
     pub fn file(path: impl Into<String>, format: F) -> Self;
     pub fn sibling(&self, suffix: &str) -> Self where F: Clone;      // "<path>.<suffix>", same format
@@ -154,7 +154,8 @@ pub fn is_password_hash(stored: &str) -> bool;
 - `Argon2Params::new` rejects what Argon2 refuses (memory under 8 KiB per lane, zero counts).
   Stored hashes verify with the costs they carry.
 - As configuration `Argon2Params` is `{ memory_kib, iterations, parallelism }`, every key
-  optional with the default above (the schema says so) and an unknown key refused.
+  optional with the default above (the schema says so). Like every configuration a host
+  validates against its schema first, reading ignores a key it does not know.
   `FromValue` checks the combination: one Argon2 refuses is `MapError::BadValue` with
   `argon2 parameters are out of range`, the words `new` returns.
 - `PasswordHasher::new` makes a dummy hash with the same costs; `verify(None, ..)` does the
