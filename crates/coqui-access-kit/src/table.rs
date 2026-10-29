@@ -8,6 +8,7 @@
 use std::collections::BTreeSet;
 use std::fmt;
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use coqui_access::error;
 use coqui_access::guatiao::library::ProviderError;
@@ -331,6 +332,22 @@ impl<T: Keyed + Clone> Reloading<T> {
     }
 }
 
+/// Whether `value` may be a record's field: not empty, at most `max_bytes` long, and free of
+/// control characters (which would let a field forge a line in a log or a file).
+pub fn check_field(value: &str, max_bytes: usize) -> bool {
+    !value.is_empty() && value.len() <= max_bytes && !value.chars().any(char::is_control)
+}
+
+/// Now, in whole seconds since the Unix epoch, as records stamp `made_unix` and compare
+/// `expires_unix`; `0` on a clock set before 1970.
+pub fn unix_now() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|since| i64::try_from(since.as_secs()).ok())
+        .unwrap_or_default()
+}
+
 /// Checks that no key is used twice and that there are at most `max` records. A provider's
 /// own validation calls this first.
 ///
@@ -482,6 +499,17 @@ mod tests {
         assert_eq!(invalid.writing("t").status, Status::GUATIAO_ERR_BAD_VALUE);
         assert_eq!(gone.writing("t").status, Status::GUATIAO_ERR_INTERNAL);
         assert_eq!(&*invalid.writing("t").message, "t: a record is duplicated");
+    }
+
+    #[test]
+    fn a_field_is_bounded_non_empty_and_has_no_control_characters() {
+        assert!(check_field("alice", 5));
+        assert!(!check_field("alice", 4));
+        assert!(!check_field("", 5));
+        assert!(!check_field("a\nb", 5));
+        assert!(!check_field("a\u{7f}", 5));
+        assert!(check_field("é", 2));
+        assert!(unix_now() > 1_700_000_000);
     }
 
     #[test]

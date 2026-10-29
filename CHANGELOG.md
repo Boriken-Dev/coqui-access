@@ -28,7 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `coqui-access-kit`: `Table<T>`, a typed source trait (`load`, `changes_since`, `put`,
   `remove`; the last two default to `ReadOnly`), with `MemoryTable`, `Reloading`, `Keyed`,
   `Snapshot`, `Revision`, `SourceError` and `check_keys`. `SourceError::reading` and
-  `writing` turn a table error into the `ProviderError` a host acts on.
+  `writing` turn a table error into the `ProviderError` a host acts on. `check_field` and
+  `unix_now` are the record checks and clock the providers share.
 - `coqui-access-kit` feature `file`: `FileTable<T, C>`, a table kept in one private file
   (atomic owner-only writes, bounded reads, change stamps; `max_bytes`, default 1 MiB), written
   in any serde format through a caller-supplied `Codec`, with records crossing through their

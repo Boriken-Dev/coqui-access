@@ -11,7 +11,6 @@
 use std::collections::BTreeSet;
 use std::fmt;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use coqui_access::guatiao::library::ProviderError;
 use coqui_access::guatiao::{FromValue, Schema, ToValue};
@@ -20,8 +19,8 @@ use coqui_access::{
     Person, PutOutcome, Verdict, error, takes,
 };
 use coqui_access_kit::{
-    Argon2Params, Keyed, MemoryTable, PasswordHasher, Reloading, SourceError, Table, check_keys,
-    is_password_hash, secret,
+    Argon2Params, Keyed, MemoryTable, PasswordHasher, Reloading, SourceError, Table, check_field,
+    check_keys, is_password_hash, secret, unix_now,
 };
 
 /// The most accounts a table may hold unless the builder says otherwise.
@@ -312,7 +311,7 @@ impl Accounts for LocalAccounts {
     /// A new account needs a password; an existing one keeps its password unless one is
     /// given.
     fn put(&self, account: AccountPut) -> Result<PutOutcome, ProviderError> {
-        if !valid_field(&account.name, MAX_NAME_BYTES) {
+        if !check_field(&account.name, MAX_NAME_BYTES) {
             return Err(error::bad_value("an account has a name"));
         }
         if account.expires_unix.is_some() {
@@ -337,7 +336,7 @@ impl Accounts for LocalAccounts {
                             account.name.clone(),
                             password.clone(),
                         );
-                        entry.made_unix = now();
+                        entry.made_unix = Some(unix_now());
                         entry
                     }
                 };
@@ -368,19 +367,12 @@ impl Accounts for LocalAccounts {
     }
 }
 
-fn now() -> Option<i64> {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .ok()
-        .and_then(|since| i64::try_from(since.as_secs()).ok())
-}
-
 fn validate(accounts: &[AccountRecord], max: usize) -> Result<(), SourceError> {
     check_keys(accounts, max)?;
     let mut ids = BTreeSet::new();
     for account in accounts {
-        if !valid_field(&account.id, MAX_NAME_BYTES)
-            || !valid_field(&account.name, MAX_NAME_BYTES)
+        if !check_field(&account.id, MAX_NAME_BYTES)
+            || !check_field(&account.name, MAX_NAME_BYTES)
             || account.name.trim().is_empty()
             || account.password_hash.len() > 1024
             || !is_password_hash(&account.password_hash)
@@ -389,15 +381,15 @@ fn validate(accounts: &[AccountRecord], max: usize) -> Result<(), SourceError> {
             || account
                 .groups
                 .iter()
-                .any(|group| !valid_field(group, MAX_NAME_BYTES))
+                .any(|group| !check_field(group, MAX_NAME_BYTES))
             || account
                 .display_name
                 .as_ref()
-                .is_some_and(|value| !valid_field(value, 1024))
+                .is_some_and(|value| !check_field(value, 1024))
             || account
                 .email
                 .as_ref()
-                .is_some_and(|value| !valid_field(value, 320))
+                .is_some_and(|value| !check_field(value, 320))
         {
             return Err(SourceError::invalid(
                 "an account entry is invalid or duplicated",
@@ -405,10 +397,6 @@ fn validate(accounts: &[AccountRecord], max: usize) -> Result<(), SourceError> {
         }
     }
     Ok(())
-}
-
-fn valid_field(value: &str, max_bytes: usize) -> bool {
-    !value.is_empty() && value.len() <= max_bytes && !value.chars().any(char::is_control)
 }
 
 #[cfg(test)]

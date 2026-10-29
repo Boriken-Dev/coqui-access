@@ -116,6 +116,8 @@ impl<T: Keyed + Clone> Reloading<T> {
     pub fn remove(&self, key: &str) -> Result<bool, SourceError>;
 }
 pub fn check_keys<T: Keyed>(records: &[T], max: usize) -> Result<(), SourceError>;
+pub fn check_field(value: &str, max_bytes: usize) -> bool;   // non-empty, <= max_bytes, no control characters
+pub fn unix_now() -> i64;                                    // whole seconds since the epoch; 0 before 1970
 ```
 
 - A `Table` is any source: memory, a file with a codec, SQL, an HTTP API. The caller

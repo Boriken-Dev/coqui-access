@@ -15,7 +15,6 @@ use std::collections::BTreeSet;
 use std::fmt;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::{Arc, Mutex, PoisonError};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use coqui_access::guatiao::library::ProviderError;
 use coqui_access::guatiao::{FromValue, Schema, ToValue};
@@ -23,7 +22,9 @@ use coqui_access::{
     AccountInfo, AccountPut, Accounts, Attempt, Authenticator, Description, Directory, Lookup,
     Person, PutOutcome, Verdict, Waiting, error, takes,
 };
-use coqui_access_kit::{Keyed, MemoryTable, Reloading, SourceError, Table, check_keys, secret};
+use coqui_access_kit::{
+    Keyed, MemoryTable, Reloading, SourceError, Table, check_field, check_keys, secret, unix_now,
+};
 use coqui_peer_tls::{Digest, PeerId};
 
 /// The most peers a table may hold unless the builder says otherwise.
@@ -300,7 +301,7 @@ impl Peers {
         let old = self.waits();
         let host = |peer: &Option<String>| peer.as_deref().and_then(host_of);
         let here = host(&from);
-        let now = now();
+        let now = unix_now();
         if old.iter().any(|had| {
             had.fingerprint == shown
                 && host(&had.peer) == here
@@ -457,7 +458,7 @@ impl Accounts for Peers {
     /// secret of a peer is its certificate fingerprint in any spelling `coqui-peer-tls` reads;
     /// saying it again moves the account to another certificate.
     fn put(&self, account: AccountPut) -> Result<PutOutcome, ProviderError> {
-        if !valid_field(&account.name) {
+        if !check_field(&account.name, MAX_FIELD_BYTES) {
             return Err(error::bad_value("a peer has a name"));
         }
         if account.expires_unix.is_some() {
@@ -498,7 +499,7 @@ impl Accounts for Peers {
                             account.name.clone(),
                             fingerprint,
                         );
-                        peer.made_unix = Some(now());
+                        peer.made_unix = Some(unix_now());
                         peer
                     }
                     (None, None) => {
@@ -563,14 +564,6 @@ fn host_of(peer: &str) -> Option<IpAddr> {
         .or_else(|| peer.parse().ok())
 }
 
-fn now() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .ok()
-        .and_then(|since| i64::try_from(since.as_secs()).ok())
-        .unwrap_or_default()
-}
-
 fn validate(peers: &[PeerRecord], max: usize) -> Result<(), SourceError> {
     check_keys(peers, max)?;
     let mut ids = BTreeSet::new();
@@ -586,12 +579,15 @@ fn validate(peers: &[PeerRecord], max: usize) -> Result<(), SourceError> {
                 "a peer certificate is identified by its SHA-256 fingerprint",
             ));
         }
-        if !valid_field(&peer.id)
-            || !valid_field(&peer.name)
+        if !check_field(&peer.id, MAX_FIELD_BYTES)
+            || !check_field(&peer.name, MAX_FIELD_BYTES)
             || !ids.insert(&peer.id)
             || !certificates.insert(fingerprint)
             || peer.groups.len() > 256
-            || peer.groups.iter().any(|group| !valid_field(group))
+            || peer
+                .groups
+                .iter()
+                .any(|group| !check_field(group, MAX_FIELD_BYTES))
             || peer
                 .email
                 .as_ref()
@@ -603,10 +599,6 @@ fn validate(peers: &[PeerRecord], max: usize) -> Result<(), SourceError> {
         }
     }
     Ok(())
-}
-
-fn valid_field(value: &str) -> bool {
-    !value.is_empty() && value.len() <= MAX_FIELD_BYTES && !value.chars().any(char::is_control)
 }
 
 #[cfg(test)]
