@@ -13,8 +13,8 @@ exclude = [".*", "*.local.*"]
 [dependencies]
 coqui-access.workspace = true
 coqui-access-kit = { workspace = true, features = ["cache"] }
-# The client TLS configuration for a directory with its own CA: TLS 1.2 and 1.3.
-coqui-peer-tls = { workspace = true, features = ["tls12"] }
+# The client TLS configuration for a directory with its own CA, under its default policy.
+coqui-peer-tls.workspace = true
 ldap3.workspace = true
 rustls.workspace = true
 

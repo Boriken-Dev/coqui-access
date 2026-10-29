@@ -38,9 +38,11 @@ Regenerate the kind description after a deliberate contract change:
   and comes after every required one; the contract test names a break.
 - Providers depend on `coqui-access`, `coqui-access-kit` and at most `coqui-peer-tls`,
   `coqui-peer` and `coqui-net-acl`; never on a host or on each other. Code two providers share belongs in a crate under `crates/`.
-- `coqui-peer-tls` is pinned to an exact crates.io version (`=0.0.0-alpha.0`) in
-  `[workspace.dependencies]`. A change it needs that is not published yet pins a commit of
-  that repository's `main` by git revision, never a branch, until it is released.
+- `coqui-peer-tls` is pinned to an exact version (`=0.0.0-alpha.1`) in
+  `[workspace.dependencies]`, and `coqui-peer` and `coqui-net-acl` at what it depends on, so a
+  build has one of each. A version not published yet resolves through a local
+  `[patch.crates-io]` that is never committed; a published change it needs pins a commit of
+  that repository's `main` by git revision, never a branch.
 - The shared libraries are code first: builders over `coqui_access_kit::Table`, records and
   configuration with guatiao derives, no `from_toml`/`from_json`, no format crate in a normal
   dependency under any feature (a dev-dependency for tests is fine), nothing read from a file

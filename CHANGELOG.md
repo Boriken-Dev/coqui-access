@@ -50,8 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   SHA-256) picks the algorithm for new keys, and one table may hold both. The key prefix is
   configurable (default `ck_`).
 - `coqui-access-peer`: verifies peers through
-  [`coqui-peer-tls`](https://crates.io/crates/coqui-peer-tls) `=0.0.0-alpha.0` from
-  crates.io. Fingerprints in its records are `PeerId`s, written canonical and read in any
+  [`coqui-peer-tls`](https://crates.io/crates/coqui-peer-tls) `=0.0.0-alpha.1`. Fingerprints in its records are `PeerId`s, written canonical and read in any
   spelling. Its waiting list is coqui-peer's `WaitingQueue` over a table, under
   `WaitingLimits` (default one place per source, an IPv6 source being its /64; 16 in all; a
   newcomer past them waits unrecorded; one rerecord a minute).
@@ -103,8 +102,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   configuration. `coqui-access-ldap` caches its lookups by default (`cache` in its
   configuration).
 - `coqui-access-ldap`: a `ca_file` builds its client TLS configuration with `coqui-peer-tls`
-  under `Policy::compatible()` (TLS 1.2 with extended master secret, and 1.3); `weakened()`
-  reports what that allows past strict.
+  under its default policy (TLS 1.2 with extended master secret, and 1.3); `weakened()`
+  reports anything past that default.
 - `coqui-access-proxy`: trusted proxies are `coqui-net-acl` networks, so an IPv4-mapped
   network trusts the IPv4 addresses it maps; `any` is refused.
 - `coqui-roles`: a first-match role authorizer with configurable scope kinds, built with

@@ -128,9 +128,9 @@ impl LdapAccounts {
         })
     }
 
-    /// What the TLS configuration for `ca_file` allows beyond the strict policy, as data for
-    /// the host to act on: TLS 1.2 beside 1.3. Empty without a `ca_file`, where ldap3's own
-    /// rustls defaults apply.
+    /// What the TLS configuration for `ca_file` allows beyond coqui-peer-tls's default policy
+    /// (TLS 1.2 and 1.3), as data for the host to act on. Empty without a `ca_file`, where
+    /// ldap3's own rustls defaults apply.
     pub fn weakened(&self) -> &[Weakening] {
         &self.directory.inner().weakened
     }
@@ -199,7 +199,7 @@ impl Ldap {
                 let built = client_config_without_identity_with(
                     &Trust::Roots(Roots::bundle_file(file)),
                     &[],
-                    &Policy::compatible(),
+                    &Policy::default(),
                 )
                 .map_err(|reason| format!("ca_file {file}: {reason}"))?;
                 (Some(Arc::new(built.config)), built.weakened)
@@ -425,7 +425,7 @@ mod tests {
     }
 
     #[test]
-    fn a_ca_file_trusts_its_roots_under_the_compatible_policy_and_says_so() {
+    fn a_ca_file_trusts_its_roots_under_the_default_policy() {
         let directory = tempfile::tempdir().unwrap();
         let ca = rcgen::generate_simple_self_signed(["directory.example.org".to_owned()]).unwrap();
         let file = directory.path().join("ca.pem");
@@ -434,7 +434,10 @@ mod tests {
         trusting.ca_file = Some(file.to_str().unwrap().to_owned());
         let accounts = LdapAccounts::new(trusting).unwrap();
         assert!(accounts.directory.inner().trusted.is_some());
-        assert!(!accounts.weakened().is_empty(), "TLS 1.2 is reported");
+        assert!(
+            accounts.weakened().is_empty(),
+            "the default policy weakens nothing"
+        );
         assert!(
             LdapAccounts::new(config("ldaps://directory.example.org"))
                 .unwrap()
