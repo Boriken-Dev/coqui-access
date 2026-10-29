@@ -12,3 +12,4 @@ exclude = [".*", "*.local.*"]
 
 [dependencies]
 coqui-access.workspace = true
+coqui-net-acl.workspace = true

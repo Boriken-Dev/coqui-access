@@ -18,6 +18,8 @@ publish = false
 [workspace.dependencies]
 coqui-access = { path = "crates/coqui-access" }
 coqui-access-kit = { path = "crates/coqui-access-kit" }
+# Address and network lists, at the version coqui-peer-tls depends on, so a build has one.
+coqui-net-acl = "=0.0.0-alpha.0"
 coqui-peer-tls = "=0.0.0-alpha.0"
 coqui-roles = { path = "crates/coqui-roles" }
 

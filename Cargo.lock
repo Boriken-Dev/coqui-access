@@ -265,6 +265,7 @@ name = "coqui-access-proxy"
 version = "0.1.0"
 dependencies = [
  "coqui-access",
+ "coqui-net-acl",
 ]
 
 [[package]]
@@ -292,6 +293,12 @@ dependencies = [
  "coqui-access",
  "coqui-access-system",
 ]
+
+[[package]]
+name = "coqui-net-acl"
+version = "0.0.0-alpha.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d116efeb3a87b3e4f9c9c00dc93124d1c1c212c05c49f86c616c0fc8a3ff305e"
 
 [[package]]
 name = "coqui-peer"
