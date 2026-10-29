@@ -6,9 +6,9 @@ ships inside the package and is self-contained. Development documentation lives 
 source at <https://github.com/Boriken-Dev/coqui-access>.
 
 MSRV Rust 1.89. No Cargo features. Depends on `coqui-access`, `coqui-access-kit` (feature
-`cache`, for lookups), `coqui-peer-tls` (feature `tls12`,
-for the `ca_file` client configuration), `ldap3` (sync, rustls with ring) and `rustls`. No `unsafe` code. The loadable library is the separate crate
-`coqui-access-ldap-plugin`.
+`cache`, for lookups), `coqui-peer-tls` (feature `tls12`, for the `ca_file` client
+configuration), `ldap3` (sync, rustls with ring) and `rustls`. No `unsafe` code. The loadable
+library is the separate crate `coqui-access-ldap-plugin`.
 
 ```rust
 pub struct LdapAccountsConfig {
