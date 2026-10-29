@@ -181,7 +181,10 @@ mod tests {
             ("subject.cn", &["Alice"]),
         ]);
         let cn = Pick::new("subject.cn", "name");
-        assert_eq!(pick(&map, std::slice::from_ref(&cn)), found("name", "Alice"));
+        assert_eq!(
+            pick(&map, std::slice::from_ref(&cn)),
+            found("name", "Alice")
+        );
         assert_eq!(
             pick(&map, &[Pick::new("san.email", "email"), cn.clone()]),
             Picked::Ambiguous
@@ -217,11 +220,17 @@ mod tests {
         let both = fields(&[("san.ip", &["10.0.0.9"]), ("san.dns.ip", &["10.0.0.9"])]);
         let differ = fields(&[("san.ip", &["10.0.0.9"]), ("san.dns.ip", &["10.0.0.8"])]);
         for map in [&dns_only, &ip_only, &both] {
-            assert_eq!(pick(map, std::slice::from_ref(&ip)), found("address", "10.0.0.9"));
+            assert_eq!(
+                pick(map, std::slice::from_ref(&ip)),
+                found("address", "10.0.0.9")
+            );
         }
         assert_eq!(pick(&differ, std::slice::from_ref(&ip)), Picked::Ambiguous);
         let strict = ip.ip_in_dns(false);
-        assert_eq!(pick(&dns_only, std::slice::from_ref(&strict)), Picked::Absent);
+        assert_eq!(
+            pick(&dns_only, std::slice::from_ref(&strict)),
+            Picked::Absent
+        );
         assert_eq!(pick(&differ, &[strict]), found("address", "10.0.0.9"));
     }
 

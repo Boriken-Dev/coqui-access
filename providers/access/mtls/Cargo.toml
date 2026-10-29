@@ -1,5 +1,5 @@
 [package]
-name = "coqui-access-peer"
+name = "coqui-access-mtls"
 description = "Map verified peer certificate fingerprints to directory identities, with account management"
 readme = "README.md"
 version.workspace = true
@@ -14,8 +14,10 @@ exclude = [".*", "*.local.*"]
 coqui-access.workspace = true
 coqui-access-kit.workspace = true
 coqui-peer.workspace = true
-coqui-peer-tls.workspace = true
+coqui-peer-tls = { workspace = true, features = ["ca"] }
 
 
 [dev-dependencies]
-coqui-peer-tls = { workspace = true, features = ["generate"] }
+coqui-peer-tls = { workspace = true, features = ["ca", "generate"] }
+rcgen.workspace = true
+tempfile.workspace = true

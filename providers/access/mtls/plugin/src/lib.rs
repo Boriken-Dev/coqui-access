@@ -1,4 +1,4 @@
-//! `coqui-access-peer` as a library a host loads: the Guatiao entry point and the config that
+//! `coqui-access-mtls` as a library a host loads: the Guatiao entry point and the config that
 //! builds the provider.
 //!
 //! The config names where peers come from in `source`, a file in `toml` or `json`:
@@ -6,19 +6,28 @@
 //! ```json
 //! { "source": { "file": { "path": "peers.toml", "format": "toml" } },
 //!   "waiting": { "file": { "path": "peers.toml.waiting", "format": "toml" } },
-//!   "max_peers": 10000,
+//!   "max_records": 10000,
 //!   "waiting_per_source": 1, "waiting_total": 16, "waiting_rerecord_secs": 60 }
 //! ```
 //!
 //! Every key is optional. With no `source` the peers live in memory. `waiting`, where the
 //! fingerprints nobody accepted are kept, defaults to a file beside a file source
 //! (`<path>.waiting`) and to memory otherwise.
+//!
+//! Certificates a CA signed are trusted with `"trust": "ca"` or `"pinned-or-ca"`, a `ca_file`
+//! and optional `subject` and `san` globs; `account` picks the field that names the account:
+//!
+//! ```json
+//! { "trust": "ca", "ca_file": "clients-ca.pem", "san": ["email:*@example.org"],
+//!   "account": [ { "field": "san.email", "by": "email" } ] }
+//! ```
 
 mod format;
 
 use std::sync::Arc;
 use std::time::Duration;
 
+use coqui_access::Limit;
 use coqui_access::guatiao::library::ProviderError;
 use coqui_access::guatiao::{FromValue, FromWalk, Provider, Schema, ToValue, Walk};
 use coqui_access::{
@@ -26,23 +35,28 @@ use coqui_access::{
     Person, PutOutcome, Verdict, Waiting,
 };
 use coqui_access_kit::file::Source;
+use coqui_access_kit::pick::Pick;
 use coqui_access_kit::{Keyed, MemoryTable, RecordLimits, Table};
-use coqui_access_peer::{DEFAULT_MAX_PEERS, DEFAULT_WAITING_LIMITS, PeerRecord, Peers, Unaccepted};
+use coqui_access_mtls::{
+    DEFAULT_MAX_CHAIN, DEFAULT_MAX_RECORDS, DEFAULT_WAITING_LIMITS, MtlsAccounts, PeerRecord,
+    TrustMode, Unaccepted, default_account,
+};
 use coqui_peer::WaitingLimits;
+use coqui_peer_tls::CaPolicy;
 
 pub use format::Format;
 
 /// Guatiao configuration for the verified peer provider.
 #[derive(Debug, Clone, FromValue, Schema, ToValue)]
 #[map(crate = ::coqui_access::guatiao)]
-pub struct PeersConfig {
+pub struct MtlsAccountsConfig {
     /// Where the accepted peers are kept; memory when absent.
     pub source: Option<Source<Format>>,
     /// Where the fingerprints waiting to be accepted are kept.
     pub waiting: Option<Source<Format>>,
     /// The most peers the table may hold.
-    #[map(default = DEFAULT_MAX_PEERS as u32)]
-    pub max_peers: u32,
+    #[map(default = DEFAULT_MAX_RECORDS as u32)]
+    pub max_records: u32,
     /// How large a record's fields may be: `groups`, `field_bytes`, `email_bytes`,
     /// `display_name_bytes`, each a number or `null` for no bound.
     #[map(default)]
@@ -56,9 +70,32 @@ pub struct PeersConfig {
     /// Seconds before one fingerprint from one source is written down again.
     #[map(default = DEFAULT_WAITING_LIMITS.rerecord.as_secs())]
     pub waiting_rerecord_secs: u64,
+    /// How a certificate is trusted: `pinned` (a record of the table), `ca`, or
+    /// `pinned-or-ca`.
+    #[map(default)]
+    pub trust: TrustMode,
+    /// The PEM file of CA certificates `ca` and `pinned-or-ca` trust.
+    pub ca_file: Option<String>,
+    /// Globs the certificate's subject must match; empty matches any.
+    #[map(default)]
+    pub subject: Vec<String>,
+    /// Globs one of its subject alternative names must match (`dns:`, `ip:`, `email:`,
+    /// `uri:`, `upn:` limit one to a kind); empty matches any.
+    #[map(default)]
+    pub san: Vec<String>,
+    /// Whether an IP address written as a DNS name matches an `ip:` glob. Default `true`.
+    #[map(default = true)]
+    pub ip_in_dns: bool,
+    /// How a CA-trusted certificate names its account: picks tried in order. Default its
+    /// `fingerprint`, by `certificate`.
+    #[map(default = default_account())]
+    pub account: Vec<Pick>,
+    /// The most certificates a client may send, leaf included; `null` for no bound.
+    #[map(default = DEFAULT_MAX_CHAIN)]
+    pub max_chain: Limit,
 }
 
-impl Default for PeersConfig {
+impl Default for MtlsAccountsConfig {
     /// What an empty configuration reads as: every default the schema declares.
     fn default() -> Self {
         Self::from_value(&coqui_access::guatiao::Map::new().into())
@@ -88,34 +125,45 @@ where
     Authenticator,
     Directory,
     Accounts,
-    id = "coqui_access_peer",
-    name = "Verified peers",
-    config = PeersConfig,
+    id = "coqui_access_mtls",
+    name = "Client certificates",
+    config = MtlsAccountsConfig,
     crate = ::coqui_access::guatiao
 )]
-pub struct PeersProvider(Peers);
+pub struct MtlsAccountsProvider(MtlsAccounts);
 
-impl TryFrom<PeersConfig> for PeersProvider {
+impl TryFrom<MtlsAccountsConfig> for MtlsAccountsProvider {
     type Error = ProviderError;
 
-    fn try_from(config: PeersConfig) -> Result<Self, Self::Error> {
+    fn try_from(config: MtlsAccountsConfig) -> Result<Self, Self::Error> {
         let waiting_source = config.waiting.clone().or_else(|| {
             config
                 .source
                 .as_ref()
                 .map(|source| source.sibling("waiting"))
         });
-        let mut builder = Peers::builder()
+        let mut builder = MtlsAccounts::builder()
             .table(open::<PeerRecord>(config.source.as_ref(), "peers")?)
             .waiting(open::<Unaccepted>(waiting_source.as_ref(), "waiting")?);
         builder = builder
-            .max_peers(config.max_peers as usize)
+            .max_records(config.max_records as usize)
             .record_limits(config.record_limits);
         builder = builder.waiting_limits(WaitingLimits {
             per_source: config.waiting_per_source as usize,
             total: config.waiting_total as usize,
             rerecord: Duration::from_secs(config.waiting_rerecord_secs),
         });
+        builder = builder
+            .trust(config.trust)
+            .account(config.account)
+            .max_chain(config.max_chain);
+        if let Some(file) = config.ca_file {
+            let mut ca = CaPolicy::new(file);
+            ca.subject = config.subject;
+            ca.san = config.san;
+            ca.ip_in_dns = config.ip_in_dns;
+            builder = builder.ca(ca);
+        }
         builder
             .build()
             .map(Self)
@@ -123,7 +171,7 @@ impl TryFrom<PeersConfig> for PeersProvider {
     }
 }
 
-impl Authenticator for PeersProvider {
+impl Authenticator for MtlsAccountsProvider {
     fn authenticate(&self, attempt: Attempt) -> Result<Verdict, ProviderError> {
         self.0.authenticate(attempt)
     }
@@ -133,7 +181,7 @@ impl Authenticator for PeersProvider {
     }
 }
 
-impl Directory for PeersProvider {
+impl Directory for MtlsAccountsProvider {
     fn lookup(&self, lookup: Lookup) -> Result<Option<Person>, ProviderError> {
         self.0.lookup(lookup)
     }
@@ -143,7 +191,7 @@ impl Directory for PeersProvider {
     }
 }
 
-impl Accounts for PeersProvider {
+impl Accounts for MtlsAccountsProvider {
     fn accounts(&self) -> Result<Vec<AccountInfo>, ProviderError> {
         self.0.accounts()
     }
@@ -161,7 +209,7 @@ impl Accounts for PeersProvider {
     }
 }
 
-coqui_access::guatiao::providers!(PeersProvider);
+coqui_access::guatiao::providers!(MtlsAccountsProvider);
 
 #[cfg(test)]
 mod tests {
@@ -169,10 +217,10 @@ mod tests {
 
     use super::*;
 
-    fn config(path: &std::path::Path) -> PeersConfig {
-        PeersConfig {
+    fn config(path: &std::path::Path) -> MtlsAccountsConfig {
+        MtlsAccountsConfig {
             source: Some(Source::file(path.to_str().unwrap(), Format::Toml)),
-            ..PeersConfig::default()
+            ..MtlsAccountsConfig::default()
         }
     }
 
@@ -188,7 +236,7 @@ mod tests {
     fn a_file_source_keeps_peers_and_the_waiting_list_beside_it() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("peers.toml");
-        let provider = PeersProvider::try_from(config(&path)).unwrap();
+        let provider = MtlsAccountsProvider::try_from(config(&path)).unwrap();
         let certificate = Identity::generate().unwrap().fingerprint();
         let text = certificate.to_string();
         assert_eq!(
@@ -217,7 +265,7 @@ mod tests {
                 .unwrap()
                 .contains("[[peers]]")
         );
-        let other = PeersProvider::try_from(config(&path)).unwrap();
+        let other = MtlsAccountsProvider::try_from(config(&path)).unwrap();
         assert!(matches!(
             other.authenticate(shown(&text)).unwrap(),
             Verdict::Valid(_)
@@ -236,7 +284,7 @@ mod tests {
             ),
         )
         .unwrap();
-        let provider = PeersProvider::try_from(config(&path)).unwrap();
+        let provider = MtlsAccountsProvider::try_from(config(&path)).unwrap();
         assert!(matches!(
             provider.authenticate(shown(&certificate)).unwrap(),
             Verdict::Valid(_)
@@ -246,7 +294,7 @@ mod tests {
             "[[peers]]\nid='service-1'\nname='site-a'\ncertificate='bad'\n",
         )
         .unwrap();
-        assert!(PeersProvider::try_from(config(&path)).is_err());
+        assert!(MtlsAccountsProvider::try_from(config(&path)).is_err());
     }
 
     #[test]
@@ -254,7 +302,7 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("peers.toml");
         let apart = directory.path().join("seen.toml");
-        let provider = PeersProvider::try_from(PeersConfig {
+        let provider = MtlsAccountsProvider::try_from(MtlsAccountsConfig {
             waiting: Some(Source::file(apart.to_str().unwrap(), Format::Toml)),
             ..config(&path)
         })
@@ -264,7 +312,7 @@ mod tests {
         assert!(apart.exists());
         assert!(!directory.path().join("peers.toml.waiting").exists());
         // No source at all: both in memory.
-        let memory = PeersProvider::try_from(PeersConfig::default()).unwrap();
+        let memory = MtlsAccountsProvider::try_from(MtlsAccountsConfig::default()).unwrap();
         memory.authenticate(shown(&text)).unwrap();
         assert_eq!(memory.waiting().unwrap().len(), 1);
     }
@@ -288,7 +336,8 @@ mod tests {
 
     #[test]
     fn the_waiting_limits_default_in_the_schema_and_when_read() {
-        let read = PeersConfig::from_value(&coqui_access::guatiao::Map::new().into()).unwrap();
+        let read =
+            MtlsAccountsConfig::from_value(&coqui_access::guatiao::Map::new().into()).unwrap();
         assert_eq!(
             (
                 read.waiting_per_source,
@@ -297,14 +346,14 @@ mod tests {
             ),
             (1, 16, 60)
         );
-        let defaults = PeersConfig::default();
+        let defaults = MtlsAccountsConfig::default();
         assert_eq!(read.waiting_total, defaults.waiting_total);
-        let schema = PeersConfig::schema().unwrap();
+        let schema = MtlsAccountsConfig::schema().unwrap();
         for (field, expected) in [
             ("waiting_per_source", 1),
             ("waiting_total", 16),
             ("waiting_rerecord_secs", 60),
-            ("max_peers", 10_000),
+            ("max_records", 10_000),
         ] {
             assert_eq!(default_in(&schema, field), Some(expected), "{field}");
         }
@@ -316,14 +365,28 @@ mod tests {
         limits.set("field_bytes", 40u32);
         let mut config = coqui_access::guatiao::Map::new();
         config.set("record_limits", limits);
-        let read = PeersConfig::from_value(&config.into()).unwrap();
+        let read = MtlsAccountsConfig::from_value(&config.into()).unwrap();
         assert_eq!(read.record_limits.field_bytes, coqui_access::Limit::at(40));
         assert_eq!(read.record_limits.groups, coqui_access::Limit::at(256));
-        let provider = PeersProvider::try_from(read).unwrap();
+        let provider = MtlsAccountsProvider::try_from(read).unwrap();
         assert!(
             provider.put(fingerprinted(&"x".repeat(41))).is_err(),
             "a name past field_bytes"
         );
         assert!(provider.put(fingerprinted("abc")).is_ok());
+    }
+
+    #[test]
+    fn a_ca_trust_reads_from_configuration_and_needs_its_file() {
+        let empty = MtlsAccountsConfig::default();
+        assert_eq!(empty.trust, TrustMode::Pinned);
+        assert_eq!(empty.account, default_account());
+        assert_eq!(empty.max_chain, DEFAULT_MAX_CHAIN);
+        assert!(empty.ip_in_dns);
+        let mut config = coqui_access::guatiao::Map::new();
+        config.set("trust", "pinned-or-ca");
+        let read = MtlsAccountsConfig::from_value(&config.into()).unwrap();
+        assert_eq!(read.trust, TrustMode::PinnedOrCa);
+        assert!(MtlsAccountsProvider::try_from(read).is_err(), "no ca_file");
     }
 }
