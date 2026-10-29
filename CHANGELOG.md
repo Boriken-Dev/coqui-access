@@ -79,6 +79,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   accounts. Building on Unix links the system `libpam`.
 - `coqui-roles`: a first-match role authorizer with configurable scope kinds, built with
   `RoleAuthorizer::builder()` or `RoleAuthorizer::new(RolePolicy)`. `RolePolicy`, `Role` and
-  `Rule` are plain data with serde behind a `serde` feature; the role, action, rule and
-  scope-kind bounds are public constants. `coqui-roles-plugin` is its provider, configured
-  with structured `scope_kinds`, `roles` and `rules`.
+  `Rule` are plain data with guatiao's value traits; the role, action, rule and scope-kind
+  bounds are public constants. `RoleAuthorizer` is the `coqui_roles` provider, configured with
+  a `RolePolicy` (`scope_kinds`, `roles`, `rules`); `coqui-roles-plugin` exports it.

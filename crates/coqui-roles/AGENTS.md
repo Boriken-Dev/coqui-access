@@ -5,10 +5,10 @@ signature, contract and gotchas, so the crate can be used without reading its so
 ships inside the package and is self-contained. Development documentation lives with the
 source at <https://github.com/Boriken-Dev/coqui-access>.
 
-MSRV Rust 1.89. Feature `serde` (off by default): `Serialize`/`Deserialize` on the policy
-types. Depends on `coqui-access` (and `serde` when enabled). No format crate, no `unsafe` code.
-Everything is at the crate root. `coqui-roles-plugin` (a `cdylib`) is the Guatiao provider
-`coqui_roles`.
+MSRV Rust 1.89. No Cargo features. Depends on `coqui-access` only: no format crate, no `unsafe`
+code. Everything is at the crate root. `RoleAuthorizer` is the Guatiao provider `coqui_roles`
+(`#[derive(Provider)]`, configured with `RolePolicy`); `coqui-roles-plugin` (a `cdylib`) is its
+one `providers!` line.
 
 ## RoleAuthorizer
 
@@ -21,6 +21,8 @@ pub struct Rule { pub subject: String, pub scope: String, pub role: String }   /
 impl Rule { pub fn new(subject: impl Into<String>, scope: impl Into<String>, role: impl Into<String>) -> Self; }
 pub struct RolePolicy { pub scope_kinds: Vec<String>, pub roles: Vec<Role>, pub rules: Vec<Rule> }
                                                 // non_exhaustive, Default; RolePolicy::new()
+// Role, Rule and RolePolicy derive FromValue, ToValue, Schema (deny_unknown_fields; the
+// policy's three lists default to empty).
 pub struct RoleAuthorizerBuilder;               // Clone, Default
 impl RoleAuthorizerBuilder {
     pub fn scope_kinds(self, kinds: impl IntoIterator<Item = impl Into<String>>) -> Self;
@@ -34,7 +36,9 @@ impl RoleAuthorizer {
     pub fn new(policy: RolePolicy) -> Result<Self, RolePolicyError>;
 }
 impl Authorizer for RoleAuthorizer { /* authorize */ }
+impl TryFrom<RolePolicy> for RoleAuthorizer { type Error = RolePolicyError; }   // = new
 pub struct RolePolicyError;                     // Display, Error
+impl From<RolePolicyError> for ProviderError;   // GUATIAO_ERR_BAD_VALUE
 ```
 
 - `subject` is `account:<name>` | `person:<id>` | `group:<name>`, read as `coqui_access::Subject`
@@ -50,10 +54,12 @@ pub struct RolePolicyError;                     // Display, Error
 - `build`/`new` refuse: more than the bounds above, a role with no actions, a repeated role or
   action, a malformed subject or scope, a scope kind not allowed, an unknown role in a rule.
   Names are 1 to 256 characters without whitespace or control characters.
-- `RolePolicy` with the `serde` feature denies unknown fields.
+- Reading a `Role`, `Rule` or `RolePolicy` refuses a key it does not declare.
 
-## Provider (`coqui-roles-plugin`)
+## Provider (`coqui_roles`)
 
-Provider id `coqui_roles`, kind `Authorizer`. Config: `scope_kinds: [string]`,
+`RoleAuthorizer` derives `Provider`: id `coqui_roles`, name `Role authorizer`, kind
+`Authorizer`, config `RolePolicy`, built with `TryFrom`. `coqui-roles-plugin` exports it.
+Config: `scope_kinds: [string]`,
 `roles: [{ name, actions: [string] }]`, `rules: [{ subject, scope, role }]`, all optional
 (default: deny everything). An invalid policy is `GUATIAO_ERR_BAD_VALUE` at build time.

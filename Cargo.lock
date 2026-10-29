@@ -323,8 +323,6 @@ name = "coqui-roles"
 version = "0.1.0"
 dependencies = [
  "coqui-access",
- "serde",
- "toml",
 ]
 
 [[package]]
