@@ -5,12 +5,12 @@ signature, contract and gotchas, so the crate can be used without reading its so
 ships inside the package and is self-contained. Development documentation lives with the
 source at <https://github.com/Boriken-Dev/coqui-access>.
 
-MSRV Rust 1.89. No Cargo features. Depends on `coqui-access` only. No `unsafe` code. The
+MSRV Rust 1.89. No Cargo features. Depends on `coqui-access` and `coqui-net-acl` (address lists). No `unsafe` code. The
 loadable library is the separate crate `coqui-access-proxy-plugin`.
 
 ```rust
 pub struct ProxyWordConfig {
-    pub trusted: Vec<String>,            // addresses and CIDR networks; empty trusts nobody
+    pub trusted: Vec<String>,            // addresses and CIDR networks (coqui-net-acl IpNet); empty trusts nobody; `any` refused
     pub user_header: Option<String>,     // account name header
     pub subject_header: Option<String>,  // client-certificate subject header
     pub subject_field: String,           // default "CN" when empty
@@ -29,5 +29,7 @@ pub fn field_of(subject: &str, field: &str) -> Option<String>;
   `subject_header`. A header present more than once, in any case, is `Invalid`. No usable
   identity is `Unknown`; otherwise `Lookup { by: "name", value: name }` for the configured
   directory. Header names match case-insensitively over the ordered `headers` pairs.
-- IPv4-mapped IPv6 peers match IPv4 networks. Groups are never read from headers.
+- IPv4-mapped IPv6 peers match IPv4 networks, and a mapped network (`::ffff:10.0.0.0/120`)
+  is the IPv4 network it maps (`10.0.0.0/24`). `any` is refused: trusting every address is
+  not a reverse proxy. Groups are never read from headers.
 - `field_of` honours escaped commas and also reads slash-separated subjects.

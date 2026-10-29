@@ -9,6 +9,7 @@ use std::net::{IpAddr, SocketAddr};
 use coqui_access::guatiao::library::ProviderError;
 use coqui_access::guatiao::{FromValue, Provider, Schema, ToValue};
 use coqui_access::{Attempt, Authenticator, Lookup, Verdict};
+use coqui_net_acl::IpNet;
 
 /// Reverse-proxy trust and identity-header configuration.
 #[derive(Debug, Clone, FromValue, Schema, ToValue)]
@@ -25,62 +26,6 @@ pub struct ProxyWordConfig {
     pub subject_field: String,
 }
 
-#[derive(Debug, Clone, Copy)]
-enum Network {
-    V4(u32, u8),
-    V6(u128, u8),
-}
-
-impl Network {
-    fn parse(value: &str) -> Result<Self, String> {
-        let (address, prefix) = match value.split_once('/') {
-            Some((address, prefix)) => {
-                let prefix = prefix.parse::<u8>().map_err(|_| value.to_owned())?;
-                (address, Some(prefix))
-            }
-            None => (value, None),
-        };
-        let address = address.parse::<IpAddr>().map_err(|_| value.to_owned())?;
-        match address {
-            IpAddr::V4(address) => {
-                let prefix = prefix.unwrap_or(32);
-                if prefix > 32 {
-                    return Err(value.to_owned());
-                }
-                Ok(Self::V4(u32::from(address), prefix))
-            }
-            IpAddr::V6(address) => {
-                let prefix = prefix.unwrap_or(128);
-                if prefix > 128 {
-                    return Err(value.to_owned());
-                }
-                Ok(Self::V6(u128::from(address), prefix))
-            }
-        }
-    }
-
-    fn contains(self, address: IpAddr) -> bool {
-        let address = match address {
-            IpAddr::V6(address) => address
-                .to_ipv4_mapped()
-                .map(IpAddr::V4)
-                .unwrap_or(IpAddr::V6(address)),
-            address => address,
-        };
-        match (self, address) {
-            (Self::V4(network, prefix), IpAddr::V4(address)) => {
-                let mask = u32::MAX.checked_shl(u32::from(32 - prefix)).unwrap_or(0);
-                (network & mask) == (u32::from(address) & mask)
-            }
-            (Self::V6(network, prefix), IpAddr::V6(address)) => {
-                let mask = u128::MAX.checked_shl(u32::from(128 - prefix)).unwrap_or(0);
-                (network & mask) == (u128::from(address) & mask)
-            }
-            _ => false,
-        }
-    }
-}
-
 /// A reverse proxy's identity headers as an Authenticator.
 #[derive(Debug, Provider)]
 #[provider(
@@ -91,7 +36,7 @@ impl Network {
     crate = ::coqui_access::guatiao
 )]
 pub struct ProxyWord {
-    trusted: Vec<Network>,
+    trusted: Vec<IpNet>,
     user_header: Option<String>,
     subject_header: Option<String>,
     subject_field: String,
@@ -103,7 +48,11 @@ impl ProxyWord {
         let trusted = config
             .trusted
             .iter()
-            .map(|network| Network::parse(network))
+            .map(|network| match network.parse::<IpNet>() {
+                // Trusting every address is not a reverse proxy.
+                Ok(IpNet::Any) | Err(_) => Err(network.clone()),
+                Ok(network) => Ok(network),
+            })
             .collect::<Result<Vec<_>, _>>()?;
         let header = |value: Option<String>| {
             value
@@ -311,8 +260,40 @@ mod tests {
 
     #[test]
     fn rejects_invalid_networks_and_reads_slash_subjects() {
-        assert!(Network::parse("10.0.0.0/33").is_err());
+        let trusting = |entries: &[&str]| {
+            ProxyWord::try_from(ProxyWordConfig {
+                trusted: entries.iter().map(|entry| (*entry).to_owned()).collect(),
+                user_header: None,
+                subject_header: None,
+                subject_field: String::new(),
+            })
+        };
+        assert!(trusting(&["10.0.0.0/33"]).is_err());
+        assert!(
+            trusting(&["any"]).is_err(),
+            "trusting every address is not a proxy"
+        );
+        assert!(trusting(&["10.0.0.0/8", "ANY"]).is_err());
         assert_eq!(field_of("/O=Ops/CN=Doe", "cn"), Some("Doe".to_owned()));
         assert_eq!(field_of("CN=,O=Ops", "CN"), None);
+    }
+
+    #[test]
+    fn an_ipv4_mapped_network_trusts_the_addresses_it_maps() {
+        let proxy = ProxyWord::new(ProxyWordConfig {
+            trusted: vec!["::ffff:10.0.0.0/120".to_owned()],
+            user_header: None,
+            subject_header: None,
+            subject_field: String::new(),
+        })
+        .unwrap();
+        let from = |peer: &str| {
+            proxy
+                .authenticate(attempt(Some(peer), &[("x-remote-user", "alice")]))
+                .unwrap()
+        };
+        assert!(matches!(from("10.0.0.9:443"), Verdict::Valid(_)));
+        assert!(matches!(from("[::ffff:10.0.0.9]:443"), Verdict::Valid(_)));
+        assert_eq!(from("10.0.1.9:443"), Verdict::Unknown);
     }
 }
