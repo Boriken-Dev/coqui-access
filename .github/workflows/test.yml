@@ -58,3 +58,70 @@ jobs:
       - run: cargo doc --workspace --no-deps --all-features
         env:
           RUSTDOCFLAGS: -D warnings
+
+  # The ignored real sign-in tests of coqui-access-system, against a throwaway account the job
+  # makes and removes. Hosted runners are administrators (Windows) or have sudo (Linux).
+  system-login:
+    name: System sign-in (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, windows-11-arm]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update && sudo apt-get install -y libpam0g-dev
+        if: runner.os == 'Linux'
+      - name: Make a throwaway account (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $password = 'Cq1!' + [guid]::NewGuid().ToString('N')
+          Write-Output "::add-mask::$password"
+          net user coquitest $password /add | Out-Null
+          net localgroup coquitestgroup /add | Out-Null
+          net localgroup coquitestgroup coquitest /add | Out-Null
+          "COQUI_ACCESS_TEST_SYSTEM_USER=coquitest" >> $env:GITHUB_ENV
+          "COQUI_ACCESS_TEST_SYSTEM_PASSWORD=$password" >> $env:GITHUB_ENV
+          "COQUI_ACCESS_TEST_SYSTEM_GROUP=coquitestgroup" >> $env:GITHUB_ENV
+      - name: Sign in (Windows)
+        if: runner.os == 'Windows'
+        run: cargo test -p coqui-access-system --test real_login -- --include-ignored
+      - name: Make a throwaway account (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          password="Cq1!$(openssl rand -hex 16)"
+          echo "::add-mask::$password"
+          sudo groupadd coquitestgroup
+          sudo useradd -M -G coquitestgroup coquitest
+          echo "coquitest:$password" | sudo chpasswd
+          printf '@include common-auth\n@include common-account\n' | sudo tee /etc/pam.d/coqui-access >/dev/null
+          {
+            echo "COQUI_ACCESS_TEST_SYSTEM_USER=coquitest"
+            echo "COQUI_ACCESS_TEST_SYSTEM_PASSWORD=$password"
+            echo "COQUI_ACCESS_TEST_SYSTEM_GROUP=coquitestgroup"
+          } >> "$GITHUB_ENV"
+      # pam_unix checks another account's password only as root, so the built test runs under sudo.
+      - name: Sign in (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          binary="$(cargo test -p coqui-access-system --test real_login --no-run --message-format=json \
+            | jq -r 'select(.profile.test == true and .target.name == "real_login") | .executable')"
+          sudo --preserve-env=COQUI_ACCESS_TEST_SYSTEM_USER,COQUI_ACCESS_TEST_SYSTEM_PASSWORD,COQUI_ACCESS_TEST_SYSTEM_GROUP \
+            "$binary" --include-ignored
+      - name: Remove the throwaway account (Windows)
+        if: always() && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          net user coquitest /delete 2>$null | Out-Null
+          net localgroup coquitestgroup /delete 2>$null | Out-Null
+      - name: Remove the throwaway account (Linux)
+        if: always() && runner.os == 'Linux'
+        run: |
+          sudo userdel coquitest || true
+          sudo groupdel coquitestgroup || true
+          sudo rm -f /etc/pam.d/coqui-access
