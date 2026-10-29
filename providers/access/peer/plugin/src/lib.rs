@@ -26,7 +26,7 @@ use coqui_access::{
     Person, PutOutcome, Verdict, Waiting,
 };
 use coqui_access_kit::file::Source;
-use coqui_access_kit::{Keyed, MemoryTable, Table};
+use coqui_access_kit::{Keyed, MemoryTable, RecordLimits, Table};
 use coqui_access_peer::{DEFAULT_MAX_PEERS, DEFAULT_WAITING_LIMITS, PeerRecord, Peers, Unaccepted};
 use coqui_peer::WaitingLimits;
 
@@ -43,6 +43,10 @@ pub struct PeersConfig {
     /// The most peers the table may hold.
     #[map(default = DEFAULT_MAX_PEERS as u32)]
     pub max_peers: u32,
+    /// How large a record's fields may be: `groups`, `field_bytes`, `email_bytes`,
+    /// `display_name_bytes`, each a number or `null` for no bound.
+    #[map(default)]
+    pub record_limits: RecordLimits,
     /// Waiting places per source: an IPv4 address, or an IPv6 /64.
     #[map(default = DEFAULT_WAITING_LIMITS.per_source as u32)]
     pub waiting_per_source: u32,
@@ -104,7 +108,9 @@ impl TryFrom<PeersConfig> for PeersProvider {
         let mut builder = Peers::builder()
             .table(open::<PeerRecord>(config.source.as_ref(), "peers")?)
             .waiting(open::<Unaccepted>(waiting_source.as_ref(), "waiting")?);
-        builder = builder.max_peers(config.max_peers as usize);
+        builder = builder
+            .max_peers(config.max_peers as usize)
+            .record_limits(config.record_limits);
         builder = builder.waiting_limits(WaitingLimits {
             per_source: config.waiting_per_source as usize,
             total: config.waiting_total as usize,
@@ -263,6 +269,14 @@ mod tests {
         assert_eq!(memory.waiting().unwrap().len(), 1);
     }
 
+    fn fingerprinted(name: &str) -> AccountPut {
+        AccountPut {
+            name: name.to_owned(),
+            secret: Some(Identity::generate().unwrap().fingerprint().to_string()),
+            ..AccountPut::default()
+        }
+    }
+
     /// The `default` a schema declares for one of its properties.
     fn default_in(schema: &coqui_access::guatiao::Value, field: &str) -> Option<u64> {
         use coqui_access::guatiao::Map;
@@ -294,5 +308,22 @@ mod tests {
         ] {
             assert_eq!(default_in(&schema, field), Some(expected), "{field}");
         }
+    }
+
+    #[test]
+    fn record_limits_read_from_configuration_and_bind_the_records() {
+        let mut limits = coqui_access::guatiao::Map::new();
+        limits.set("field_bytes", 40u32);
+        let mut config = coqui_access::guatiao::Map::new();
+        config.set("record_limits", limits);
+        let read = PeersConfig::from_value(&config.into()).unwrap();
+        assert_eq!(read.record_limits.field_bytes, coqui_access::Limit::at(40));
+        assert_eq!(read.record_limits.groups, coqui_access::Limit::at(256));
+        let provider = PeersProvider::try_from(read).unwrap();
+        assert!(
+            provider.put(fingerprinted(&"x".repeat(41))).is_err(),
+            "a name past field_bytes"
+        );
+        assert!(provider.put(fingerprinted("abc")).is_ok());
     }
 }

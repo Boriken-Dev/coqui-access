@@ -59,7 +59,7 @@ The loadable plugin (provider id `coqui_access_peer`) is configured with a `sour
 | Item | Purpose |
 | --- | --- |
 | `Peers` | The provider: `builder()` and the three kinds. |
-| `PeersBuilder` | Options: `table`, `waiting`, `max_peers`, `waiting_limits`; `build`. |
+| `PeersBuilder` | Options: `table`, `waiting`, `max_peers`, `waiting_limits`, `record_limits`; `build`. |
 | `PeerRecord`, `Unaccepted` | The records the two tables keep; guatiao value traits. |
 
 ## Development

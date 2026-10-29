@@ -61,14 +61,14 @@ table keeps it.
 
 The loadable plugin (provider id `coqui_access_password`) is configured with a `source`, for
 example `{ "source": { "file": { "path": "accounts.toml", "format": "toml" } } }` (`format` is
-`toml` or `json`), `max_accounts` and `argon2`; with no `source` the accounts live in memory.
+`toml` or `json`), `max_accounts`, `argon2`, `record_limits` and `max_password_bytes`; with no `source` the accounts live in memory.
 
 ## API overview
 
 | Item | Purpose |
 | --- | --- |
 | `PasswordAccounts` | The provider, and the `Authenticator`, `Directory` and `Accounts` kinds. `builder()` makes one. |
-| `PasswordAccountsBuilder` | Options: `table`, `max_accounts`, `argon2`; `build`. |
+| `PasswordAccountsBuilder` | Options: `table`, `max_accounts`, `argon2`, `record_limits`, `max_password_bytes`; `build`. |
 | `AccountRecord` | One account as a table keeps it; guatiao value traits. |
 | `DEFAULT_MAX_ACCOUNTS` | 10 000. |
 

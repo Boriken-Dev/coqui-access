@@ -65,7 +65,7 @@ with no `source` the keys live in memory.
 | Item | Purpose |
 | --- | --- |
 | `Keys` | The provider: `builder()`, `new_key`, and the three kinds. |
-| `KeysBuilder` | Options: `table`, `prefix`, `key_hash`, `max_keys`; `build`. |
+| `KeysBuilder` | Options: `table`, `prefix`, `key_hash`, `max_keys`, `record_limits`; `build`. |
 | `KeyRecord` | One key account as a table keeps it; guatiao value traits. |
 | `DEFAULT_PREFIX`, `DEFAULT_MAX_KEYS` | `"ck_"`, 10 000. |
 

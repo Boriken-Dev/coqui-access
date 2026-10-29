@@ -37,6 +37,25 @@ pub fn is_hash(value: &str) -> bool;
 - `same` compares in time independent of where the strings differ. `is_hash` checks the
   64-lowercase-hex shape.
 
+## Record limits (`coqui_access_kit::record`; `RecordLimits` re-exported at the root)
+
+```rust
+pub struct RecordLimits { pub groups: Limit, pub field_bytes: Limit, pub email_bytes: Limit,
+                          pub display_name_bytes: Limit }
+    // non_exhaustive, Copy; guatiao derives (each key defaulting); Default = DEFAULT
+impl RecordLimits {
+    pub const DEFAULT: Self;     // 256 groups, 256-byte id/name/group, 320-byte email, 1 024-byte display name
+    pub const UNBOUNDED: Self;
+    pub const fn groups(self, Limit) -> Self; pub const fn field_bytes(self, Limit) -> Self;
+    pub const fn email_bytes(self, Limit) -> Self; pub const fn display_name_bytes(self, Limit) -> Self;
+    pub fn allows_field(&self, &str) -> bool; pub fn allows_groups(&self, &[String]) -> bool;
+    pub fn allows_email(&self, &str) -> bool; pub fn allows_display_name(&self, &str) -> bool;
+}
+```
+
+- Every check is also `check_field`'s: not empty, no control character. The bounds are
+  resources, not trust: lifting one is not reported.
+
 ## Caches (`coqui_access_kit::cache`, feature `cache`; re-exported at the root)
 
 ```rust
@@ -172,7 +191,7 @@ pub fn unix_now() -> i64;                                    // whole seconds si
 ## Hashing (`coqui_access_kit::hash`) - use these with your own data
 
 ```rust
-pub const MAX_PASSWORD_BYTES: usize = 4096;
+pub const DEFAULT_MAX_PASSWORD_BYTES: Limit = Limit::at(4096);   // coqui_access::Limit
 pub struct Argon2Params;                // Copy, FromValue, ToValue, Schema; Default = 19456 KiB, 2 passes, 1 lane
 impl Argon2Params { pub fn new(memory_kib: u32, iterations: u32, parallelism: u32) -> Result<Self, String>;
                     pub fn memory_kib(&self) -> u32; pub fn iterations(&self) -> u32; pub fn parallelism(&self) -> u32; }
@@ -186,6 +205,7 @@ pub struct PasswordHasher;              // Clone; Default = default costs
 impl PasswordHasher {
     pub fn new(params: Argon2Params) -> Result<Self, String>;
     pub fn params(&self) -> Argon2Params;
+    pub fn max_password_bytes(self, most: Limit) -> Self;            // default DEFAULT_MAX_PASSWORD_BYTES
     pub fn hash(&self, password: &str) -> Result<String, String>;
     pub fn verify(&self, stored: Option<&str>, presented: &str) -> bool;
 }
