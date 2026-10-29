@@ -23,11 +23,11 @@ use coqui_access::guatiao::library::ProviderError;
 use coqui_access::guatiao::{FromValue, Provider, Schema, ToValue};
 use coqui_access::{
     AccountInfo, AccountPut, Accounts, Attempt, Authenticator, Description, Directory, Lookup,
-    Person, PutOutcome, Verdict, error,
+    Person, PutOutcome, Verdict,
 };
 use coqui_access_key::{DEFAULT_PREFIX, KeyRecord, Keys};
 use coqui_access_kit::file::Source;
-use coqui_access_kit::{KeyHash, MemoryTable, SourceError, Table};
+use coqui_access_kit::{KeyHash, MemoryTable, Table};
 
 pub use format::Format;
 
@@ -45,10 +45,6 @@ pub struct KeysConfig {
     pub key_hash: KeyHash,
     /// The most keys the table may hold; the library default when absent.
     pub max_keys: Option<u32>,
-}
-
-fn refused(reason: &SourceError) -> ProviderError {
-    error::bad_value(&format!("key table: {reason}"))
 }
 
 /// The key provider a host loads.
@@ -69,7 +65,9 @@ impl TryFrom<KeysConfig> for KeysProvider {
 
     fn try_from(config: KeysConfig) -> Result<Self, Self::Error> {
         let table: Arc<dyn Table<KeyRecord>> = match &config.source {
-            Some(source) => source.open("keys").map_err(|reason| refused(&reason))?,
+            Some(source) => source
+                .open("keys")
+                .map_err(|reason| reason.writing("key table"))?,
             None => Arc::new(MemoryTable::new()),
         };
         let mut builder = Keys::builder()
@@ -79,7 +77,10 @@ impl TryFrom<KeysConfig> for KeysProvider {
         if let Some(max) = config.max_keys {
             builder = builder.max_keys(max as usize);
         }
-        builder.build().map(Self).map_err(|reason| refused(&reason))
+        builder
+            .build()
+            .map(Self)
+            .map_err(|reason| reason.writing("key table"))
     }
 }
 

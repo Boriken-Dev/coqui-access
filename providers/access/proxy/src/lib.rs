@@ -7,7 +7,7 @@
 use std::net::{IpAddr, SocketAddr};
 
 use coqui_access::guatiao::library::ProviderError;
-use coqui_access::guatiao::{FromValue, Provider, Schema, Status, ToValue};
+use coqui_access::guatiao::{FromValue, Provider, Schema, ToValue};
 use coqui_access::{Attempt, Authenticator, Lookup, Verdict};
 
 /// Reverse-proxy trust and identity-header configuration.
@@ -130,8 +130,9 @@ impl TryFrom<ProxyWordConfig> for ProxyWord {
     type Error = ProviderError;
 
     fn try_from(config: ProxyWordConfig) -> Result<Self, Self::Error> {
-        Self::new(config)
-            .map_err(|_| provider_error("trusted entries must be IP addresses or CIDR networks"))
+        Self::new(config).map_err(|_| {
+            coqui_access::error::bad_value("trusted entries must be IP addresses or CIDR networks")
+        })
     }
 }
 
@@ -203,10 +204,6 @@ fn parse_peer(peer: &str) -> Option<IpAddr> {
     peer.parse::<IpAddr>()
         .ok()
         .or_else(|| peer.parse::<SocketAddr>().ok().map(|socket| socket.ip()))
-}
-
-fn provider_error(message: &str) -> ProviderError {
-    ProviderError::new(Status::GUATIAO_ERR_BAD_VALUE, message)
 }
 
 #[cfg(test)]

@@ -257,18 +257,6 @@ impl Keys {
     }
 }
 
-fn unreadable(reason: SourceError) -> ProviderError {
-    error::internal(&format!("key table: {reason}"))
-}
-
-fn refused(reason: SourceError) -> ProviderError {
-    match reason {
-        SourceError::ReadOnly => error::unsupported("the key table is read only"),
-        SourceError::Invalid(reason) => error::bad_value(&format!("key table: {reason}")),
-        other => unreadable(other),
-    }
-}
-
 impl Authenticator for Keys {
     fn authenticate(&self, attempt: Attempt) -> Result<Verdict, ProviderError> {
         let Some(presented) = attempt.secret.filter(|key| key.starts_with(&self.prefix)) else {
@@ -286,7 +274,7 @@ impl Authenticator for Keys {
                 }
                 found
             })
-            .map_err(unreadable)?;
+            .map_err(|reason| reason.reading("key table"))?;
         Ok(match found {
             None => Verdict::Unknown,
             Some(record) if record.taken() => Verdict::Valid(Lookup {
@@ -329,7 +317,7 @@ impl Directory for Keys {
                         attributes: Default::default(),
                     })
             })
-            .map_err(unreadable)
+            .map_err(|reason| reason.reading("key table"))
     }
 }
 
@@ -349,7 +337,7 @@ impl Accounts for Keys {
                     })
                     .collect()
             })
-            .map_err(unreadable)
+            .map_err(|reason| reason.reading("key table"))
     }
 
     /// Makes an account and its key, or changes what is said of one there is. An account
@@ -394,13 +382,13 @@ impl Accounts for Keys {
                 }
                 Ok((record, PutOutcome { secret: made }))
             })
-            .map_err(refused)
+            .map_err(|reason| reason.writing("key table"))
     }
 
     fn remove(&self, name: String) -> Result<(), ProviderError> {
         self.keys
             .remove(&name)
-            .map_err(refused)
+            .map_err(|reason| reason.writing("key table"))
             .and_then(|removed| {
                 removed
                     .then_some(())
