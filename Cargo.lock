@@ -299,7 +299,13 @@ name = "coqui-access-proxy"
 version = "0.1.0"
 dependencies = [
  "coqui-access",
+ "coqui-access-kit",
  "coqui-net-acl",
+ "coqui-peer-tls",
+ "data-encoding",
+ "percent-encoding",
+ "rcgen",
+ "rustls-pki-types",
 ]
 
 [[package]]
