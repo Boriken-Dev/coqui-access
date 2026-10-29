@@ -48,6 +48,8 @@ tokio-rustls = { version = "0.26", default-features = false, features = ["ring"]
 rcgen = "0.14"
 x509-parser = "0.18"
 globset = "0.4"
+# The caches in front of directories and authorizers: TTL per entry, bounded, no thread.
+moka = { version = "0.12", default-features = false, features = ["sync"] }
 tempfile = "3"
 # coqui-access-system: Unix accounts and groups through NSS (getpwnam, getgrouplist).
 uzers = { version = "0.12.2", default-features = false }

@@ -19,6 +19,9 @@ the caller hands it.
 - **Hashing** - `sha256:<hex>` or Argon2id, self-describing, constant-time verification.
 - **Secrets** - a prefix plus 256 random bits, SHA-256 with optional domain separation,
   constant-time comparison.
+- **Caches** (feature `cache`) - `Cached` in front of a directory or an authorizer keeps a
+  found person or a grant 5 s and "not found" or a denial 1 s by default, to absorb bursts;
+  credentials and errors are never kept.
 - **File tables** (feature `file`) - `FileTable` keeps a table in one private file, written
   whole beside the target and renamed into place (`0600` on Unix), in any serde format the
   caller supplies as a `Codec`. Records cross through their guatiao derives.
@@ -32,6 +35,7 @@ cargo add coqui-access-kit --git https://github.com/Boriken-Dev/coqui-access
 | Feature | Adds | Needed for | Default |
 | --- | --- | --- | --- |
 | `file` | `serde`, `guatiao-serde` (no format) | `FileTable`, `Codec`, `Source`, private writes, bounded reads, stamps | no |
+| `cache` | `moka` (`sync`) | `Cached`, `CacheOptions`, `CacheSetting`: lookups and decisions kept a few seconds | no |
 
 ## Quick start
 
@@ -82,6 +86,7 @@ combination Argon2 would.
 | `table` | `Table<T>`, `Keyed`, `Snapshot`, `Revision`, `SourceError`, `MemoryTable`, `Reloading`, `check_keys`. |
 | `hash` | `KeyHash`, `Argon2Params`, `verify_key`, `is_key_hash`, `PasswordHasher`, `verify_password`, `is_password_hash`, `generate_key`. |
 | `secret` | `generate`, `identifier`, `hash`, `hash_bytes`, `same`, `is_hash`. |
+| `cache` | Feature `cache`. `Cached`, `CacheOptions`, `CacheSetting`, `DEFAULT_TTL`, `DEFAULT_NEGATIVE_TTL`, `DEFAULT_MAX_ENTRIES`. |
 | `file` | Feature `file`. `FileTable`, `Codec`, `CodecError`, `Source`, `FileSource`, `DEFAULT_MAX_BYTES`, `write_private`, `read_bounded`, `stamp`, `Stamp`. |
 
 ## A table in a file

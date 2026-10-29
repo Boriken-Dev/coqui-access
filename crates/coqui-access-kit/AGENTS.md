@@ -8,6 +8,7 @@ source at <https://github.com/Boriken-Dev/coqui-access>.
 | Feature | Adds | Default |
 | --- | --- | --- |
 | `file` | module `file`: `FileTable`, `Codec`, `Source`, private writes; `serde` and `guatiao-serde` with no format feature | no |
+| `cache` | module `cache`: `Cached`, `CacheOptions`, `CacheSetting`; `moka` (`sync` only) | no |
 
 MSRV Rust 1.89. A default build depends on `coqui-access` (for guatiao), `argon2`, `data-encoding`,
 `getrandom`, `sha2` and `subtle`. No feature adds a format crate: a caller supplies its own codec. No
@@ -35,6 +36,41 @@ pub fn is_hash(value: &str) -> bool;
   for another.
 - `same` compares in time independent of where the strings differ. `is_hash` checks the
   64-lowercase-hex shape.
+
+## Caches (`coqui_access_kit::cache`, feature `cache`; re-exported at the root)
+
+```rust
+pub const DEFAULT_TTL: Duration = 5 s; pub const DEFAULT_NEGATIVE_TTL: Duration = 1 s;
+pub const DEFAULT_MAX_ENTRIES: u64 = 10_000;
+pub struct CacheOptions { pub ttl: Duration, pub negative_ttl: Duration, pub max_entries: u64 }
+    // non_exhaustive, Copy; guatiao derives (durations as seconds, each key defaulting)
+impl CacheOptions {
+    pub const fn off() -> Self;                         // keeps nothing
+    pub const fn ttl(self, Duration) -> Self; pub const fn negative_ttl(self, Duration) -> Self;
+    pub const fn max_entries(self, u64) -> Self;
+    pub fn exceeds_default(&self) -> bool;              // a ttl above the defaults: report it
+}
+impl Default for CacheOptions;                          // 5 s, 1 s, 10 000
+pub enum CacheSetting { Enabled(bool), Tuned(CacheOptions) }   // untagged: true | false | {..}; Default Enabled(true)
+impl CacheSetting { pub fn options(&self) -> CacheOptions; }
+pub struct Cached<T: ?Sized>;                           // Debug: options and counts only
+impl<T: ?Sized> Cached<T> {
+    pub fn new(inner: Arc<T>, options: CacheOptions) -> Self;
+    pub fn inner(&self) -> &Arc<T>; pub fn options(&self) -> CacheOptions;
+    pub fn invalidate(&self, lookup: &Lookup); pub fn invalidate_all(&self);
+}
+impl<T: Directory + ?Sized> Directory for Cached<T>;    // keyed by (by, value)
+impl<T: Authorizer + ?Sized> Authorizer for Cached<T>;  // keyed by person id, name, sorted groups, action, resource
+impl<T: Accounts + ?Sized> Accounts for Cached<T>;      // delegates; put/remove clear everything kept
+```
+
+- A found person and a grant are kept `ttl`; "not found" (`None`) and a denial
+  `negative_ttl`; errors never. At most `max_entries` of each kind. Not an `Authenticator`:
+  a credential is always checked at the source.
+- Revocation window: after a change at the source, a removed account or a withdrawn
+  permission can still pass a cached lookup or decision for up to `ttl`, and a new one can be
+  refused for up to `negative_ttl`, unless `invalidate`/`invalidate_all` is called.
+- No background thread: moka expires entries as the cache is used.
 
 ## Files (`coqui_access_kit::file`, feature `file`)
 
