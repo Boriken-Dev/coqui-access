@@ -18,11 +18,11 @@ publish = false
 [workspace.dependencies]
 coqui-access = { path = "crates/coqui-access" }
 coqui-access-kit = { path = "crates/coqui-access-kit" }
-# Address and network lists, at the version coqui-peer-tls depends on, so a build has one.
-coqui-net-acl = "=0.0.0-alpha.0"
+# Address and network lists, at the revision coqui-peer-tls depends on, so a build has one.
+coqui-net-acl = { version = "0.0.0-alpha.0", git = "https://github.com/Boriken-Dev/coqui-net-acl", rev = "e0f31323bffeb6ff05c2c3e5c50a7d58e6aafd28" }
 # The waiting queue's bounds, at the version coqui-peer-tls depends on.
-coqui-peer = "=0.0.0-alpha.0"
-coqui-peer-tls = "=0.0.0-alpha.0"
+coqui-peer = "=0.0.0-alpha.1"
+coqui-peer-tls = "=0.0.0-alpha.1"
 coqui-roles = { path = "crates/coqui-roles" }
 
 # guatiao main, pinned until a release carries what these crates use.
@@ -63,3 +63,4 @@ windows-sys = { version = "0.61", default-features = false, features = [
     "Win32_Security",
     "Win32_Security_Authorization",
 ] }
+
