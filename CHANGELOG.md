@@ -25,9 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   your own data. `Argon2Params` is also configuration (guatiao `FromValue`, `ToValue`,
   `Schema`): each cost defaults to the library's, and reading refuses a combination Argon2
   would.
-- `coqui-access-kit`: `Table<T>`, a typed source trait over `Keyed` records (a key borrowed
-  or written from a value), (`load`, `changes_since`, `put`,
-  `remove`; the last two default to `ReadOnly`), with `MemoryTable`, `Reloading`, `Keyed`,
+- `coqui-access-kit`: `Table<T>`, a typed source trait (`load`, `changes_since`, `put`,
+  `remove`; the last two default to `ReadOnly`) over `Keyed` records, whose key is borrowed
+  or written from a value, with `MemoryTable`, `Reloading`, `Keyed`,
   `Snapshot`, `Revision`, `SourceError` and `check_keys`. `SourceError::reading` and
   `writing` turn a table error into the `ProviderError` a host acts on. `check_field` and
   `unix_now` are the record checks and clock the providers share.
