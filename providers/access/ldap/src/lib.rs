@@ -13,9 +13,8 @@ use std::time::Duration;
 use coqui_access::guatiao::library::ProviderError;
 use coqui_access::guatiao::{FromValue, Provider, Schema, ToValue};
 use coqui_access::{Attempt, Authenticator, Directory, Lookup, Person, Verdict};
+use coqui_peer_tls::{Policy, Roots, Trust, Weakening, client_config_without_identity_with};
 use ldap3::{LdapConn, LdapConnSettings, Scope, SearchEntry};
-use rustls::pki_types::CertificateDer;
-use rustls::pki_types::pem::PemObject;
 
 /// LDAP result code for credentials rejected by a directory.
 const INVALID_CREDENTIALS: u32 = 49;
@@ -97,6 +96,7 @@ impl fmt::Debug for LdapAccountsConfig {
 pub struct LdapAccounts {
     config: LdapAccountsConfig,
     trusted: Option<Arc<rustls::ClientConfig>>,
+    weakened: Vec<Weakening>,
 }
 
 impl fmt::Debug for LdapAccounts {
@@ -138,11 +138,30 @@ impl LdapAccounts {
         if config.bind.is_some() != config.bind_password.is_some() {
             return Err("bind and bind_password must be configured together".to_owned());
         }
-        let trusted = config.ca_file.as_deref().map(trusting).transpose()?;
+        let (trusted, weakened) = match config.ca_file.as_deref() {
+            Some(file) => {
+                let built = client_config_without_identity_with(
+                    &Trust::Roots(Roots::bundle_file(file)),
+                    &[],
+                    &Policy::compatible(),
+                )
+                .map_err(|reason| format!("ca_file {file}: {reason}"))?;
+                (Some(Arc::new(built.config)), built.weakened)
+            }
+            None => (None, Vec::new()),
+        };
         Ok(Self {
             config,
-            trusted: trusted.map(Arc::new),
+            trusted,
+            weakened,
         })
+    }
+
+    /// What the TLS configuration for `ca_file` allows beyond the strict policy, as data for
+    /// the host to act on: TLS 1.2 beside 1.3. Empty without a `ca_file`, where ldap3's own
+    /// rustls defaults apply.
+    pub fn weakened(&self) -> &[Weakening] {
+        &self.weakened
     }
 
     fn searching(&self) -> Result<LdapConn, ProviderError> {
@@ -239,25 +258,6 @@ impl LdapAccounts {
             groups,
         }))
     }
-}
-
-fn trusting(file: &str) -> Result<rustls::ClientConfig, String> {
-    let error = |reason: &dyn fmt::Display| format!("ca_file {file}: {reason}");
-    let mut roots = rustls::RootCertStore::empty();
-    let certificates = CertificateDer::pem_file_iter(file).map_err(|reason| error(&reason))?;
-    for certificate in certificates {
-        roots
-            .add(certificate.map_err(|reason| error(&reason))?)
-            .map_err(|reason| error(&reason))?;
-    }
-    if roots.is_empty() {
-        return Err(error(&"no certificate was found"));
-    }
-    let provider = Arc::new(rustls::crypto::ring::default_provider());
-    let config = rustls::ClientConfig::builder_with_provider(provider)
-        .with_safe_default_protocol_versions()
-        .map_err(|reason| error(&reason))?;
-    Ok(config.with_root_certificates(roots).with_no_client_auth())
 }
 
 impl TryFrom<LdapAccountsConfig> for LdapAccounts {
@@ -372,5 +372,37 @@ mod tests {
         assert!(!debug.contains("very-secret"));
         assert!(!debug.contains("user:secret"));
         assert!(debug.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn a_ca_file_trusts_its_roots_under_the_compatible_policy_and_says_so() {
+        let directory = tempfile::tempdir().unwrap();
+        let ca = rcgen::generate_simple_self_signed(["directory.example.org".to_owned()]).unwrap();
+        let file = directory.path().join("ca.pem");
+        std::fs::write(&file, ca.cert.pem()).unwrap();
+        let mut trusting = config("ldaps://directory.example.org");
+        trusting.ca_file = Some(file.to_str().unwrap().to_owned());
+        let accounts = LdapAccounts::new(trusting).unwrap();
+        assert!(accounts.trusted.is_some());
+        assert!(!accounts.weakened().is_empty(), "TLS 1.2 is reported");
+        assert!(
+            LdapAccounts::new(config("ldaps://directory.example.org"))
+                .unwrap()
+                .weakened()
+                .is_empty()
+        );
+        for bad in ["missing.pem", "empty.pem"] {
+            let path = directory.path().join(bad);
+            if bad == "empty.pem" {
+                std::fs::write(&path, "").unwrap();
+            }
+            let mut refused = config("ldaps://directory.example.org");
+            refused.ca_file = Some(path.to_str().unwrap().to_owned());
+            assert!(
+                LdapAccounts::new(refused)
+                    .unwrap_err()
+                    .starts_with("ca_file")
+            );
+        }
     }
 }

@@ -81,6 +81,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   person uid: Linux 1000, FreeBSD 1001, macOS 501), `groups` (empty admits any) and `domain`
   (Windows, default `.`); `weakenings()` reports a `min_uid` that admits root or service
   accounts. Building on Unix links the system `libpam`.
+- `coqui-access-ldap`: a `ca_file` builds its client TLS configuration with `coqui-peer-tls`
+  under `Policy::compatible()` (TLS 1.2 with extended master secret, and 1.3); `weakened()`
+  reports what that allows past strict.
 - `coqui-access-proxy`: trusted proxies are `coqui-net-acl` networks, so an IPv4-mapped
   network trusts the IPv4 addresses it maps; `any` is refused.
 - `coqui-roles`: a first-match role authorizer with configurable scope kinds, built with
