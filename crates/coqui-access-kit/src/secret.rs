@@ -1,9 +1,8 @@
 //! Secrets that are made, not chosen, and what is kept of them.
 
+use data_encoding::{BASE64URL_NOPAD, HEXLOWER};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
-
-const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
 /// Characters of base64url text that 32 random bytes take.
 pub const SECRET_CHARS: usize = 43;
@@ -18,20 +17,7 @@ pub const SECRET_CHARS: usize = 43;
 pub fn generate(prefix: &str) -> Result<String, String> {
     let mut random = [0u8; 32];
     getrandom::fill(&mut random).map_err(|_| "system random source is unavailable".to_owned())?;
-    let mut written = String::with_capacity(prefix.len() + SECRET_CHARS);
-    written.push_str(prefix);
-    for three in random.chunks(3) {
-        let bits = three
-            .iter()
-            .fold(0u32, |bits, byte| (bits << 8) | u32::from(*byte));
-        let bits = bits << (8 * (3 - three.len()));
-        // Three bytes are four characters; two are three; one is two.
-        for letter in 0..=three.len() {
-            let six = (bits >> (18 - 6 * letter)) & 0x3f;
-            written.push(char::from(ALPHABET[six as usize]));
-        }
-    }
-    Ok(written)
+    Ok(format!("{prefix}{}", BASE64URL_NOPAD.encode(&random)))
 }
 
 /// Makes a random 128-bit identifier as 32 lowercase hexadecimal characters.
@@ -42,7 +28,7 @@ pub fn generate(prefix: &str) -> Result<String, String> {
 pub fn identifier() -> Result<String, String> {
     let mut random = [0u8; 16];
     getrandom::fill(&mut random).map_err(|_| "system random source is unavailable".to_owned())?;
-    Ok(hex(&random))
+    Ok(HEXLOWER.encode(&random))
 }
 
 /// What a secret is kept as: its SHA-256 as 64 lowercase hexadecimal characters.
@@ -56,12 +42,12 @@ pub fn hash(secret: &str, domain: Option<&str>) -> String {
         digest.update([0]);
     }
     digest.update(secret.as_bytes());
-    hex(&digest.finalize())
+    HEXLOWER.encode(&digest.finalize())
 }
 
 /// The SHA-256 of `bytes` as 64 lowercase hexadecimal characters.
 pub fn hash_bytes(bytes: &[u8]) -> String {
-    hex(&Sha256::digest(bytes))
+    HEXLOWER.encode(&Sha256::digest(bytes))
 }
 
 /// Compares two strings in time that does not depend on where they differ.
@@ -75,16 +61,6 @@ pub fn is_hash(value: &str) -> bool {
         && value
             .bytes()
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-}
-
-fn hex(bytes: &[u8]) -> String {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    let mut encoded = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        encoded.push(char::from(HEX[usize::from(byte >> 4)]));
-        encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
-    }
-    encoded
 }
 
 #[cfg(test)]
@@ -116,6 +92,13 @@ mod tests {
         assert_ne!(hash("abc", Some("login")), hash("abc", None));
         assert!(is_hash(&hash("x", None)));
         assert!(!is_hash("ABC"));
+    }
+
+    #[test]
+    fn a_secret_decodes_back_to_32_bytes() {
+        let secret = generate("").unwrap();
+        assert_eq!(BASE64URL_NOPAD.decode(secret.as_bytes()).unwrap().len(), 32);
+        assert_eq!(BASE64URL_NOPAD.encode(&[0xfb, 0xff]), "-_8");
     }
 
     #[test]

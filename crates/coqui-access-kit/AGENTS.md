@@ -9,8 +9,8 @@ source at <https://github.com/Boriken-Dev/coqui-access>.
 | --- | --- | --- |
 | `file` | module `file`: `FileTable`, `Codec`, `Source`, private writes; `serde` and `guatiao-serde` with no format feature | no |
 
-MSRV Rust 1.89. A default build depends on `coqui-access` (for guatiao), `argon2`, `getrandom`,
-`sha2` and `subtle`. No feature adds a format crate: a caller supplies its own codec. No
+MSRV Rust 1.89. A default build depends on `coqui-access` (for guatiao), `argon2`, `data-encoding`,
+`getrandom`, `sha2` and `subtle`. No feature adds a format crate: a caller supplies its own codec. No
 `unsafe` code. Public modules: `table`, `hash`, `secret`, `file` (feature `file`); the main
 items of the first three are re-exported at the root. Table errors are `SourceError`; codecs
 answer `CodecError`; helpers elsewhere return plain `String`s. None contains file contents or
