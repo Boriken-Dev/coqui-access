@@ -230,18 +230,6 @@ impl LocalAccounts {
     }
 }
 
-fn unreadable(reason: SourceError) -> ProviderError {
-    error::internal(&format!("account table: {reason}"))
-}
-
-fn refused(reason: SourceError) -> ProviderError {
-    match reason {
-        SourceError::ReadOnly => error::unsupported("the account table is read only"),
-        SourceError::Invalid(reason) => error::bad_value(&format!("account table: {reason}")),
-        other => unreadable(other),
-    }
-}
-
 impl Authenticator for LocalAccounts {
     fn authenticate(&self, attempt: Attempt) -> Result<Verdict, ProviderError> {
         let (Some(name), Some(password)) = (attempt.name, attempt.secret) else {
@@ -250,7 +238,7 @@ impl Authenticator for LocalAccounts {
         let account = self
             .accounts
             .read(|records| records.iter().find(|account| account.name == name).cloned())
-            .map_err(unreadable)?;
+            .map_err(|reason| reason.reading("account table"))?;
         let verified = self.hasher.verify(
             account
                 .as_ref()
@@ -298,7 +286,7 @@ impl Directory for LocalAccounts {
                         attributes: Default::default(),
                     })
             })
-            .map_err(unreadable)
+            .map_err(|reason| reason.reading("account table"))
     }
 }
 
@@ -318,7 +306,7 @@ impl Accounts for LocalAccounts {
                     })
                     .collect()
             })
-            .map_err(unreadable)
+            .map_err(|reason| reason.reading("account table"))
     }
 
     /// A new account needs a password; an existing one keeps its password unless one is
@@ -365,13 +353,13 @@ impl Accounts for LocalAccounts {
                 Ok((entry, ()))
             })
             .map(|()| PutOutcome::default())
-            .map_err(refused)
+            .map_err(|reason| reason.writing("account table"))
     }
 
     fn remove(&self, name: String) -> Result<(), ProviderError> {
         self.accounts
             .remove(&name)
-            .map_err(refused)
+            .map_err(|reason| reason.writing("account table"))
             .and_then(|removed| {
                 removed
                     .then_some(())

@@ -108,7 +108,7 @@ pub(crate) fn check_password(
         });
     match checked {
         Ok(()) => Ok(true),
-        Err(code) if refused(code) => Ok(false),
+        Err(code) if is_refusal(code) => Ok(false),
         Err(code) => Err(error::internal(&format!(
             "PAM could not check the password: {code}"
         ))),
@@ -117,7 +117,7 @@ pub(crate) fn check_password(
 
 /// A PAM answer that means "not this password, or not this account now", as opposed to
 /// "could not find out".
-fn refused(code: ErrorCode) -> bool {
+fn is_refusal(code: ErrorCode) -> bool {
     matches!(
         code,
         ErrorCode::AuthenticationError

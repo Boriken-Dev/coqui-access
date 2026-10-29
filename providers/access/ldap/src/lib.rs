@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use coqui_access::guatiao::library::ProviderError;
-use coqui_access::guatiao::{FromValue, Provider, Schema, Status, ToValue};
+use coqui_access::guatiao::{FromValue, Provider, Schema, ToValue};
 use coqui_access::{Attempt, Authenticator, Directory, Lookup, Person, Verdict};
 use ldap3::{LdapConn, LdapConnSettings, Scope, SearchEntry};
 use rustls::pki_types::CertificateDer;
@@ -155,24 +155,15 @@ impl LdapAccounts {
         }
         let mut connection =
             LdapConn::with_settings(settings, &self.config.url).map_err(|error| {
-                provider_error(
-                    Status::GUATIAO_ERR_INTERNAL,
-                    &format!("directory connection failed: {error}"),
-                )
+                coqui_access::error::internal(&format!("directory connection failed: {error}"))
             })?;
         connection.with_timeout(timeout);
         if let (Some(bind), Some(password)) = (&self.config.bind, &self.config.bind_password) {
             let bound = connection.simple_bind(bind, password).map_err(|error| {
-                provider_error(
-                    Status::GUATIAO_ERR_INTERNAL,
-                    &format!("directory bind failed: {error}"),
-                )
+                coqui_access::error::internal(&format!("directory bind failed: {error}"))
             })?;
             bound.success().map_err(|_| {
-                provider_error(
-                    Status::GUATIAO_ERR_INTERNAL,
-                    "directory refused its configured search account",
-                )
+                coqui_access::error::internal("directory refused its configured search account")
             })?;
         }
         Ok(connection)
@@ -191,16 +182,10 @@ impl LdapAccounts {
         let result = connection
             .search(&self.config.base, Scope::Subtree, &filter, attributes)
             .map_err(|error| {
-                provider_error(
-                    Status::GUATIAO_ERR_INTERNAL,
-                    &format!("directory search failed: {error}"),
-                )
+                coqui_access::error::internal(&format!("directory search failed: {error}"))
             })?;
         let (entries, _) = result.success().map_err(|error| {
-            provider_error(
-                Status::GUATIAO_ERR_INTERNAL,
-                &format!("directory search failed: {error}"),
-            )
+            coqui_access::error::internal(&format!("directory search failed: {error}"))
         })?;
         let mut entries = entries.into_iter().map(SearchEntry::construct);
         let (Some(entry), None) = (entries.next(), entries.next()) else {
@@ -235,16 +220,10 @@ impl LdapAccounts {
             let result = connection
                 .search(base, Scope::Subtree, &filter, vec!["cn"])
                 .map_err(|error| {
-                    provider_error(
-                        Status::GUATIAO_ERR_INTERNAL,
-                        &format!("group search failed: {error}"),
-                    )
+                    coqui_access::error::internal(&format!("group search failed: {error}"))
                 })?;
             let (entries, _) = result.success().map_err(|error| {
-                provider_error(
-                    Status::GUATIAO_ERR_INTERNAL,
-                    &format!("group search failed: {error}"),
-                )
+                coqui_access::error::internal(&format!("group search failed: {error}"))
             })?;
             for group in entries.into_iter().map(SearchEntry::construct) {
                 let name = search::group_name(&group.dn);
@@ -285,12 +264,8 @@ impl TryFrom<LdapAccountsConfig> for LdapAccounts {
     type Error = ProviderError;
 
     fn try_from(config: LdapAccountsConfig) -> Result<Self, Self::Error> {
-        Self::new(config).map_err(|_| {
-            provider_error(
-                Status::GUATIAO_ERR_BAD_VALUE,
-                "LDAP configuration is invalid",
-            )
-        })
+        Self::new(config)
+            .map_err(|_| coqui_access::error::bad_value("LDAP configuration is invalid"))
     }
 }
 
@@ -312,10 +287,7 @@ impl Authenticator for LdapAccounts {
         let result = connection
             .simple_bind(&found.dn, &password)
             .map_err(|error| {
-                provider_error(
-                    Status::GUATIAO_ERR_INTERNAL,
-                    &format!("account bind failed: {error}"),
-                )
+                coqui_access::error::internal(&format!("account bind failed: {error}"))
             })?;
         let _ = connection.unbind();
         match result.rc {
@@ -324,8 +296,7 @@ impl Authenticator for LdapAccounts {
                 value: found.name.unwrap_or(name),
             })),
             INVALID_CREDENTIALS => Ok(Verdict::Invalid),
-            _ => Err(provider_error(
-                Status::GUATIAO_ERR_INTERNAL,
+            _ => Err(coqui_access::error::internal(
                 "directory could not verify the account",
             )),
         }
@@ -349,10 +320,6 @@ impl Directory for LdapAccounts {
             attributes: Default::default(),
         }))
     }
-}
-
-fn provider_error(status: Status, message: &str) -> ProviderError {
-    ProviderError::new(status, message)
 }
 
 #[cfg(test)]

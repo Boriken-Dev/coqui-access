@@ -9,6 +9,9 @@ use std::collections::BTreeSet;
 use std::fmt;
 use std::sync::{Arc, Mutex, PoisonError};
 
+use coqui_access::error;
+use coqui_access::guatiao::library::ProviderError;
+
 /// Why a table could not answer. Messages never contain record contents or secrets.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -30,6 +33,26 @@ impl SourceError {
     /// An [`Unavailable`](SourceError::Unavailable) error.
     pub fn unavailable(reason: impl Into<String>) -> Self {
         Self::Unavailable(reason.into())
+    }
+
+    /// What a provider answers when `table` could not be read: always
+    /// `GUATIAO_ERR_INTERNAL`, "could not find out", whatever the reason. The message is
+    /// `<table>: <reason>`.
+    pub fn reading(&self, table: &str) -> ProviderError {
+        error::internal(&format!("{table}: {self}"))
+    }
+
+    /// What a provider answers when `table` refused a change, or could not be opened from a
+    /// configuration: [`ReadOnly`](SourceError::ReadOnly) is `GUATIAO_ERR_UNSUPPORTED`,
+    /// [`Invalid`](SourceError::Invalid) `GUATIAO_ERR_BAD_VALUE`, anything else
+    /// `GUATIAO_ERR_INTERNAL`. The message is `<table>: <reason>`.
+    pub fn writing(&self, table: &str) -> ProviderError {
+        let message = format!("{table}: {self}");
+        match self {
+            Self::ReadOnly => error::unsupported(&message),
+            Self::Invalid(_) => error::bad_value(&message),
+            Self::Unavailable(_) => error::internal(&message),
+        }
     }
 }
 
@@ -438,6 +461,27 @@ mod tests {
             reloading.read(|_| ()),
             Err(SourceError::Invalid(_))
         ));
+    }
+
+    #[test]
+    fn a_table_error_becomes_the_status_a_host_acts_on() {
+        use coqui_access::guatiao::Status;
+
+        let read_only = SourceError::ReadOnly;
+        let invalid = SourceError::invalid("a record is duplicated");
+        let gone = SourceError::unavailable("file cannot be read");
+        for error in [&read_only, &invalid, &gone] {
+            let read = error.reading("account table");
+            assert_eq!(read.status, Status::GUATIAO_ERR_INTERNAL);
+            assert_eq!(&*read.message, format!("account table: {error}"));
+        }
+        assert_eq!(
+            read_only.writing("t").status,
+            Status::GUATIAO_ERR_UNSUPPORTED
+        );
+        assert_eq!(invalid.writing("t").status, Status::GUATIAO_ERR_BAD_VALUE);
+        assert_eq!(gone.writing("t").status, Status::GUATIAO_ERR_INTERNAL);
+        assert_eq!(&*invalid.writing("t").message, "t: a record is duplicated");
     }
 
     #[test]

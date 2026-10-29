@@ -358,18 +358,6 @@ impl Peers {
     }
 }
 
-fn unreadable(reason: SourceError) -> ProviderError {
-    error::internal(&format!("peer table: {reason}"))
-}
-
-fn refused(reason: SourceError) -> ProviderError {
-    match reason {
-        SourceError::ReadOnly => error::unsupported("the peer table is read only"),
-        SourceError::Invalid(reason) => error::bad_value(&format!("peer table: {reason}")),
-        other => unreadable(other),
-    }
-}
-
 impl Authenticator for Peers {
     fn authenticate(&self, attempt: Attempt) -> Result<Verdict, ProviderError> {
         let Some(fingerprint) = attempt
@@ -388,7 +376,7 @@ impl Authenticator for Peers {
                     .find(|peer| peer.is(&fingerprint))
                     .map(|peer| (peer.id.clone(), peer.disabled))
             })
-            .map_err(unreadable)?;
+            .map_err(|reason| reason.reading("peer table"))?;
         Ok(match found {
             None => {
                 self.wait(&fingerprint, attempt.peer);
@@ -442,7 +430,7 @@ impl Directory for Peers {
                         attributes: Default::default(),
                     })
             })
-            .map_err(unreadable)
+            .map_err(|reason| reason.reading("peer table"))
     }
 }
 
@@ -462,7 +450,7 @@ impl Accounts for Peers {
                     })
                     .collect()
             })
-            .map_err(unreadable)
+            .map_err(|reason| reason.reading("peer table"))
     }
 
     /// Accepts a fingerprint under a name, or changes what is said of a peer there is. The
@@ -536,7 +524,7 @@ impl Accounts for Peers {
                     .collect::<Vec<_>>();
                 Ok((peer, accepted))
             })
-            .map_err(refused)?;
+            .map_err(|reason| reason.writing("peer table"))?;
         self.waited(&accepted);
         Ok(PutOutcome::default())
     }
@@ -544,7 +532,7 @@ impl Accounts for Peers {
     fn remove(&self, name: String) -> Result<(), ProviderError> {
         self.peers
             .remove(&name)
-            .map_err(refused)
+            .map_err(|reason| reason.writing("peer table"))
             .and_then(|removed| {
                 removed
                     .then_some(())

@@ -21,10 +21,10 @@ use coqui_access::guatiao::library::ProviderError;
 use coqui_access::guatiao::{FromValue, FromWalk, Provider, Schema, ToValue, Walk};
 use coqui_access::{
     AccountInfo, AccountPut, Accounts, Attempt, Authenticator, Description, Directory, Lookup,
-    Person, PutOutcome, Verdict, Waiting, error,
+    Person, PutOutcome, Verdict, Waiting,
 };
 use coqui_access_kit::file::Source;
-use coqui_access_kit::{Keyed, MemoryTable, SourceError, Table};
+use coqui_access_kit::{Keyed, MemoryTable, Table};
 use coqui_access_peer::{PeerRecord, Peers, Unaccepted};
 
 pub use format::Format;
@@ -46,10 +46,6 @@ pub struct PeersConfig {
     pub seen_every_secs: Option<i64>,
 }
 
-fn refused(reason: &SourceError) -> ProviderError {
-    error::bad_value(&format!("peer table: {reason}"))
-}
-
 /// The table `source` names, or one in memory.
 fn open<T>(
     source: Option<&Source<Format>>,
@@ -59,7 +55,9 @@ where
     T: Keyed + Clone + Send + Walk + FromWalk + 'static,
 {
     match source {
-        Some(source) => source.open(section).map_err(|reason| refused(&reason)),
+        Some(source) => source
+            .open(section)
+            .map_err(|reason| reason.writing("peer table")),
         None => Ok(Arc::new(MemoryTable::new())),
     }
 }
@@ -99,7 +97,10 @@ impl TryFrom<PeersConfig> for PeersProvider {
         if let Some(seconds) = config.seen_every_secs {
             builder = builder.seen_every_secs(seconds);
         }
-        builder.build().map(Self).map_err(|reason| refused(&reason))
+        builder
+            .build()
+            .map(Self)
+            .map_err(|reason| reason.writing("peer table"))
     }
 }
 

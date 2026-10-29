@@ -92,6 +92,11 @@ pub fn write_private(path: &Path, bytes: &[u8]) -> Result<(), String>;
 
 ```rust
 pub enum SourceError { ReadOnly, Invalid(String), Unavailable(String) }   // non_exhaustive, Error
+impl SourceError {
+    pub fn invalid(reason: impl Into<String>) -> Self; pub fn unavailable(reason: impl Into<String>) -> Self;
+    pub fn reading(&self, table: &str) -> ProviderError;   // always GUATIAO_ERR_INTERNAL, "<table>: <reason>"
+    pub fn writing(&self, table: &str) -> ProviderError;   // ReadOnly UNSUPPORTED, Invalid BAD_VALUE, else INTERNAL
+}
 pub struct Revision;                    // Copy, Eq, Ord, Default; Revision::new(u64), .get()
 pub trait Keyed { fn key(&self) -> &str; }
 pub struct Snapshot<T> { pub revision: Revision, pub records: Vec<T> }     // non_exhaustive; Snapshot::new
@@ -122,6 +127,9 @@ pub fn check_keys<T: Keyed>(records: &[T], max: usize) -> Result<(), SourceError
   stale answer. `put_with` validates the records as they would be with the new one before
   putting it, so a refused change leaves the table alone. It is atomic within one process only.
 - `check_keys` refuses more than `max` records or a repeated key; providers call it first.
+- A provider maps a table error with `reading` where it only reads (a table it cannot read
+  means "could not find out", never "no") and with `writing` where it puts, removes or opens
+  a table from configuration.
 
 ## Hashing (`coqui_access_kit::hash`) - use these with your own data
 

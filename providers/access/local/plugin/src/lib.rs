@@ -19,10 +19,10 @@ use coqui_access::guatiao::library::ProviderError;
 use coqui_access::guatiao::{FromValue, Provider, Schema, ToValue};
 use coqui_access::{
     AccountInfo, AccountPut, Accounts, Attempt, Authenticator, Description, Directory, Lookup,
-    Person, PutOutcome, Verdict, error,
+    Person, PutOutcome, Verdict,
 };
 use coqui_access_kit::file::Source;
-use coqui_access_kit::{Argon2Params, MemoryTable, SourceError, Table};
+use coqui_access_kit::{Argon2Params, MemoryTable, Table};
 use coqui_access_local::{AccountRecord, LocalAccounts};
 
 pub use format::Format;
@@ -37,10 +37,6 @@ pub struct LocalAccountsConfig {
     pub max_accounts: Option<u32>,
     /// Argon2id costs for new passwords; the library default for each one absent.
     pub argon2: Option<Argon2Params>,
-}
-
-fn refused(reason: &SourceError) -> ProviderError {
-    error::bad_value(&format!("account table: {reason}"))
 }
 
 /// The local accounts provider a host loads.
@@ -61,7 +57,9 @@ impl TryFrom<LocalAccountsConfig> for LocalAccountsProvider {
 
     fn try_from(config: LocalAccountsConfig) -> Result<Self, Self::Error> {
         let table: Arc<dyn Table<AccountRecord>> = match &config.source {
-            Some(source) => source.open("accounts").map_err(|reason| refused(&reason))?,
+            Some(source) => source
+                .open("accounts")
+                .map_err(|reason| reason.writing("account table"))?,
             None => Arc::new(MemoryTable::new()),
         };
         let mut builder = LocalAccounts::builder().table(table);
@@ -71,7 +69,10 @@ impl TryFrom<LocalAccountsConfig> for LocalAccountsProvider {
         if let Some(argon2) = config.argon2 {
             builder = builder.argon2(argon2);
         }
-        builder.build().map(Self).map_err(|reason| refused(&reason))
+        builder
+            .build()
+            .map(Self)
+            .map_err(|reason| reason.writing("account table"))
     }
 }
 
