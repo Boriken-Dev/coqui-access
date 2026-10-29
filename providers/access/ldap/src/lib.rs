@@ -13,6 +13,7 @@ use std::time::Duration;
 use coqui_access::guatiao::library::ProviderError;
 use coqui_access::guatiao::{FromValue, Provider, Schema, ToValue};
 use coqui_access::{Attempt, Authenticator, Directory, Lookup, Person, Verdict};
+use coqui_access_kit::{CacheOptions, CacheSetting, Cached};
 use coqui_peer_tls::{Policy, Roots, Trust, Weakening, client_config_without_identity_with};
 use ldap3::{LdapConn, LdapConnSettings, Scope, SearchEntry};
 
@@ -57,6 +58,11 @@ pub struct LdapAccountsConfig {
     /// Connection and operation timeout in seconds; values below one become one.
     #[map(default = 10)]
     pub timeout_seconds: u32,
+    /// Lookups kept for a few seconds, to absorb bursts: `true` (5 s, 1 s for "not found",
+    /// 10 000 entries), `false`, or `{ "ttl", "negative_ttl", "max_entries" }`. Passwords are
+    /// always checked at the directory.
+    #[map(default)]
+    pub cache: CacheSetting,
 }
 
 impl fmt::Debug for LdapAccountsConfig {
@@ -83,7 +89,8 @@ impl fmt::Debug for LdapAccountsConfig {
     }
 }
 
-/// LDAP accounts as authentication and directory providers.
+/// LDAP accounts as authentication and directory providers, with lookups kept as the
+/// configuration's `cache` says.
 #[derive(Provider)]
 #[provider(
     Authenticator,
@@ -94,15 +101,69 @@ impl fmt::Debug for LdapAccountsConfig {
     crate = ::coqui_access::guatiao
 )]
 pub struct LdapAccounts {
-    config: LdapAccountsConfig,
-    trusted: Option<Arc<rustls::ClientConfig>>,
-    weakened: Vec<Weakening>,
+    directory: Cached<Ldap>,
 }
 
 impl fmt::Debug for LdapAccounts {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("LdapAccounts")
+            .field("directory", &self.directory.inner())
+            .field("cache", &self.directory)
+            .finish()
+    }
+}
+
+impl LdapAccounts {
+    /// Validates the LDAP configuration without opening a network connection.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for unsafe transport, incomplete credentials, invalid filters, or a
+    /// `ca_file` that cannot be read.
+    pub fn new(config: LdapAccountsConfig) -> Result<Self, String> {
+        let cache = config.cache.options();
+        Ok(Self {
+            directory: Cached::new(Arc::new(Ldap::new(config)?), cache),
+        })
+    }
+
+    /// What the TLS configuration for `ca_file` allows beyond the strict policy, as data for
+    /// the host to act on: TLS 1.2 beside 1.3. Empty without a `ca_file`, where ldap3's own
+    /// rustls defaults apply.
+    pub fn weakened(&self) -> &[Weakening] {
+        &self.directory.inner().weakened
+    }
+
+    /// How lookups are kept.
+    pub fn cache(&self) -> CacheOptions {
+        self.directory.options()
+    }
+}
+
+impl Authenticator for LdapAccounts {
+    fn authenticate(&self, attempt: Attempt) -> Result<Verdict, ProviderError> {
+        self.directory.inner().authenticate(attempt)
+    }
+}
+
+impl Directory for LdapAccounts {
+    fn lookup(&self, lookup: Lookup) -> Result<Option<Person>, ProviderError> {
+        self.directory.lookup(lookup)
+    }
+}
+
+/// The directory itself, asked every time.
+struct Ldap {
+    config: LdapAccountsConfig,
+    trusted: Option<Arc<rustls::ClientConfig>>,
+    weakened: Vec<Weakening>,
+}
+
+impl fmt::Debug for Ldap {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("Ldap")
             .field("config", &"[REDACTED]")
             .field("custom_ca", &self.trusted.is_some())
             .finish()
@@ -116,13 +177,8 @@ struct Found {
     disabled: bool,
 }
 
-impl LdapAccounts {
-    /// Validates the LDAP configuration without opening a network connection.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error for unsafe transport, incomplete credentials or invalid filters.
-    pub fn new(config: LdapAccountsConfig) -> Result<Self, String> {
+impl Ldap {
+    fn new(config: LdapAccountsConfig) -> Result<Self, String> {
         if search::in_the_clear(&config.url, config.start_tls) {
             return Err(
                 "a password would cross the network in the clear: use ldaps:// or ldap:// with start_tls=true"
@@ -155,13 +211,6 @@ impl LdapAccounts {
             trusted,
             weakened,
         })
-    }
-
-    /// What the TLS configuration for `ca_file` allows beyond the strict policy, as data for
-    /// the host to act on: TLS 1.2 beside 1.3. Empty without a `ca_file`, where ldap3's own
-    /// rustls defaults apply.
-    pub fn weakened(&self) -> &[Weakening] {
-        &self.weakened
     }
 
     fn searching(&self) -> Result<LdapConn, ProviderError> {
@@ -269,7 +318,7 @@ impl TryFrom<LdapAccountsConfig> for LdapAccounts {
     }
 }
 
-impl Authenticator for LdapAccounts {
+impl Authenticator for Ldap {
     fn authenticate(&self, attempt: Attempt) -> Result<Verdict, ProviderError> {
         let (Some(name), Some(password)) = (attempt.name, attempt.secret) else {
             return Ok(Verdict::Unknown);
@@ -303,7 +352,7 @@ impl Authenticator for LdapAccounts {
     }
 }
 
-impl Directory for LdapAccounts {
+impl Directory for Ldap {
     fn lookup(&self, lookup: Lookup) -> Result<Option<Person>, ProviderError> {
         if lookup.by != "name" {
             return Ok(None);
@@ -341,6 +390,7 @@ mod tests {
             group_base: None,
             nested_groups: false,
             timeout_seconds: 10,
+            cache: CacheSetting::default(),
         }
     }
 
@@ -383,7 +433,7 @@ mod tests {
         let mut trusting = config("ldaps://directory.example.org");
         trusting.ca_file = Some(file.to_str().unwrap().to_owned());
         let accounts = LdapAccounts::new(trusting).unwrap();
-        assert!(accounts.trusted.is_some());
+        assert!(accounts.directory.inner().trusted.is_some());
         assert!(!accounts.weakened().is_empty(), "TLS 1.2 is reported");
         assert!(
             LdapAccounts::new(config("ldaps://directory.example.org"))
@@ -404,5 +454,27 @@ mod tests {
                     .starts_with("ca_file")
             );
         }
+    }
+
+    #[test]
+    fn lookups_are_cached_by_default_and_the_setting_reads_as_a_flag_or_options() {
+        let accounts = LdapAccounts::new(config("ldaps://directory.example.org")).unwrap();
+        assert_eq!(accounts.cache(), CacheOptions::default());
+        let mut off = config("ldaps://directory.example.org");
+        off.cache = CacheSetting::Enabled(false);
+        assert_eq!(LdapAccounts::new(off).unwrap().cache(), CacheOptions::off());
+        let read = |cache: coqui_access::guatiao::Value| {
+            let value = config("ldaps://directory.example.org").to_value().unwrap();
+            let mut map = coqui_access::guatiao::Map::try_from(value).unwrap();
+            map.set("cache", cache);
+            LdapAccountsConfig::from_value(&map.into())
+                .unwrap()
+                .cache
+                .options()
+        };
+        assert_eq!(read(false.into()), CacheOptions::off());
+        let mut tuned = coqui_access::guatiao::Map::new();
+        tuned.set("ttl", 1u32);
+        assert_eq!(read(tuned.into()).ttl, Duration::from_secs(1));
     }
 }

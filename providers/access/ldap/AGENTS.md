@@ -5,7 +5,8 @@ signature, contract and gotchas, so the crate can be used without reading its so
 ships inside the package and is self-contained. Development documentation lives with the
 source at <https://github.com/Boriken-Dev/coqui-access>.
 
-MSRV Rust 1.89. No Cargo features. Depends on `coqui-access`, `coqui-peer-tls` (feature `tls12`,
+MSRV Rust 1.89. No Cargo features. Depends on `coqui-access`, `coqui-access-kit` (feature
+`cache`, for lookups), `coqui-peer-tls` (feature `tls12`,
 for the `ca_file` client configuration), `ldap3` (sync, rustls with ring) and `rustls`. No `unsafe` code. The loadable library is the separate crate
 `coqui-access-ldap-plugin`.
 
@@ -13,6 +14,7 @@ for the `ca_file` client configuration), `ldap3` (sync, rustls with ring) and `r
 pub struct LdapAccountsConfig {
     pub url: String,                      // ldaps:// or ldap:// with start_tls
     pub start_tls: bool,                  // default false
+    pub cache: CacheSetting,               // default true: lookups kept 5 s, "not found" 1 s
     pub ca_file: Option<String>,          // PEM; the only trusted roots, under Policy::compatible()
     pub base: String,                     // search root
     pub bind: Option<String>,             // service account DN
@@ -29,6 +31,7 @@ pub struct LdapAccounts;                  // provider id "coqui_access_ldap"
 impl LdapAccounts {
     pub fn new(config: LdapAccountsConfig) -> Result<Self, String>;
     pub fn weakened(&self) -> &[coqui_peer_tls::Weakening];   // what the ca_file TLS config allows past strict
+    pub fn cache(&self) -> coqui_access_kit::CacheOptions;     // how lookups are kept
 }
 impl Authenticator for LdapAccounts { /* takes name + secret */ }
 impl Directory for LdapAccounts { /* by "name" only */ }

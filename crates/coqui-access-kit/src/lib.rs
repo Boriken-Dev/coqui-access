@@ -19,6 +19,9 @@
 #![warn(missing_debug_implementations)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
+#[cfg(feature = "cache")]
+#[cfg_attr(docsrs, doc(cfg(feature = "cache")))]
+pub mod cache;
 #[cfg(feature = "file")]
 #[cfg_attr(docsrs, doc(cfg(feature = "file")))]
 pub mod file;
@@ -26,6 +29,8 @@ pub mod hash;
 pub mod secret;
 pub mod table;
 
+#[cfg(feature = "cache")]
+pub use cache::{CacheOptions, CacheSetting, Cached};
 pub use hash::{
     Argon2Params, KeyHash, MAX_PASSWORD_BYTES, PasswordHasher, generate_key, is_key_hash,
     is_password_hash, verify_key, verify_password,

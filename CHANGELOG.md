@@ -88,6 +88,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   person uid: Linux 1000, FreeBSD 1001, macOS 501), `groups` (empty admits any) and `domain`
   (Windows, default `.`); `weakenings()` reports a `min_uid` that admits root or service
   accounts. Building on Unix links the system `libpam`.
+- `coqui-access-kit` feature `cache`: `Cached<T>` keeps a directory's lookups and an
+  authorizer's decisions for a short while (`CacheOptions`: 5 s, 1 s for "not found" or a
+  denial, 10 000 entries, each an option, `off()` for none), never a credential or an error;
+  `Accounts` writes through it clear it. `CacheSetting` is the `true`/`false`/options
+  configuration. `coqui-access-ldap` caches its lookups by default (`cache` in its
+  configuration).
 - `coqui-access-ldap`: a `ca_file` builds its client TLS configuration with `coqui-peer-tls`
   under `Policy::compatible()` (TLS 1.2 with extended master secret, and 1.3); `weakened()`
   reports what that allows past strict.
