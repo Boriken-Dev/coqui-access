@@ -54,7 +54,7 @@ The plugin takes `{ "scope_kinds": ["site"], "roles": [{ "name": "viewer", "acti
 | `RoleAuthorizerBuilder` | `scope_kinds`, `role`, `rule`, `build`. |
 | `RolePolicy`, `Role`, `Rule` | The policy as plain data and provider configuration; guatiao value traits. |
 | `RolePolicyError` | An invalid policy. |
-| `MAX_ROLES`, `MAX_ROLE_ACTIONS`, `MAX_RULES`, `MAX_SCOPE_KINDS` | The bounds. |
+| `RoleLimits` | The bounds, each a `coqui_access::Limit` the caller changes or lifts. |
 
 ## Development
 

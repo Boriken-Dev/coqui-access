@@ -24,6 +24,7 @@ pub use guatiao;
 
 pub mod error;
 mod kind;
+mod limit;
 mod model;
 mod subject;
 
@@ -31,6 +32,7 @@ pub use kind::{
     Accounts, AccountsVtable, Authenticator, AuthenticatorVtable, Authorizer, AuthorizerVtable,
     Directory, DirectoryVtable,
 };
+pub use limit::Limit;
 pub use model::{
     AccountInfo, AccountPut, Attempt, AuthorizationDecision, AuthorizationRequest, Description,
     Lookup, Person, PutOutcome, Verdict, Waiting, takes,

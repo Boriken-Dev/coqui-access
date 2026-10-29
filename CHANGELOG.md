@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `coqui-access`: `Limit`, a count bound or none (`null` in configuration), for the resource
+  bounds of the crates here.
 - `coqui-access`: the kinds `coqui_authenticator`, `coqui_directory`, `coqui_authorizer` and
   the optional `coqui_accounts`, with their models. `Attempt::headers` is an ordered list of
   `(name, value)` pairs; `describe` has a default body. Floor hashes are pinned by a contract
@@ -101,6 +103,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   network trusts the IPv4 addresses it maps; `any` is refused.
 - `coqui-roles`: a first-match role authorizer with configurable scope kinds, built with
   `RoleAuthorizer::builder()` or `RoleAuthorizer::new(RolePolicy)`. `RolePolicy`, `Role` and
-  `Rule` are plain data with guatiao's value traits; the role, action, rule and scope-kind
-  bounds are public constants. `RoleAuthorizer` is the `coqui_roles` provider, configured with
+  `Rule` are plain data with guatiao's value traits; its bounds (roles, actions per
+  role, rules, scope kinds, name bytes) are `RoleLimits`, each a `coqui_access::Limit` a caller
+  changes or lifts, in code or in the policy's `limits`. `RoleAuthorizer` is the `coqui_roles` provider, configured with
   a `RolePolicy` (`scope_kinds`, `roles`, `rules`); `coqui-roles-plugin` exports it.

@@ -99,6 +99,26 @@ pub struct SubjectError;                                // non_exhaustive, Error
   refused. Policies add their own length and character rules.
 - `Debug` shows the kind only: the value is an identity.
 
+## Limits
+
+```rust
+pub struct Limit;                       // Copy, Eq, Hash, Debug, Display; guatiao derives (transparent)
+impl Limit {
+    pub const UNBOUNDED: Limit;
+    pub const fn at(count: u32) -> Limit;
+    pub const fn get(self) -> Option<u32>;
+    pub fn allows(self, count: usize) -> bool;   // count <= the bound, or no bound
+    pub fn or_max(self) -> usize;                // usize::MAX when unbounded
+}
+impl From<u32> for Limit; impl From<Option<u32>> for Limit;
+```
+
+- The resource bounds of the crates here (roles, rules, record fields, password bytes) are
+  `Limit`s with defaults a caller changes or lifts; none is a security property.
+- As configuration a `Limit` is a number or `null` (no bound). A struct field of this type
+  with `#[map(default = Limit::at(n))]` reads an absent key as `n` and writes `null` for
+  unbounded, so a lifted bound survives a round trip (a bare `Option` field could not).
+
 ## Errors (`coqui_access::error`)
 
 `bad_value`, `not_found`, `unsupported`, `internal`: each `fn(&str) -> ProviderError` with the
