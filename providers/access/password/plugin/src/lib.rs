@@ -1,4 +1,4 @@
-//! `coqui-access-local` as a library a host loads: the Guatiao entry point and the config that
+//! `coqui-access-password` as a library a host loads: the Guatiao entry point and the config that
 //! builds the provider.
 //!
 //! The config names where accounts come from in `source`, a file in `toml` or `json`:
@@ -23,14 +23,14 @@ use coqui_access::{
 };
 use coqui_access_kit::file::Source;
 use coqui_access_kit::{Argon2Params, MemoryTable, Table};
-use coqui_access_local::{AccountRecord, DEFAULT_MAX_ACCOUNTS, LocalAccounts};
+use coqui_access_password::{AccountRecord, DEFAULT_MAX_ACCOUNTS, PasswordAccounts};
 
 pub use format::Format;
 
-/// Guatiao configuration for the local accounts provider.
+/// Guatiao configuration for the password accounts provider.
 #[derive(Debug, Clone, FromValue, Schema, ToValue)]
 #[map(crate = ::coqui_access::guatiao)]
-pub struct LocalAccountsConfig {
+pub struct PasswordAccountsConfig {
     /// Where the accounts are kept; memory when absent.
     pub source: Option<Source<Format>>,
     /// The most accounts the table may hold.
@@ -41,7 +41,7 @@ pub struct LocalAccountsConfig {
     pub argon2: Argon2Params,
 }
 
-impl Default for LocalAccountsConfig {
+impl Default for PasswordAccountsConfig {
     /// What an empty configuration reads as: every default the schema declares.
     fn default() -> Self {
         Self::from_value(&coqui_access::guatiao::Map::new().into())
@@ -49,30 +49,30 @@ impl Default for LocalAccountsConfig {
     }
 }
 
-/// The local accounts provider a host loads.
+/// The password accounts provider a host loads.
 #[derive(Debug, Provider)]
 #[provider(
     Authenticator,
     Directory,
     Accounts,
-    id = "coqui_access_local",
-    name = "Local accounts",
-    config = LocalAccountsConfig,
+    id = "coqui_access_password",
+    name = "Password accounts",
+    config = PasswordAccountsConfig,
     crate = ::coqui_access::guatiao
 )]
-pub struct LocalAccountsProvider(LocalAccounts);
+pub struct PasswordAccountsProvider(PasswordAccounts);
 
-impl TryFrom<LocalAccountsConfig> for LocalAccountsProvider {
+impl TryFrom<PasswordAccountsConfig> for PasswordAccountsProvider {
     type Error = ProviderError;
 
-    fn try_from(config: LocalAccountsConfig) -> Result<Self, Self::Error> {
+    fn try_from(config: PasswordAccountsConfig) -> Result<Self, Self::Error> {
         let table: Arc<dyn Table<AccountRecord>> = match &config.source {
             Some(source) => source
                 .open("accounts")
                 .map_err(|reason| reason.writing("account table"))?,
             None => Arc::new(MemoryTable::new()),
         };
-        LocalAccounts::builder()
+        PasswordAccounts::builder()
             .table(table)
             .max_accounts(config.max_accounts as usize)
             .argon2(config.argon2)
@@ -82,7 +82,7 @@ impl TryFrom<LocalAccountsConfig> for LocalAccountsProvider {
     }
 }
 
-impl Authenticator for LocalAccountsProvider {
+impl Authenticator for PasswordAccountsProvider {
     fn authenticate(&self, attempt: Attempt) -> Result<Verdict, ProviderError> {
         self.0.authenticate(attempt)
     }
@@ -92,7 +92,7 @@ impl Authenticator for LocalAccountsProvider {
     }
 }
 
-impl Directory for LocalAccountsProvider {
+impl Directory for PasswordAccountsProvider {
     fn lookup(&self, lookup: Lookup) -> Result<Option<Person>, ProviderError> {
         self.0.lookup(lookup)
     }
@@ -102,7 +102,7 @@ impl Directory for LocalAccountsProvider {
     }
 }
 
-impl Accounts for LocalAccountsProvider {
+impl Accounts for PasswordAccountsProvider {
     fn accounts(&self) -> Result<Vec<AccountInfo>, ProviderError> {
         self.0.accounts()
     }
@@ -116,7 +116,7 @@ impl Accounts for LocalAccountsProvider {
     }
 }
 
-coqui_access::guatiao::providers!(LocalAccountsProvider);
+coqui_access::guatiao::providers!(PasswordAccountsProvider);
 
 #[cfg(test)]
 mod tests {
@@ -128,15 +128,15 @@ mod tests {
         Argon2Params::new(64, 1, 1).unwrap()
     }
 
-    fn config(path: &std::path::Path) -> LocalAccountsConfig {
+    fn config(path: &std::path::Path) -> PasswordAccountsConfig {
         config_in(path, Format::Toml)
     }
 
-    fn config_in(path: &std::path::Path, format: Format) -> LocalAccountsConfig {
-        LocalAccountsConfig {
+    fn config_in(path: &std::path::Path, format: Format) -> PasswordAccountsConfig {
+        PasswordAccountsConfig {
             source: Some(Source::file(path.to_str().unwrap(), format)),
             argon2: cheap(),
-            ..LocalAccountsConfig::default()
+            ..PasswordAccountsConfig::default()
         }
     }
 
@@ -163,7 +163,7 @@ mod tests {
             ),
         )
         .unwrap();
-        let provider = LocalAccountsProvider::try_from(config(&path)).unwrap();
+        let provider = PasswordAccountsProvider::try_from(config(&path)).unwrap();
         let Verdict::Valid(lookup) = provider
             .authenticate(attempt("alice", "correct horse"))
             .unwrap()
@@ -182,7 +182,7 @@ mod tests {
             .unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
         assert!(text.contains("name = \"bob\"") && !text.contains("\"pw\""));
-        let other = LocalAccountsProvider::try_from(config(&path)).unwrap();
+        let other = PasswordAccountsProvider::try_from(config(&path)).unwrap();
         assert!(matches!(
             other.authenticate(attempt("bob", "pw")).unwrap(),
             Verdict::Valid(_)
@@ -196,17 +196,17 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("accounts.toml");
         std::fs::write(&path, "accounts = [ { unknown = true } ]").unwrap();
-        assert!(LocalAccountsProvider::try_from(config(&path)).is_err());
+        assert!(PasswordAccountsProvider::try_from(config(&path)).is_err());
         std::fs::write(&path, vec![b' '; 1024 * 1024 + 1]).unwrap();
-        assert!(LocalAccountsProvider::try_from(config(&path)).is_err());
-        let empty = LocalAccountsConfig {
+        assert!(PasswordAccountsProvider::try_from(config(&path)).is_err());
+        let empty = PasswordAccountsConfig {
             source: Some(Source { file: None }),
-            ..LocalAccountsConfig::default()
+            ..PasswordAccountsConfig::default()
         };
-        assert!(LocalAccountsProvider::try_from(empty).is_err());
-        let memory = LocalAccountsProvider::try_from(LocalAccountsConfig {
+        assert!(PasswordAccountsProvider::try_from(empty).is_err());
+        let memory = PasswordAccountsProvider::try_from(PasswordAccountsConfig {
             argon2: cheap(),
-            ..LocalAccountsConfig::default()
+            ..PasswordAccountsConfig::default()
         })
         .unwrap();
         assert!(memory.accounts().unwrap().is_empty());
@@ -214,8 +214,8 @@ mod tests {
 
     #[test]
     fn the_config_reads_from_a_guatiao_value() {
-        let config = LocalAccountsConfig::from_value(
-            &LocalAccountsConfig {
+        let config = PasswordAccountsConfig::from_value(
+            &PasswordAccountsConfig {
                 source: Some(Source::file("accounts.toml", Format::Toml)),
                 max_accounts: 5,
                 argon2: Argon2Params::default(),
@@ -232,7 +232,7 @@ mod tests {
     fn a_json_source_holds_the_same_accounts() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("accounts.json");
-        let provider = LocalAccountsProvider::try_from(config_in(&path, Format::Json)).unwrap();
+        let provider = PasswordAccountsProvider::try_from(config_in(&path, Format::Json)).unwrap();
         provider
             .put(AccountPut {
                 name: "carol".to_owned(),
@@ -243,13 +243,13 @@ mod tests {
             .unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
         assert!(text.trim_start().starts_with('{') && text.contains("\"carol\""));
-        let other = LocalAccountsProvider::try_from(config_in(&path, Format::Json)).unwrap();
+        let other = PasswordAccountsProvider::try_from(config_in(&path, Format::Json)).unwrap();
         assert!(matches!(
             other.authenticate(attempt("carol", "pw")).unwrap(),
             Verdict::Valid(_)
         ));
         assert!(
-            LocalAccountsProvider::try_from(config(&path)).is_err(),
+            PasswordAccountsProvider::try_from(config(&path)).is_err(),
             "JSON is not TOML"
         );
     }
@@ -264,9 +264,9 @@ mod tests {
 
     #[test]
     fn the_schema_declares_the_defaults_an_empty_config_reads_as() {
-        let schema = LocalAccountsConfig::schema().unwrap();
+        let schema = PasswordAccountsConfig::schema().unwrap();
         assert_eq!(default_in(&schema, "max_accounts"), Some(10_000));
-        let empty = LocalAccountsConfig::default();
+        let empty = PasswordAccountsConfig::default();
         assert_eq!(empty.max_accounts, 10_000);
         assert_eq!(empty.argon2, Argon2Params::default());
     }

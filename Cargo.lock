@@ -228,7 +228,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "coqui-access-local"
+name = "coqui-access-password"
 version = "0.1.0"
 dependencies = [
  "coqui-access",
@@ -236,12 +236,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "coqui-access-local-plugin"
+name = "coqui-access-password-plugin"
 version = "0.1.0"
 dependencies = [
  "coqui-access",
  "coqui-access-kit",
- "coqui-access-local",
+ "coqui-access-password",
  "serde",
  "serde_json",
  "tempfile",

@@ -1,6 +1,6 @@
 [package]
-name = "coqui-access-local"
-description = "Local accounts with Argon2id passwords in any table: authenticator, directory and account management"
+name = "coqui-access-password"
+description = "Password accounts with Argon2id passwords in any table: authenticator, directory and account management"
 readme = "README.md"
 version.workspace = true
 edition.workspace = true

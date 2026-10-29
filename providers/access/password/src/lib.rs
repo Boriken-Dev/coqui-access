@@ -1,6 +1,6 @@
-//! Local accounts with Argon2id password hashes, kept in any [`Table`].
+//! Password accounts with Argon2id password hashes, kept in any [`Table`].
 //!
-//! Build one in code with [`LocalAccounts::builder`]; the default table is in memory. The
+//! Build one in code with [`PasswordAccounts::builder`]; the default table is in memory. The
 //! provider authenticates accounts, resolves the same records as a directory, and manages
 //! them through [`Accounts`].
 #![doc = include_str!("../README.md")]
@@ -28,7 +28,7 @@ use coqui_access_kit::{
 pub const DEFAULT_MAX_ACCOUNTS: usize = 10_000;
 const MAX_NAME_BYTES: usize = 256;
 
-/// One local account as a [`Table`] keeps it, keyed by [`name`](AccountRecord::name).
+/// One password account as a [`Table`] keeps it, keyed by [`name`](AccountRecord::name).
 ///
 /// It derives guatiao's `ToValue`, `FromValue` and `Schema`, so a [`Table`] may keep it in
 /// any format.
@@ -128,23 +128,23 @@ impl fmt::Debug for AccountRecord {
     }
 }
 
-/// Options for [`LocalAccounts`]; every one has a default.
-pub struct LocalAccountsBuilder {
+/// Options for [`PasswordAccounts`]; every one has a default.
+pub struct PasswordAccountsBuilder {
     table: Option<Arc<dyn Table<AccountRecord>>>,
     max_accounts: usize,
     argon2: Argon2Params,
 }
 
-impl fmt::Debug for LocalAccountsBuilder {
+impl fmt::Debug for PasswordAccountsBuilder {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
-            .debug_struct("LocalAccountsBuilder")
+            .debug_struct("PasswordAccountsBuilder")
             .field("max_accounts", &self.max_accounts)
             .finish_non_exhaustive()
     }
 }
 
-impl LocalAccountsBuilder {
+impl PasswordAccountsBuilder {
     /// Keeps the accounts in `table` instead of in memory.
     #[must_use]
     pub fn table(mut self, table: Arc<dyn Table<AccountRecord>>) -> Self {
@@ -174,28 +174,28 @@ impl LocalAccountsBuilder {
     ///
     /// Returns an error when the table cannot be loaded or holds an invalid or duplicated
     /// account.
-    pub fn build(self) -> Result<LocalAccounts, SourceError> {
+    pub fn build(self) -> Result<PasswordAccounts, SourceError> {
         let table = self
             .table
             .unwrap_or_else(|| Arc::new(MemoryTable::<AccountRecord>::new()));
         let max = self.max_accounts;
-        Ok(LocalAccounts {
+        Ok(PasswordAccounts {
             accounts: Reloading::new(table, move |records| validate(records, max))?,
             hasher: PasswordHasher::new(self.argon2).map_err(SourceError::invalid)?,
         })
     }
 }
 
-/// Local accounts as an Authenticator, Directory and Accounts implementation.
+/// Password accounts as an Authenticator, Directory and Accounts implementation.
 ///
 /// The table is read again whenever it reports a change. A name that is not kept is
 /// verified against a dummy hash, so an unknown name costs the same time as a wrong password.
 ///
 /// ```
 /// use coqui_access::{AccountPut, Accounts, Attempt, Authenticator, Verdict};
-/// use coqui_access_local::LocalAccounts;
+/// use coqui_access_password::PasswordAccounts;
 ///
-/// let accounts = LocalAccounts::builder().build().unwrap();
+/// let accounts = PasswordAccounts::builder().build().unwrap();
 /// accounts
 ///     .put(AccountPut {
 ///         name: "alice".into(),
@@ -213,16 +213,16 @@ impl LocalAccountsBuilder {
 /// assert!(matches!(verdict, Verdict::Valid(_)));
 /// ```
 #[derive(Debug)]
-pub struct LocalAccounts {
+pub struct PasswordAccounts {
     accounts: Reloading<AccountRecord>,
     hasher: PasswordHasher,
 }
 
-impl LocalAccounts {
-    /// Options for local accounts, kept in memory unless
-    /// [`table`](LocalAccountsBuilder::table) says otherwise.
-    pub fn builder() -> LocalAccountsBuilder {
-        LocalAccountsBuilder {
+impl PasswordAccounts {
+    /// Options for password accounts, kept in memory unless
+    /// [`table`](PasswordAccountsBuilder::table) says otherwise.
+    pub fn builder() -> PasswordAccountsBuilder {
+        PasswordAccountsBuilder {
             table: None,
             max_accounts: DEFAULT_MAX_ACCOUNTS,
             argon2: Argon2Params::default(),
@@ -230,7 +230,7 @@ impl LocalAccounts {
     }
 }
 
-impl Authenticator for LocalAccounts {
+impl Authenticator for PasswordAccounts {
     fn authenticate(&self, attempt: Attempt) -> Result<Verdict, ProviderError> {
         let (Some(name), Some(password)) = (attempt.name, attempt.secret) else {
             return Ok(Verdict::Unknown);
@@ -256,13 +256,13 @@ impl Authenticator for LocalAccounts {
 
     fn describe(&self) -> Result<Description, ProviderError> {
         Ok(Description {
-            name: Some("Local accounts".to_owned()),
+            name: Some("Password accounts".to_owned()),
             takes: Some(takes::PASSWORD.to_owned()),
         })
     }
 }
 
-impl Directory for LocalAccounts {
+impl Directory for PasswordAccounts {
     fn lookup(&self, lookup: Lookup) -> Result<Option<Person>, ProviderError> {
         self.accounts
             .read(|records| {
@@ -290,7 +290,7 @@ impl Directory for LocalAccounts {
     }
 }
 
-impl Accounts for LocalAccounts {
+impl Accounts for PasswordAccounts {
     fn accounts(&self) -> Result<Vec<AccountInfo>, ProviderError> {
         self.accounts
             .read(|records| {
@@ -316,7 +316,7 @@ impl Accounts for LocalAccounts {
             return Err(error::bad_value("an account has a name"));
         }
         if account.expires_unix.is_some() {
-            return Err(error::bad_value("local accounts do not expire"));
+            return Err(error::bad_value("password accounts do not expire"));
         }
         let password = account
             .secret
@@ -429,9 +429,9 @@ mod tests {
 
     fn with_accounts(
         records: impl IntoIterator<Item = AccountRecord>,
-    ) -> (Arc<MemoryTable<AccountRecord>>, LocalAccounts) {
+    ) -> (Arc<MemoryTable<AccountRecord>>, PasswordAccounts) {
         let table = Arc::new(MemoryTable::from_records(records));
-        let accounts = LocalAccounts::builder()
+        let accounts = PasswordAccounts::builder()
             .table(table.clone())
             .argon2(cheap())
             .build()
@@ -501,7 +501,7 @@ mod tests {
     fn invalid_duplicated_and_oversized_tables_are_refused() {
         let hash = hash_of("pw").unwrap();
         let build = |records: Vec<AccountRecord>, max: usize| {
-            LocalAccounts::builder()
+            PasswordAccounts::builder()
                 .table(Arc::new(MemoryTable::from_records(records)))
                 .max_accounts(max)
                 .build()
@@ -594,7 +594,7 @@ mod tests {
     #[test]
     fn a_write_through_another_handle_is_seen_without_rebuilding() {
         let (table, accounts) = with_accounts([]);
-        let other = LocalAccounts::builder()
+        let other = PasswordAccounts::builder()
             .table(table)
             .argon2(cheap())
             .build()
@@ -620,7 +620,7 @@ mod tests {
             }
         }
         let hash = hash_of("pw").unwrap();
-        let accounts = LocalAccounts::builder()
+        let accounts = PasswordAccounts::builder()
             .table(Arc::new(Fixed(vec![AccountRecord::new("1", "a", hash)])))
             .build()
             .unwrap();
