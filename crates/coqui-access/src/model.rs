@@ -43,6 +43,10 @@ pub struct Attempt {
     pub secure: Option<bool>,
     /// Identity of a client certificate whose key was verified by the transport.
     pub certificate: Option<String>,
+    /// The client's certificates as DER, leaf first, then the intermediates it sent, when the
+    /// transport proved the leaf's key. A provider that decides trust or reads names from the
+    /// certificate takes them from here.
+    pub certificates: Option<Vec<guatiao::Bytes>>,
 }
 
 impl fmt::Debug for Attempt {
@@ -55,6 +59,7 @@ impl fmt::Debug for Attempt {
             .field("peer", &self.peer.as_ref().map(|_| "…"))
             .field("secure", &self.secure)
             .field("certificate", &self.certificate.as_ref().map(|_| "…"))
+            .field("certificates", &self.certificates.as_ref().map(Vec::len))
             .finish()
     }
 }

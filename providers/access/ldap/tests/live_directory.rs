@@ -16,6 +16,7 @@ fn attempt(name: String, secret: String) -> Attempt {
         peer: None,
         secure: Some(false),
         certificate: None,
+        certificates: None,
     }
 }
 

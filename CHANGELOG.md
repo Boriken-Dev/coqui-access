@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `coqui-access`: `Attempt::certificates`, the client's certificates as DER (leaf first, then
+  the intermediates it sent) for a provider that decides trust or reads names from them.
 - `coqui-access`: `Limit`, a count bound or none (`null` in configuration), for the resource
   bounds of the crates here.
 - `coqui-access`: the kinds `coqui_authenticator`, `coqui_directory`, `coqui_authorizer` and

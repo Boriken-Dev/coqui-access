@@ -61,7 +61,7 @@ fields. Unknown keys are skipped when reading.
 
 | Model | Fields (required first) |
 | --- | --- |
-| `Attempt` | `name?`, `secret?`, `headers: Vec<(String, String)>`, `peer?`, `secure?`, `certificate?` |
+| `Attempt` | `name?`, `secret?`, `headers: Vec<(String, String)>`, `peer?`, `secure?`, `certificate?`, `certificates?: Vec<Bytes>` (DER, leaf first) |
 | `Lookup` | `by`, `value` — `by` is `id`, `name` or `email` (a provider may add more) |
 | `Verdict` | enum tagged by `kind`: `Unknown`, `Invalid`, `Valid(Lookup)` |
 | `Person` | `id`, `name`, `groups`, `attributes: BTreeMap<String, Value>`, `display_name?`, `email?` |
@@ -75,7 +75,9 @@ fields. Unknown keys are skipped when reading.
 
 `headers` are ordered pairs; a header sent twice appears twice; match names case-insensitively.
 `Attempt::certificate` is a fingerprint the transport verified the peer holds the key of, in
-the canonical text `coqui-peer-tls` writes (`sha256:<hex>`). `Debug` of `Attempt`, `Lookup`,
+the canonical text `coqui-peer-tls` writes (`sha256:<hex>`); `Attempt::certificates` is that
+certificate and the intermediates the client sent, as DER, leaf first. `Debug` shows only
+their count. `Debug` of `Attempt`, `Lookup`,
 `Person`, `AccountPut` and `PutOutcome` shows no secret and no identity value.
 
 ## Subjects
