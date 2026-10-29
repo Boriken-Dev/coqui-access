@@ -18,8 +18,8 @@ struct Item {
 }
 
 impl Keyed for Item {
-    fn key(&self) -> &str {
-        &self.name
+    fn key(&self) -> std::borrow::Cow<'_, str> {
+        std::borrow::Cow::Borrowed(&self.name)
     }
 }
 

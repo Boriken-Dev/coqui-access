@@ -5,6 +5,7 @@
 //! them apart. [`Reloading`] caches the latest [`Snapshot`] and refreshes it through
 //! [`Table::changes_since`].
 
+use std::borrow::Cow;
 use std::collections::BTreeSet;
 use std::fmt;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -88,7 +89,8 @@ impl Revision {
 /// A record a table can find again by name.
 pub trait Keyed {
     /// What identifies this record in its table: a put with the same key replaces it.
-    fn key(&self) -> &str;
+    /// Borrowed when the record holds it as text, owned when it is written from a value.
+    fn key(&self) -> Cow<'_, str>;
 }
 
 /// All the records of a table at one [`Revision`], in the table's order.
@@ -375,8 +377,8 @@ mod tests {
     struct Name(String);
 
     impl Keyed for Name {
-        fn key(&self) -> &str {
-            &self.0
+        fn key(&self) -> Cow<'_, str> {
+            Cow::Borrowed(&self.0)
         }
     }
 

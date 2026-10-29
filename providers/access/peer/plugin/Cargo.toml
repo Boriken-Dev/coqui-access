@@ -18,6 +18,7 @@ crate-type = ["cdylib"]
 coqui-access.workspace = true
 coqui-access-peer = { path = ".." }
 coqui-access-kit = { workspace = true, features = ["file"] }
+coqui-peer.workspace = true
 # The formats a file source may be written in: this plugin's choice, not the libraries'.
 serde.workspace = true
 serde_json.workspace = true

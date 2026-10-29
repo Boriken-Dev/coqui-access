@@ -8,6 +8,7 @@
 #![warn(missing_debug_implementations)]
 #![warn(missing_docs)]
 
+use std::borrow::Cow;
 use std::collections::BTreeSet;
 use std::fmt;
 use std::sync::Arc;
@@ -109,8 +110,8 @@ impl KeyRecord {
 }
 
 impl Keyed for KeyRecord {
-    fn key(&self) -> &str {
-        &self.name
+    fn key(&self) -> Cow<'_, str> {
+        Cow::Borrowed(&self.name)
     }
 }
 

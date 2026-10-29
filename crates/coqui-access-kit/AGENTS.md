@@ -98,7 +98,7 @@ impl SourceError {
     pub fn writing(&self, table: &str) -> ProviderError;   // ReadOnly UNSUPPORTED, Invalid BAD_VALUE, else INTERNAL
 }
 pub struct Revision;                    // Copy, Eq, Ord, Default; Revision::new(u64), .get()
-pub trait Keyed { fn key(&self) -> &str; }
+pub trait Keyed { fn key(&self) -> Cow<'_, str>; }   // borrowed when held as text, owned when written from a value
 pub struct Snapshot<T> { pub revision: Revision, pub records: Vec<T> }     // non_exhaustive; Snapshot::new
 pub trait Table<T>: Send + Sync {
     fn load(&self) -> Result<Snapshot<T>, SourceError>;
