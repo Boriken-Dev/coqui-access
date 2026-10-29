@@ -203,7 +203,9 @@ name = "coqui-access-ldap"
 version = "0.1.0"
 dependencies = [
  "coqui-access",
+ "coqui-peer-tls",
  "ldap3",
+ "rcgen",
  "rustls",
  "tempfile",
 ]
@@ -323,6 +325,7 @@ dependencies = [
  "rcgen",
  "rustls",
  "time",
+ "tokio-rustls",
 ]
 
 [[package]]
