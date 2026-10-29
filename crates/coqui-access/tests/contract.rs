@@ -15,11 +15,12 @@ use std::fmt::Debug;
 use std::path::PathBuf;
 
 use coqui_access::guatiao::library::Kind;
+use coqui_access::guatiao::library::kind::kind_document;
 use coqui_access::guatiao::{FromValue, Map, ToValue, Value};
 use coqui_access::{
-    AccountInfo, AccountPut, Accounts, AccountsVtable, Attempt, Authenticator, AuthenticatorVtable,
-    AuthorizationDecision, AuthorizationRequest, Authorizer, AuthorizerVtable, Description,
-    Directory, DirectoryVtable, Lookup, Person, PutOutcome, Verdict, Waiting,
+    AccountInfo, AccountPut, Accounts, Attempt, Authenticator, AuthorizationDecision,
+    AuthorizationRequest, Authorizer, Description, Directory, Lookup, Person, PutOutcome, Verdict,
+    Waiting,
 };
 use guatiao_serde::Presentation;
 use guatiao_serde::text::json;
@@ -128,13 +129,12 @@ fn a_verdict_round_trips_in_each_form() {
 
 /// Every kind as one document, in declaration order.
 fn rendered() -> String {
-    let kinds = [
-        AuthenticatorVtable::description(),
-        DirectoryVtable::description(),
-        AuthorizerVtable::description(),
-        AccountsVtable::description(),
-    ];
-    let document = format!("{{\"format\":1,\"kinds\":[{}]}}", kinds.join(","));
+    let document = kind_document(&[
+        <dyn Authenticator as Kind>::describe,
+        <dyn Directory as Kind>::describe,
+        <dyn Authorizer as Kind>::describe,
+        <dyn Accounts as Kind>::describe,
+    ]);
     let value = json::from_str(
         &document,
         coqui_access::guatiao::Alloc::rust(),
