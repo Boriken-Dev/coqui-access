@@ -7,13 +7,17 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/Boriken-Dev/coqui-access/test.yml)](https://github.com/Boriken-Dev/coqui-access/actions/workflows/test.yml)
 
 **Reverse-proxy identity headers** as an authenticator: a request from a trusted proxy address
-carries the account name in a header or a client-certificate subject, and the configured
-directory supplies groups. Group claims in headers are never trusted.
+carries the account name in a header, the client certificate the proxy verified, or that
+certificate's subject, and the configured directory supplies groups. Group claims in headers
+are never trusted.
 
 ## Features
 
 - **Trusted networks only** — addresses and CIDR ranges; an empty list trusts nobody.
-- **Header or subject** — an account header, or a field of a certificate subject.
+- **Header, certificate or subject** — an account header; the client certificate as nginx,
+  AWS ALB (URL-encoded PEM), Traefik (base64 DER) or Envoy (`x-forwarded-client-cert`) forward
+  it, read through account picks over its fields (SANs, subject, fingerprint); or a subject
+  header, read through the same picks. An IP written as a DNS name counts as an IP.
 - **Ambiguity refused** — a header sent twice is `Invalid`.
 
 ## Installation
@@ -30,9 +34,12 @@ Provider id `coqui_access_proxy`, configuration:
 
 ```toml
 trusted = ["10.0.0.0/24", "::1"]
-user_header = "x-remote-user"      # optional; the default unless subject_header is set
-subject_header = ""                # optional
-subject_field = "CN"               # used with subject_header
+user_header = "x-remote-user"      # optional; the default unless another header is set
+certificate_header = "x-client-cert"   # optional
+certificate_encoding = "pem-url"   # pem-url (nginx, ALB), der-base64 (Traefik), xfcc (Envoy)
+subject_header = "x-client-subject"    # optional
+account = [ { field = "san.email", by = "email" }, { field = "subject.cn", by = "name" } ]
+max_certificate_bytes = 16384
 ```
 
 Only configure headers the proxy overwrites.
@@ -43,6 +50,8 @@ Only configure headers the proxy overwrites.
 | --- | --- |
 | `ProxyWord` | The provider: `new(config)` and the `Authenticator` kind. |
 | `ProxyWordConfig` | The Guatiao configuration. |
+| `CertificateEncoding` | How a forwarded certificate is written: `PemUrl`, `DerBase64`, `Xfcc`. |
+| `default_account`, `DEFAULT_MAX_CERTIFICATE_BYTES` | The defaults: `subject.cn` by `name`; 16 384 bytes. |
 | `field_of` | Reads a field from a `CN=a,O=b` or `/O=b/CN=a` subject. |
 
 ## Development

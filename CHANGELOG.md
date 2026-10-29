@@ -119,7 +119,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   under its default policy (TLS 1.2 with extended master secret, and 1.3); `weakened()`
   reports anything past that default.
 - `coqui-access-proxy`: trusted proxies are `coqui-net-acl` networks, so an IPv4-mapped
-  network trusts the IPv4 addresses it maps; `any` is refused.
+  network trusts the IPv4 addresses it maps; `any` is refused. A `certificate_header` carries the
+  client certificate the proxy verified, as `pem-url` (nginx, AWS ALB), `der-base64`
+  (Traefik) or `xfcc` (Envoy), within `max_certificate_bytes` (16 384); `account` picks over
+  its fields, or over a `subject_header`'s attributes, name the account (default the subject's
+  CN, by `name`). The order is the user header, the certificate, the subject.
 - `coqui-roles`: a first-match role authorizer with configurable scope kinds, built with
   `RoleAuthorizer::builder()` or `RoleAuthorizer::new(RolePolicy)`. `RolePolicy`, `Role` and
   `Rule` are plain data with guatiao's value traits; its bounds (roles, actions per
