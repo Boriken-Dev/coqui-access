@@ -26,6 +26,7 @@ impl PeersBuilder {
     pub fn table(self, table: Arc<dyn Table<PeerRecord>>) -> Self;     // default: MemoryTable
     pub fn waiting(self, table: Arc<dyn Table<Unaccepted>>) -> Self;   // default: MemoryTable
     pub fn max_peers(self, max: usize) -> Self;                        // default 10 000
+    pub fn record_limits(self, limits: RecordLimits) -> Self;         // default RecordLimits::DEFAULT
     pub fn waiting_limits(self, limits: WaitingLimits) -> Self;        // default DEFAULT_WAITING_LIMITS
     pub fn build(self) -> Result<Peers, SourceError>;
 }

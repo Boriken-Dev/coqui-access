@@ -20,13 +20,12 @@ use coqui_access::{
     Person, PutOutcome, Verdict, error, takes,
 };
 use coqui_access_kit::{
-    KeyHash, Keyed, MemoryTable, Reloading, SourceError, Table, check_field, check_keys,
+    KeyHash, Keyed, MemoryTable, RecordLimits, Reloading, SourceError, Table, check_keys,
     generate_key, is_key_hash, secret, unix_now, verify_key,
 };
 
 /// The most keys a table may hold unless the builder says otherwise.
 pub const DEFAULT_MAX_KEYS: usize = 10_000;
-const MAX_FIELD_BYTES: usize = 1024;
 
 /// The prefix of keys made when the builder names none.
 pub const DEFAULT_PREFIX: &str = "ck_";
@@ -135,6 +134,7 @@ pub struct KeysBuilder {
     prefix: String,
     hash: KeyHash,
     max_keys: usize,
+    limits: RecordLimits,
 }
 
 impl fmt::Debug for KeysBuilder {
@@ -179,6 +179,13 @@ impl KeysBuilder {
         self
     }
 
+    /// How large a key account's fields may be. Default [`RecordLimits::DEFAULT`].
+    #[must_use]
+    pub fn record_limits(mut self, limits: RecordLimits) -> Self {
+        self.limits = limits;
+        self
+    }
+
     /// Loads the table and makes the provider.
     ///
     /// # Errors
@@ -194,11 +201,12 @@ impl KeysBuilder {
         let table = self
             .table
             .unwrap_or_else(|| Arc::new(MemoryTable::<KeyRecord>::new()));
-        let max = self.max_keys;
+        let (max, limits) = (self.max_keys, self.limits);
         Ok(Keys {
             prefix: self.prefix,
             hash: self.hash,
-            keys: Reloading::new(table, move |records| validate(records, max))?,
+            limits,
+            keys: Reloading::new(table, move |records| validate(records, max, &limits))?,
         })
     }
 }
@@ -222,6 +230,7 @@ impl KeysBuilder {
 /// ```
 #[derive(Debug)]
 pub struct Keys {
+    limits: RecordLimits,
     prefix: String,
     hash: KeyHash,
     keys: Reloading<KeyRecord>,
@@ -236,6 +245,7 @@ impl Keys {
             prefix: DEFAULT_PREFIX.to_owned(),
             hash: KeyHash::default(),
             max_keys: DEFAULT_MAX_KEYS,
+            limits: RecordLimits::DEFAULT,
         }
     }
 
@@ -336,7 +346,7 @@ impl Accounts for Keys {
     /// that is there and has nothing said to change is given another key, and the one it had
     /// stops being taken. A key is never given: it is made here and answered once.
     fn put(&self, account: AccountPut) -> Result<PutOutcome, ProviderError> {
-        if !check_field(&account.name, MAX_FIELD_BYTES) {
+        if !self.limits.allows_field(&account.name) {
             return Err(error::bad_value("an account has a name"));
         }
         if account.secret.is_some() {
@@ -389,25 +399,21 @@ impl Accounts for Keys {
     }
 }
 
-fn validate(records: &[KeyRecord], max: usize) -> Result<(), SourceError> {
+fn validate(records: &[KeyRecord], max: usize, limits: &RecordLimits) -> Result<(), SourceError> {
     check_keys(records, max)?;
     let mut ids = BTreeSet::new();
     let mut hashes = BTreeSet::new();
     for record in records {
-        if !check_field(&record.id, MAX_FIELD_BYTES)
-            || !check_field(&record.name, MAX_FIELD_BYTES)
+        if !limits.allows_field(&record.id)
+            || !limits.allows_field(&record.name)
             || !is_key_hash(&record.hash)
             || !ids.insert(&record.id)
             || !hashes.insert(&record.hash)
-            || record.groups.len() > 256
-            || record
-                .groups
-                .iter()
-                .any(|group| !check_field(group, MAX_FIELD_BYTES))
+            || !limits.allows_groups(&record.groups)
             || record
                 .email
                 .as_ref()
-                .is_some_and(|email| email.is_empty() || email.len() > 320)
+                .is_some_and(|email| !limits.allows_email(email))
         {
             return Err(SourceError::invalid("a key entry is invalid or duplicated"));
         }

@@ -15,6 +15,7 @@ mod format;
 
 use std::sync::Arc;
 
+use coqui_access::Limit;
 use coqui_access::guatiao::library::ProviderError;
 use coqui_access::guatiao::{FromValue, Provider, Schema, ToValue};
 use coqui_access::{
@@ -22,7 +23,9 @@ use coqui_access::{
     Person, PutOutcome, Verdict,
 };
 use coqui_access_kit::file::Source;
-use coqui_access_kit::{Argon2Params, MemoryTable, Table};
+use coqui_access_kit::{
+    Argon2Params, DEFAULT_MAX_PASSWORD_BYTES, MemoryTable, RecordLimits, Table,
+};
 use coqui_access_password::{AccountRecord, DEFAULT_MAX_ACCOUNTS, PasswordAccounts};
 
 pub use format::Format;
@@ -36,6 +39,13 @@ pub struct PasswordAccountsConfig {
     /// The most accounts the table may hold.
     #[map(default = DEFAULT_MAX_ACCOUNTS as u32)]
     pub max_accounts: u32,
+    /// How large a record's fields may be: `groups`, `field_bytes`, `email_bytes`,
+    /// `display_name_bytes`, each a number or `null` for no bound.
+    #[map(default)]
+    pub record_limits: RecordLimits,
+    /// The longest password hashed or checked, in bytes; `null` for no bound.
+    #[map(default = DEFAULT_MAX_PASSWORD_BYTES)]
+    pub max_password_bytes: Limit,
     /// Argon2id costs for new passwords; the library default for each one absent.
     #[map(default)]
     pub argon2: Argon2Params,
@@ -75,6 +85,8 @@ impl TryFrom<PasswordAccountsConfig> for PasswordAccountsProvider {
         PasswordAccounts::builder()
             .table(table)
             .max_accounts(config.max_accounts as usize)
+            .record_limits(config.record_limits)
+            .max_password_bytes(config.max_password_bytes)
             .argon2(config.argon2)
             .build()
             .map(Self)
@@ -218,7 +230,7 @@ mod tests {
             &PasswordAccountsConfig {
                 source: Some(Source::file("accounts.toml", Format::Toml)),
                 max_accounts: 5,
-                argon2: Argon2Params::default(),
+                ..PasswordAccountsConfig::default()
             }
             .to_value()
             .unwrap(),
@@ -253,6 +265,14 @@ mod tests {
             "JSON is not TOML"
         );
     }
+    fn with_password(name: &str) -> AccountPut {
+        AccountPut {
+            name: name.to_owned(),
+            secret: Some("pw".to_owned()),
+            ..AccountPut::default()
+        }
+    }
+
     /// The `default` a schema declares for one of its properties.
     fn default_in(schema: &coqui_access::guatiao::Value, field: &str) -> Option<u64> {
         use coqui_access::guatiao::Map;
@@ -266,8 +286,30 @@ mod tests {
     fn the_schema_declares_the_defaults_an_empty_config_reads_as() {
         let schema = PasswordAccountsConfig::schema().unwrap();
         assert_eq!(default_in(&schema, "max_accounts"), Some(10_000));
+        assert_eq!(default_in(&schema, "max_password_bytes"), Some(4096));
         let empty = PasswordAccountsConfig::default();
         assert_eq!(empty.max_accounts, 10_000);
         assert_eq!(empty.argon2, Argon2Params::default());
+    }
+
+    #[test]
+    fn record_limits_read_from_configuration_and_bind_the_records() {
+        let mut limits = coqui_access::guatiao::Map::new();
+        limits.set("field_bytes", 40u32);
+        let mut config = coqui_access::guatiao::Map::new();
+        config.set("record_limits", limits);
+        let read = PasswordAccountsConfig::from_value(&config.into()).unwrap();
+        assert_eq!(read.record_limits.field_bytes, coqui_access::Limit::at(40));
+        assert_eq!(read.record_limits.groups, coqui_access::Limit::at(256));
+        let provider = PasswordAccountsProvider::try_from(PasswordAccountsConfig {
+            argon2: cheap(),
+            ..read
+        })
+        .unwrap();
+        assert!(
+            provider.put(with_password(&"x".repeat(41))).is_err(),
+            "a name past field_bytes"
+        );
+        assert!(provider.put(with_password("abc")).is_ok());
     }
 }

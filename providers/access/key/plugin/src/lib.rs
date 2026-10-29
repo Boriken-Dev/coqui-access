@@ -27,7 +27,7 @@ use coqui_access::{
 };
 use coqui_access_key::{DEFAULT_MAX_KEYS, DEFAULT_PREFIX, KeyRecord, Keys};
 use coqui_access_kit::file::Source;
-use coqui_access_kit::{KeyHash, MemoryTable, Table};
+use coqui_access_kit::{KeyHash, MemoryTable, RecordLimits, Table};
 
 pub use format::Format;
 
@@ -46,6 +46,10 @@ pub struct KeysConfig {
     /// The most keys the table may hold.
     #[map(default = DEFAULT_MAX_KEYS as u32)]
     pub max_keys: u32,
+    /// How large a record's fields may be: `groups`, `field_bytes`, `email_bytes`,
+    /// `display_name_bytes`, each a number or `null` for no bound.
+    #[map(default)]
+    pub record_limits: RecordLimits,
 }
 
 impl Default for KeysConfig {
@@ -85,6 +89,7 @@ impl TryFrom<KeysConfig> for KeysProvider {
             .key_hash(config.key_hash);
         builder
             .max_keys(config.max_keys as usize)
+            .record_limits(config.record_limits)
             .build()
             .map(Self)
             .map_err(|reason| reason.writing("key table"))
@@ -274,5 +279,22 @@ mod tests {
             (empty.max_keys, empty.prefix.as_str()),
             (10_000, DEFAULT_PREFIX)
         );
+    }
+
+    #[test]
+    fn record_limits_read_from_configuration_and_bind_the_records() {
+        let mut limits = coqui_access::guatiao::Map::new();
+        limits.set("field_bytes", 40u32);
+        let mut config = coqui_access::guatiao::Map::new();
+        config.set("record_limits", limits);
+        let read = KeysConfig::from_value(&config.into()).unwrap();
+        assert_eq!(read.record_limits.field_bytes, coqui_access::Limit::at(40));
+        assert_eq!(read.record_limits.groups, coqui_access::Limit::at(256));
+        let provider = KeysProvider::try_from(read).unwrap();
+        assert!(
+            provider.put(named(&"x".repeat(41))).is_err(),
+            "a name past field_bytes"
+        );
+        assert!(provider.put(named("abc")).is_ok());
     }
 }

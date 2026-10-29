@@ -13,12 +13,14 @@
 use argon2::password_hash::phc::PasswordHash;
 use argon2::password_hash::{PasswordHasher as _, PasswordVerifier as _};
 use argon2::{Algorithm, Argon2, Params, Version};
+use coqui_access::Limit;
 use coqui_access::guatiao::{FromValue, Kinds, Map, MapError, Schema, ToValue, Value};
 
 use crate::secret;
 
-/// The longest password hashed or verified, in bytes.
-pub const MAX_PASSWORD_BYTES: usize = 4096;
+/// The longest password hashed or verified unless [`PasswordHasher::max_password_bytes`] says
+/// otherwise: 4 096 bytes. It bounds the work one attempt costs.
+pub const DEFAULT_MAX_PASSWORD_BYTES: Limit = Limit::at(4096);
 
 const SHA256_PREFIX: &str = "sha256:";
 const ARGON2ID_PREFIX: &str = "$argon2id$";
@@ -198,9 +200,14 @@ fn verify_argon2id(stored: &str, presented: &[u8]) -> bool {
 }
 
 /// Whether `presented` is the password `stored` (an Argon2id hash) was made from. A password
-/// over [`MAX_PASSWORD_BYTES`] or a stored string that is not Argon2id never matches.
+/// over [`DEFAULT_MAX_PASSWORD_BYTES`] or a stored string that is not Argon2id never matches;
+/// [`PasswordHasher::verify`] applies the hasher's own bound instead.
 pub fn verify_password(stored: &str, presented: &str) -> bool {
-    presented.len() <= MAX_PASSWORD_BYTES
+    verify_within(stored, presented, DEFAULT_MAX_PASSWORD_BYTES)
+}
+
+fn verify_within(stored: &str, presented: &str, most: Limit) -> bool {
+    most.allows(presented.len())
         && stored.starts_with(ARGON2ID_PREFIX)
         && verify_argon2id(stored, presented.as_bytes())
 }
@@ -221,6 +228,7 @@ pub fn verify_password(stored: &str, presented: &str) -> bool {
 pub struct PasswordHasher {
     params: Argon2Params,
     dummy: String,
+    max_password_bytes: Limit,
 }
 
 impl Default for PasswordHasher {
@@ -239,7 +247,16 @@ impl PasswordHasher {
         Ok(Self {
             params,
             dummy: params.hash(b"unknown account password")?,
+            max_password_bytes: DEFAULT_MAX_PASSWORD_BYTES,
         })
+    }
+
+    /// This hasher refusing to hash, and never matching, a password longer than `most` bytes.
+    /// Default [`DEFAULT_MAX_PASSWORD_BYTES`].
+    #[must_use]
+    pub fn max_password_bytes(mut self, most: Limit) -> Self {
+        self.max_password_bytes = most;
+        self
     }
 
     /// The costs new hashes are made with.
@@ -251,12 +268,13 @@ impl PasswordHasher {
     ///
     /// # Errors
     ///
-    /// Returns an error when the password is empty or over [`MAX_PASSWORD_BYTES`], or hashing
-    /// fails.
+    /// Returns an error when the password is empty or longer than
+    /// [`max_password_bytes`](PasswordHasher::max_password_bytes), or hashing fails.
     pub fn hash(&self, password: &str) -> Result<String, String> {
-        if password.is_empty() || password.len() > MAX_PASSWORD_BYTES {
+        if password.is_empty() || !self.max_password_bytes.allows(password.len()) {
             return Err(format!(
-                "password must be between 1 and {MAX_PASSWORD_BYTES} bytes"
+                "password must not be empty, and {} bytes long",
+                self.max_password_bytes
             ));
         }
         self.params.hash(password.as_bytes())
@@ -265,7 +283,11 @@ impl PasswordHasher {
     /// Checks `presented` against `stored`; with `None` (no such account) it checks against
     /// the dummy hash, so an unknown name costs what a wrong password does, and answers no.
     pub fn verify(&self, stored: Option<&str>, presented: &str) -> bool {
-        let matched = verify_password(stored.unwrap_or(&self.dummy), presented);
+        let matched = verify_within(
+            stored.unwrap_or(&self.dummy),
+            presented,
+            self.max_password_bytes,
+        );
         stored.is_some() && matched
     }
 }
@@ -434,11 +456,17 @@ mod tests {
         assert!(!hasher.verify(None, "pw"));
         assert!(!hasher.verify(Some("not a hash"), "pw"));
         assert!(hasher.hash("").is_err());
-        assert!(hasher.hash(&"x".repeat(MAX_PASSWORD_BYTES + 1)).is_err());
-        assert!(!verify_password(
-            &stored,
-            &"x".repeat(MAX_PASSWORD_BYTES + 1)
-        ));
+        assert!(hasher.hash(&"x".repeat(4097)).is_err());
+        let longer = hasher.clone().max_password_bytes(Limit::UNBOUNDED);
+        let long = longer.hash(&"x".repeat(5000)).unwrap();
+        assert!(longer.verify(Some(&long), &"x".repeat(5000)));
+        assert!(
+            !hasher.verify(Some(&long), &"x".repeat(5000)),
+            "past this hasher's bound"
+        );
+        let shorter = hasher.clone().max_password_bytes(Limit::at(2));
+        assert!(shorter.hash("abc").is_err() && shorter.hash("ab").is_ok());
+        assert!(!verify_password(&stored, &"x".repeat(4097)));
         // A key digest is not a password hash.
         assert!(!verify_password(&KeyHash::Sha256.hash("pw").unwrap(), "pw"));
     }

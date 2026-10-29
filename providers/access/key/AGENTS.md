@@ -28,6 +28,7 @@ impl KeysBuilder {
     pub fn prefix(self, prefix: impl Into<String>) -> Self;         // default "ck_"
     pub fn key_hash(self, hash: KeyHash) -> Self;                   // default KeyHash::Sha256
     pub fn max_keys(self, max: usize) -> Self;                      // default 10 000
+    pub fn record_limits(self, limits: RecordLimits) -> Self;         // default RecordLimits::DEFAULT
     pub fn build(self) -> Result<Keys, SourceError>;
 }
 pub struct Keys;

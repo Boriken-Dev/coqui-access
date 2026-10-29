@@ -16,17 +16,16 @@ use std::sync::Arc;
 use coqui_access::guatiao::library::ProviderError;
 use coqui_access::guatiao::{FromValue, Schema, ToValue};
 use coqui_access::{
-    AccountInfo, AccountPut, Accounts, Attempt, Authenticator, Description, Directory, Lookup,
-    Person, PutOutcome, Verdict, error, takes,
+    AccountInfo, AccountPut, Accounts, Attempt, Authenticator, Description, Directory, Limit,
+    Lookup, Person, PutOutcome, Verdict, error, takes,
 };
 use coqui_access_kit::{
-    Argon2Params, Keyed, MemoryTable, PasswordHasher, Reloading, SourceError, Table, check_field,
-    check_keys, is_password_hash, secret, unix_now,
+    Argon2Params, DEFAULT_MAX_PASSWORD_BYTES, Keyed, MemoryTable, PasswordHasher, RecordLimits,
+    Reloading, SourceError, Table, check_keys, is_password_hash, secret, unix_now,
 };
 
 /// The most accounts a table may hold unless the builder says otherwise.
 pub const DEFAULT_MAX_ACCOUNTS: usize = 10_000;
-const MAX_NAME_BYTES: usize = 256;
 
 /// One password account as a [`Table`] keeps it, keyed by [`name`](AccountRecord::name).
 ///
@@ -133,6 +132,8 @@ pub struct PasswordAccountsBuilder {
     table: Option<Arc<dyn Table<AccountRecord>>>,
     max_accounts: usize,
     argon2: Argon2Params,
+    limits: RecordLimits,
+    max_password_bytes: Limit,
 }
 
 impl fmt::Debug for PasswordAccountsBuilder {
@@ -159,6 +160,20 @@ impl PasswordAccountsBuilder {
         self
     }
 
+    /// How large an account's fields may be. Default [`RecordLimits::DEFAULT`].
+    #[must_use]
+    pub fn record_limits(mut self, limits: RecordLimits) -> Self {
+        self.limits = limits;
+        self
+    }
+
+    /// The longest password hashed or checked. Default [`DEFAULT_MAX_PASSWORD_BYTES`].
+    #[must_use]
+    pub fn max_password_bytes(mut self, most: Limit) -> Self {
+        self.max_password_bytes = most;
+        self
+    }
+
     /// The Argon2id costs new passwords are hashed with, and the dummy hash is made with.
     /// Default: [`Argon2Params::default`] (19 MiB, 2 passes, 1 lane). Stored hashes keep the
     /// costs they were made with.
@@ -178,10 +193,13 @@ impl PasswordAccountsBuilder {
         let table = self
             .table
             .unwrap_or_else(|| Arc::new(MemoryTable::<AccountRecord>::new()));
-        let max = self.max_accounts;
+        let (max, limits) = (self.max_accounts, self.limits);
         Ok(PasswordAccounts {
-            accounts: Reloading::new(table, move |records| validate(records, max))?,
-            hasher: PasswordHasher::new(self.argon2).map_err(SourceError::invalid)?,
+            accounts: Reloading::new(table, move |records| validate(records, max, &limits))?,
+            hasher: PasswordHasher::new(self.argon2)
+                .map_err(SourceError::invalid)?
+                .max_password_bytes(self.max_password_bytes),
+            limits,
         })
     }
 }
@@ -216,6 +234,7 @@ impl PasswordAccountsBuilder {
 pub struct PasswordAccounts {
     accounts: Reloading<AccountRecord>,
     hasher: PasswordHasher,
+    limits: RecordLimits,
 }
 
 impl PasswordAccounts {
@@ -226,6 +245,8 @@ impl PasswordAccounts {
             table: None,
             max_accounts: DEFAULT_MAX_ACCOUNTS,
             argon2: Argon2Params::default(),
+            limits: RecordLimits::DEFAULT,
+            max_password_bytes: DEFAULT_MAX_PASSWORD_BYTES,
         }
     }
 }
@@ -312,7 +333,7 @@ impl Accounts for PasswordAccounts {
     /// A new account needs a password; an existing one keeps its password unless one is
     /// given.
     fn put(&self, account: AccountPut) -> Result<PutOutcome, ProviderError> {
-        if !check_field(&account.name, MAX_NAME_BYTES) {
+        if !self.limits.allows_field(&account.name) {
             return Err(error::bad_value("an account has a name"));
         }
         if account.expires_unix.is_some() {
@@ -368,29 +389,29 @@ impl Accounts for PasswordAccounts {
     }
 }
 
-fn validate(accounts: &[AccountRecord], max: usize) -> Result<(), SourceError> {
+fn validate(
+    accounts: &[AccountRecord],
+    max: usize,
+    limits: &RecordLimits,
+) -> Result<(), SourceError> {
     check_keys(accounts, max)?;
     let mut ids = BTreeSet::new();
     for account in accounts {
-        if !check_field(&account.id, MAX_NAME_BYTES)
-            || !check_field(&account.name, MAX_NAME_BYTES)
+        if !limits.allows_field(&account.id)
+            || !limits.allows_field(&account.name)
             || account.name.trim().is_empty()
             || account.password_hash.len() > 1024
             || !is_password_hash(&account.password_hash)
             || !ids.insert(&account.id)
-            || account.groups.len() > 256
-            || account
-                .groups
-                .iter()
-                .any(|group| !check_field(group, MAX_NAME_BYTES))
+            || !limits.allows_groups(&account.groups)
             || account
                 .display_name
                 .as_ref()
-                .is_some_and(|value| !check_field(value, 1024))
+                .is_some_and(|value| !limits.allows_display_name(value))
             || account
                 .email
                 .as_ref()
-                .is_some_and(|value| !check_field(value, 320))
+                .is_some_and(|value| !limits.allows_email(value))
         {
             return Err(SourceError::invalid(
                 "an account entry is invalid or duplicated",

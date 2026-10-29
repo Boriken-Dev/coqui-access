@@ -25,6 +25,8 @@ pub struct PasswordAccountsBuilder;          // Debug
 impl PasswordAccountsBuilder {
     pub fn table(self, table: Arc<dyn Table<AccountRecord>>) -> Self;   // default: MemoryTable
     pub fn max_accounts(self, max: usize) -> Self;                      // default 10 000
+    pub fn record_limits(self, limits: RecordLimits) -> Self;         // default RecordLimits::DEFAULT
+    pub fn max_password_bytes(self, most: Limit) -> Self;            // default 4 096 bytes
     pub fn argon2(self, params: Argon2Params) -> Self;                  // default Argon2Params::default()
     pub fn build(self) -> Result<PasswordAccounts, SourceError>;
 }

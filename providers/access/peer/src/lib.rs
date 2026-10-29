@@ -25,7 +25,7 @@ use coqui_access::{
     Person, PutOutcome, Verdict, Waiting, error, takes,
 };
 use coqui_access_kit::{
-    Keyed, MemoryTable, Reloading, SourceError, Table, check_field, check_keys, secret, unix_now,
+    Keyed, MemoryTable, RecordLimits, Reloading, SourceError, Table, check_keys, secret, unix_now,
 };
 use coqui_peer::{WaitingLimits, WaitingQueue};
 use coqui_peer_tls::{Digest, PeerId};
@@ -40,7 +40,6 @@ pub const DEFAULT_WAITING_LIMITS: WaitingLimits = WaitingLimits {
     total: 16,
     rerecord: Duration::from_secs(60),
 };
-const MAX_FIELD_BYTES: usize = 1024;
 
 /// One accepted peer as a [`Table`] keeps it, keyed by [`name`](PeerRecord::name).
 ///
@@ -171,6 +170,7 @@ pub struct PeersBuilder {
     table: Option<Arc<dyn Table<PeerRecord>>>,
     waiting: Option<Arc<dyn Table<Unaccepted>>>,
     max_peers: usize,
+    limits: RecordLimits,
     waiting_limits: WaitingLimits,
 }
 
@@ -207,6 +207,13 @@ impl PeersBuilder {
         self
     }
 
+    /// How large a peer's fields may be. Default [`RecordLimits::DEFAULT`].
+    #[must_use]
+    pub fn record_limits(mut self, limits: RecordLimits) -> Self {
+        self.limits = limits;
+        self
+    }
+
     /// The bounds on the waiting list, applied by coqui-peer's [`WaitingQueue`]: places per
     /// source, places in all (a newcomer past them is not written down; nobody is pushed out
     /// for it), and how soon one fingerprint from one source is written down again. Default
@@ -227,7 +234,7 @@ impl PeersBuilder {
         let table = self
             .table
             .unwrap_or_else(|| Arc::new(MemoryTable::<PeerRecord>::new()));
-        let max = self.max_peers;
+        let (max, limits) = (self.max_peers, self.limits);
         let waiting_table = self
             .waiting
             .unwrap_or_else(|| Arc::new(MemoryTable::<Unaccepted>::new()));
@@ -244,7 +251,8 @@ impl PeersBuilder {
             queue.remember(had.fingerprint, source_of(had.peer.as_deref()), at);
         }
         Ok(Peers {
-            peers: Reloading::new(table, move |records| validate(records, max))?,
+            peers: Reloading::new(table, move |records| validate(records, max, &limits))?,
+            limits,
             waiting_table,
             queue: Mutex::new(queue),
         })
@@ -277,6 +285,7 @@ pub struct Peers {
     /// Decides who is written down as waiting; held while the waiting table is read and
     /// written.
     queue: Mutex<WaitingQueue>,
+    limits: RecordLimits,
 }
 
 impl fmt::Debug for Peers {
@@ -297,6 +306,7 @@ impl Peers {
             table: None,
             waiting: None,
             max_peers: DEFAULT_MAX_PEERS,
+            limits: RecordLimits::DEFAULT,
             waiting_limits: DEFAULT_WAITING_LIMITS,
         }
     }
@@ -446,7 +456,7 @@ impl Accounts for Peers {
     /// secret of a peer is its certificate fingerprint in any spelling `coqui-peer-tls` reads;
     /// saying it again moves the account to another certificate.
     fn put(&self, account: AccountPut) -> Result<PutOutcome, ProviderError> {
-        if !check_field(&account.name, MAX_FIELD_BYTES) {
+        if !self.limits.allows_field(&account.name) {
             return Err(error::bad_value("a peer has a name"));
         }
         if account.expires_unix.is_some() {
@@ -553,7 +563,7 @@ fn source_of(peer: Option<&str>) -> Option<SocketAddr> {
         .or_else(|| peer.parse().ok().map(|address| SocketAddr::new(address, 0)))
 }
 
-fn validate(peers: &[PeerRecord], max: usize) -> Result<(), SourceError> {
+fn validate(peers: &[PeerRecord], max: usize, limits: &RecordLimits) -> Result<(), SourceError> {
     check_keys(peers, max)?;
     let mut ids = BTreeSet::new();
     let mut certificates = BTreeSet::new();
@@ -564,19 +574,15 @@ fn validate(peers: &[PeerRecord], max: usize) -> Result<(), SourceError> {
                 "a peer certificate is identified by its SHA-256 fingerprint",
             ));
         }
-        if !check_field(&peer.id, MAX_FIELD_BYTES)
-            || !check_field(&peer.name, MAX_FIELD_BYTES)
+        if !limits.allows_field(&peer.id)
+            || !limits.allows_field(&peer.name)
             || !ids.insert(&peer.id)
             || !certificates.insert(fingerprint)
-            || peer.groups.len() > 256
-            || peer
-                .groups
-                .iter()
-                .any(|group| !check_field(group, MAX_FIELD_BYTES))
+            || !limits.allows_groups(&peer.groups)
             || peer
                 .email
                 .as_ref()
-                .is_some_and(|email| email.is_empty() || email.len() > 320)
+                .is_some_and(|email| !limits.allows_email(email))
         {
             return Err(SourceError::invalid(
                 "a peer entry is invalid or duplicated",

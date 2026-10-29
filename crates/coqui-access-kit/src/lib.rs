@@ -26,15 +26,17 @@ pub mod cache;
 #[cfg_attr(docsrs, doc(cfg(feature = "file")))]
 pub mod file;
 pub mod hash;
+pub mod record;
 pub mod secret;
 pub mod table;
 
 #[cfg(feature = "cache")]
 pub use cache::{CacheOptions, CacheSetting, Cached};
 pub use hash::{
-    Argon2Params, KeyHash, MAX_PASSWORD_BYTES, PasswordHasher, generate_key, is_key_hash,
+    Argon2Params, DEFAULT_MAX_PASSWORD_BYTES, KeyHash, PasswordHasher, generate_key, is_key_hash,
     is_password_hash, verify_key, verify_password,
 };
+pub use record::RecordLimits;
 pub use table::{
     Keyed, MemoryTable, Reloading, Revision, Snapshot, SourceError, Table, check_field, check_keys,
     unix_now,
