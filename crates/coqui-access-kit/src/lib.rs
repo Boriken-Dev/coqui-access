@@ -31,5 +31,6 @@ pub use hash::{
     is_password_hash, verify_key, verify_password,
 };
 pub use table::{
-    Keyed, MemoryTable, Reloading, Revision, Snapshot, SourceError, Table, check_keys,
+    Keyed, MemoryTable, Reloading, Revision, Snapshot, SourceError, Table, check_field, check_keys,
+    unix_now,
 };

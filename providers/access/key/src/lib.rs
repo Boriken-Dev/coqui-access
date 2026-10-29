@@ -11,7 +11,6 @@
 use std::collections::BTreeSet;
 use std::fmt;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use coqui_access::guatiao::library::ProviderError;
 use coqui_access::guatiao::{FromValue, Schema, ToValue};
@@ -20,8 +19,8 @@ use coqui_access::{
     Person, PutOutcome, Verdict, error, takes,
 };
 use coqui_access_kit::{
-    KeyHash, Keyed, MemoryTable, Reloading, SourceError, Table, check_keys, generate_key,
-    is_key_hash, secret, verify_key,
+    KeyHash, Keyed, MemoryTable, Reloading, SourceError, Table, check_field, check_keys,
+    generate_key, is_key_hash, secret, unix_now, verify_key,
 };
 
 /// The most keys a table may hold unless the builder says otherwise.
@@ -105,7 +104,7 @@ impl KeyRecord {
 
     /// Whether it is taken now: not disabled and not past its time.
     fn taken(&self) -> bool {
-        !self.disabled && self.expires_unix.is_none_or(|expires| now() < expires)
+        !self.disabled && self.expires_unix.is_none_or(|expires| unix_now() < expires)
     }
 }
 
@@ -127,14 +126,6 @@ impl fmt::Debug for KeyRecord {
             .field("disabled", &self.disabled)
             .finish()
     }
-}
-
-fn now() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .ok()
-        .and_then(|since| i64::try_from(since.as_secs()).ok())
-        .unwrap_or_default()
 }
 
 /// Options for [`Keys`]; every one has a default.
@@ -344,7 +335,7 @@ impl Accounts for Keys {
     /// that is there and has nothing said to change is given another key, and the one it had
     /// stops being taken. A key is never given: it is made here and answered once.
     fn put(&self, account: AccountPut) -> Result<PutOutcome, ProviderError> {
-        if !valid_field(&account.name) {
+        if !check_field(&account.name, MAX_FIELD_BYTES) {
             return Err(error::bad_value("an account has a name"));
         }
         if account.secret.is_some() {
@@ -368,7 +359,7 @@ impl Accounts for Keys {
                 if existing.is_none() || unchanged {
                     let key = generate_key(&self.prefix).map_err(SourceError::unavailable)?;
                     record.hash = self.hash.hash(&key).map_err(SourceError::unavailable)?;
-                    record.made_unix = Some(now());
+                    record.made_unix = Some(unix_now());
                     made = Some(key);
                 }
                 if let Some(groups) = account.groups {
@@ -402,13 +393,16 @@ fn validate(records: &[KeyRecord], max: usize) -> Result<(), SourceError> {
     let mut ids = BTreeSet::new();
     let mut hashes = BTreeSet::new();
     for record in records {
-        if !valid_field(&record.id)
-            || !valid_field(&record.name)
+        if !check_field(&record.id, MAX_FIELD_BYTES)
+            || !check_field(&record.name, MAX_FIELD_BYTES)
             || !is_key_hash(&record.hash)
             || !ids.insert(&record.id)
             || !hashes.insert(&record.hash)
             || record.groups.len() > 256
-            || record.groups.iter().any(|group| !valid_field(group))
+            || record
+                .groups
+                .iter()
+                .any(|group| !check_field(group, MAX_FIELD_BYTES))
             || record
                 .email
                 .as_ref()
@@ -418,10 +412,6 @@ fn validate(records: &[KeyRecord], max: usize) -> Result<(), SourceError> {
         }
     }
     Ok(())
-}
-
-fn valid_field(value: &str) -> bool {
-    !value.is_empty() && value.len() <= MAX_FIELD_BYTES && !value.chars().any(char::is_control)
 }
 
 #[cfg(test)]
@@ -535,7 +525,7 @@ mod tests {
             .is_err()
         );
         keys.put(AccountPut {
-            expires_unix: Some(now() - 1),
+            expires_unix: Some(unix_now() - 1),
             ..named("cabin")
         })
         .unwrap();
