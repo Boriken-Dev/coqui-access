@@ -32,16 +32,93 @@ use std::fmt;
 
 use coqui_access::guatiao::library::ProviderError;
 use coqui_access::guatiao::{FromValue, Provider, Schema, ToValue};
-use coqui_access::{AuthorizationDecision, AuthorizationRequest, Authorizer, Subject, error};
+use coqui_access::{
+    AuthorizationDecision, AuthorizationRequest, Authorizer, Limit, Subject, error,
+};
 
-/// The most roles a policy may define.
-pub const MAX_ROLES: usize = 256;
-/// The most actions one role may list.
-pub const MAX_ROLE_ACTIONS: usize = 256;
-/// The most rules a policy may hold.
-pub const MAX_RULES: usize = 10_000;
-/// The most scope kinds a policy may allow.
-pub const MAX_SCOPE_KINDS: usize = 64;
+/// Bounds on a policy, each a [`Limit`] the caller can change or lift ([`Limit::UNBOUNDED`]).
+///
+/// They bound the work and memory a policy costs, not who may do what: the rule scan per
+/// request, and the tables built once. By default at most 256 roles, 256 actions per role,
+/// 10 000 rules, 64 scope kinds, and names of 256 bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromValue, Schema, ToValue)]
+#[map(crate = ::coqui_access::guatiao, deny_unknown_fields)]
+#[non_exhaustive]
+pub struct RoleLimits {
+    /// Roles a policy defines.
+    #[map(default = Limit::at(256))]
+    pub roles: Limit,
+    /// Actions one role lists.
+    #[map(default = Limit::at(256))]
+    pub actions_per_role: Limit,
+    /// Rules a policy holds.
+    #[map(default = Limit::at(10_000))]
+    pub rules: Limit,
+    /// Scope kinds a policy allows.
+    #[map(default = Limit::at(64))]
+    pub scope_kinds: Limit,
+    /// Bytes in a role, action, subject value, scope kind or scope id.
+    #[map(default = Limit::at(256))]
+    pub name_bytes: Limit,
+}
+
+impl Default for RoleLimits {
+    fn default() -> Self {
+        Self {
+            roles: Limit::at(256),
+            actions_per_role: Limit::at(256),
+            rules: Limit::at(10_000),
+            scope_kinds: Limit::at(64),
+            name_bytes: Limit::at(256),
+        }
+    }
+}
+
+impl RoleLimits {
+    /// No bound at all.
+    pub const UNBOUNDED: Self = Self {
+        roles: Limit::UNBOUNDED,
+        actions_per_role: Limit::UNBOUNDED,
+        rules: Limit::UNBOUNDED,
+        scope_kinds: Limit::UNBOUNDED,
+        name_bytes: Limit::UNBOUNDED,
+    };
+
+    /// These limits with `roles`.
+    #[must_use]
+    pub const fn roles(mut self, roles: Limit) -> Self {
+        self.roles = roles;
+        self
+    }
+
+    /// These limits with `actions_per_role`.
+    #[must_use]
+    pub const fn actions_per_role(mut self, actions: Limit) -> Self {
+        self.actions_per_role = actions;
+        self
+    }
+
+    /// These limits with `rules`.
+    #[must_use]
+    pub const fn rules(mut self, rules: Limit) -> Self {
+        self.rules = rules;
+        self
+    }
+
+    /// These limits with `scope_kinds`.
+    #[must_use]
+    pub const fn scope_kinds(mut self, kinds: Limit) -> Self {
+        self.scope_kinds = kinds;
+        self
+    }
+
+    /// These limits with `name_bytes`.
+    #[must_use]
+    pub const fn name_bytes(mut self, bytes: Limit) -> Self {
+        self.name_bytes = bytes;
+        self
+    }
+}
 
 /// A named set of actions.
 #[derive(Debug, Clone, PartialEq, Eq, FromValue, Schema, ToValue)]
@@ -110,6 +187,9 @@ pub struct RolePolicy {
     /// The rules, in the order they are tried.
     #[map(default)]
     pub rules: Vec<Rule>,
+    /// Bounds on the policy's size; [`RoleLimits::default`] when absent.
+    #[map(default)]
+    pub limits: RoleLimits,
 }
 
 impl RolePolicy {
@@ -148,6 +228,13 @@ impl RoleAuthorizerBuilder {
     #[must_use]
     pub fn rule(mut self, rule: Rule) -> Self {
         self.policy.rules.push(rule);
+        self
+    }
+
+    /// Bounds the policy's size. Default [`RoleLimits::default`].
+    #[must_use]
+    pub fn limits(mut self, limits: RoleLimits) -> Self {
+        self.policy.limits = limits;
         self
     }
 
@@ -232,15 +319,19 @@ impl RoleAuthorizer {
     /// # Errors
     ///
     /// Returns an error for unknown roles, duplicate role names or actions, malformed
-    /// subjects or scopes, a scope kind that is not allowed, or a policy past
-    /// [`MAX_ROLES`], [`MAX_ROLE_ACTIONS`], [`MAX_RULES`] or [`MAX_SCOPE_KINDS`].
+    /// subjects or scopes, a scope kind that is not allowed, or a policy past its
+    /// [`RoleLimits`].
     pub fn new(policy: RolePolicy) -> Result<Self, RolePolicyError> {
         let fail = |message: &str| RolePolicyError(message.to_owned());
+        let limits = policy.limits;
+        let name = |value: &str| name(value, limits.name_bytes);
         let scope_kinds = &policy.scope_kinds;
-        if scope_kinds.len() > MAX_SCOPE_KINDS || !scope_kinds.iter().all(|kind| name(kind)) {
+        if !limits.scope_kinds.allows(scope_kinds.len())
+            || !scope_kinds.iter().all(|kind| name(kind))
+        {
             return Err(fail("scope kinds are invalid"));
         }
-        if policy.roles.len() > MAX_ROLES || policy.rules.len() > MAX_RULES {
+        if !limits.roles.allows(policy.roles.len()) || !limits.rules.allows(policy.rules.len()) {
             return Err(fail("policy has too many roles or rules"));
         }
         let mut roles = BTreeMap::new();
@@ -248,7 +339,7 @@ impl RoleAuthorizer {
             if !name(&role.name) || role.actions.is_empty() {
                 return Err(RolePolicyError(format!("invalid role {:?}", role.name)));
             }
-            if role.actions.len() > MAX_ROLE_ACTIONS {
+            if !limits.actions_per_role.allows(role.actions.len()) {
                 return Err(RolePolicyError(format!(
                     "role {:?} has too many actions",
                     role.name
@@ -336,9 +427,9 @@ impl Authorizer for RoleAuthorizer {
     }
 }
 
-fn name(value: &str) -> bool {
+fn name(value: &str, most: Limit) -> bool {
     !value.is_empty()
-        && value.len() <= 256
+        && most.allows(value.len())
         && !value.chars().any(char::is_control)
         && !value.chars().any(char::is_whitespace)
 }
@@ -505,23 +596,26 @@ mod tests {
 
     #[test]
     fn the_bounds_hold() {
-        let many_rules = (0..=MAX_RULES)
-            .fold(RoleAuthorizer::builder().role("r", ["a"]), |b, n| {
-                b.rule(Rule::new(format!("account:u{n}"), "*", "r"))
-            });
+        const ROLES: usize = 256;
+        const ROLE_ACTIONS: usize = 256;
+        const RULES: usize = 10_000;
+        const SCOPE_KINDS: usize = 64;
+        let many_rules = (0..=RULES).fold(RoleAuthorizer::builder().role("r", ["a"]), |b, n| {
+            b.rule(Rule::new(format!("account:u{n}"), "*", "r"))
+        });
         assert!(many_rules.build().is_err());
-        let many_roles = (0..=MAX_ROLES).fold(RoleAuthorizer::builder(), |b, n| {
+        let many_roles = (0..=ROLES).fold(RoleAuthorizer::builder(), |b, n| {
             b.role(format!("r{n}"), ["a"])
         });
         assert!(many_roles.build().is_err());
-        let actions = (0..=MAX_ROLE_ACTIONS).map(|n| format!("a{n}"));
+        let actions = (0..=ROLE_ACTIONS).map(|n| format!("a{n}"));
         assert!(
             RoleAuthorizer::builder()
                 .role("r", actions)
                 .build()
                 .is_err()
         );
-        let kinds = (0..=MAX_SCOPE_KINDS).map(|n| format!("k{n}"));
+        let kinds = (0..=SCOPE_KINDS).map(|n| format!("k{n}"));
         assert!(
             RoleAuthorizer::builder()
                 .scope_kinds(kinds)
@@ -529,8 +623,54 @@ mod tests {
                 .is_err()
         );
         // At the bounds is fine.
-        let actions = (0..MAX_ROLE_ACTIONS).map(|n| format!("a{n}"));
+        let actions = (0..ROLE_ACTIONS).map(|n| format!("a{n}"));
         assert!(RoleAuthorizer::builder().role("r", actions).build().is_ok());
+    }
+
+    #[test]
+    fn the_bounds_are_options_and_none_lifts_one() {
+        let rules = |limits: RoleLimits| {
+            (0..10_001)
+                .fold(RoleAuthorizer::builder().role("r", ["a"]), |b, n| {
+                    b.rule(Rule::new(format!("account:u{n}"), "*", "r"))
+                })
+                .limits(limits)
+                .build()
+        };
+        assert!(rules(RoleLimits::default()).is_err());
+        assert!(rules(RoleLimits::default().rules(Limit::UNBOUNDED)).is_ok());
+        let long = "x".repeat(300);
+        let named = |limits: RoleLimits| {
+            RoleAuthorizer::builder()
+                .role(long.clone(), ["a"])
+                .limits(limits)
+                .build()
+        };
+        assert!(named(RoleLimits::default()).is_err());
+        assert!(named(RoleLimits::default().name_bytes(Limit::at(300))).is_ok());
+        let tight = RoleAuthorizer::builder()
+            .role("r", ["a", "b"])
+            .limits(RoleLimits::UNBOUNDED.actions_per_role(Limit::at(1)))
+            .build();
+        assert!(tight.is_err());
+    }
+
+    #[test]
+    fn the_limits_read_from_configuration() {
+        use coqui_access::guatiao::Map;
+        let mut limits = Map::new();
+        limits.set("rules", Limit::UNBOUNDED.to_value().unwrap());
+        limits.set("roles", 2u32);
+        let mut policy = Map::new();
+        policy.set("limits", limits);
+        let read = RolePolicy::from_value(&policy.into()).unwrap().limits;
+        assert_eq!(read.rules, Limit::UNBOUNDED);
+        assert_eq!(read.roles, Limit::at(2));
+        assert_eq!(read.scope_kinds, Limit::at(64));
+        assert_eq!(
+            RolePolicy::from_value(&Map::new().into()).unwrap().limits,
+            RoleLimits::default()
+        );
     }
 
     #[test]
