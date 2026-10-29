@@ -25,7 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   your own data. `Argon2Params` is also configuration (guatiao `FromValue`, `ToValue`,
   `Schema`): each cost defaults to the library's, and reading refuses a combination Argon2
   would.
-- `coqui-access-kit`: `Table<T>`, a typed source trait (`load`, `changes_since`, `put`,
+- `coqui-access-kit`: `Table<T>`, a typed source trait over `Keyed` records (a key borrowed
+  or written from a value), (`load`, `changes_since`, `put`,
   `remove`; the last two default to `ReadOnly`), with `MemoryTable`, `Reloading`, `Keyed`,
   `Snapshot`, `Revision`, `SourceError` and `check_keys`. `SourceError::reading` and
   `writing` turn a table error into the `ProviderError` a host acts on. `check_field` and
@@ -48,13 +49,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   configurable (default `ck_`).
 - `coqui-access-peer`: verifies peers through
   [`coqui-peer-tls`](https://crates.io/crates/coqui-peer-tls) `=0.0.0-alpha.0` from
-  crates.io.
+  crates.io. Fingerprints in its records are `PeerId`s, written canonical and read in any
+  spelling. Its waiting list is coqui-peer's `WaitingQueue` over a table, under
+  `WaitingLimits` (default one place per source, an IPv6 source being its /64; 16 in all; a
+  newcomer past them waits unrecorded; one rerecord a minute).
 - `coqui-access-local-plugin`, `-key-plugin`, `-peer-plugin`: configured with a `source` object
   (`{ "file": { "path", "format" } }`, `format` being `toml` or `json`, each plugin's own codec
   over the kit's `FileTable`); no `source` means memory. Key also takes
   `prefix`, `key_hash` (`{ "algorithm": "sha256" }`, or `argon2id` with its costs beside it)
   and `max_keys`; local takes `max_accounts` and `argon2`; peer
-  takes `waiting`, `max_peers`, `waiting_places` and `seen_every_secs`. Peer's `waiting`
+  takes `waiting`, `max_peers`, `waiting_per_source`, `waiting_total` and
+  `waiting_rerecord_secs`. Peer's `waiting`
   defaults to a file beside a file source (`<path>.waiting`) and to memory otherwise.
 - `coqui-access-acl`: access control lists on items. `RightsSchema` names the rights of an
   item type as bits of a growable `Rights` set, with aliases and cancelling names; `Entry`

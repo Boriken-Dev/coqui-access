@@ -17,8 +17,9 @@ authenticated and is kept for a while as waiting, with the address it came from,
 - **Code first** - `Peers::builder()` works out of the box with in-memory tables.
 - **Any source** - an `Arc<dyn Table<PeerRecord>>` for the peers and an
   `Arc<dyn Table<Unaccepted>>` for the waiting list.
-- **Waiting list** - the last few unaccepted fingerprints, one place per address, written at
-  most once a minute per certificate; the places and the interval are options.
+- **Waiting list** - unaccepted fingerprints under coqui-peer's `WaitingQueue`: one place per
+  source (an IPv4 address or an IPv6 /64), 16 in all, the same certificate from one source
+  written down at most once a minute; each bound is an option.
 - **Any spelling** - `sha256:<hex>`, bare hex, colon-separated hex or grouped base32.
 
 ## Installation
@@ -33,9 +34,9 @@ Build `coqui-access-peer-plugin` for the loadable library.
 
 ```rust
 use coqui_access::{Attempt, Authenticator, Verdict};
-use coqui_access_peer::Peers;
+use coqui_access_peer::{DEFAULT_WAITING_LIMITS, Peers};
 
-let peers = Peers::builder().waiting_places(16).build().unwrap();
+let peers = Peers::builder().waiting_limits(DEFAULT_WAITING_LIMITS).build().unwrap();
 let verdict = peers
     .authenticate(Attempt { certificate: Some("not a fingerprint".into()), ..Attempt::default() })
     .unwrap();
@@ -58,7 +59,7 @@ The loadable plugin (provider id `coqui_access_peer`) is configured with a `sour
 | Item | Purpose |
 | --- | --- |
 | `Peers` | The provider: `builder()` and the three kinds. |
-| `PeersBuilder` | Options: `table`, `waiting`, `max_peers`, `waiting_places`, `seen_every_secs`; `build`. |
+| `PeersBuilder` | Options: `table`, `waiting`, `max_peers`, `waiting_limits`; `build`. |
 | `PeerRecord`, `Unaccepted` | The records the two tables keep; guatiao value traits. |
 
 ## Development

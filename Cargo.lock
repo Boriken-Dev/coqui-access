@@ -245,6 +245,7 @@ version = "0.1.0"
 dependencies = [
  "coqui-access",
  "coqui-access-kit",
+ "coqui-peer",
  "coqui-peer-tls",
 ]
 
@@ -255,6 +256,7 @@ dependencies = [
  "coqui-access",
  "coqui-access-kit",
  "coqui-access-peer",
+ "coqui-peer",
  "coqui-peer-tls",
  "serde",
  "serde_json",

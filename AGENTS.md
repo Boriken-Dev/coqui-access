@@ -36,8 +36,8 @@ Regenerate the kind description after a deliberate contract change:
 
 - Kind names and the hashes of required methods are an ABI. A new method has a default body
   and comes after every required one; the contract test names a break.
-- Providers depend on `coqui-access`, `coqui-access-kit` and at most `coqui-peer-tls` and
-  `coqui-net-acl`; never on a host or on each other. Code two providers share belongs in a crate under `crates/`.
+- Providers depend on `coqui-access`, `coqui-access-kit` and at most `coqui-peer-tls`,
+  `coqui-peer` and `coqui-net-acl`; never on a host or on each other. Code two providers share belongs in a crate under `crates/`.
 - `coqui-peer-tls` is pinned to an exact crates.io version (`=0.0.0-alpha.0`) in
   `[workspace.dependencies]`. A change it needs that is not published yet pins a commit of
   that repository's `main` by git revision, never a branch, until it is released.

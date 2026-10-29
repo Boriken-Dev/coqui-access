@@ -323,8 +323,8 @@ struct Kept {
 }
 
 impl Keyed for Kept {
-    fn key(&self) -> &str {
-        &self.path
+    fn key(&self) -> std::borrow::Cow<'_, str> {
+        std::borrow::Cow::Borrowed(&self.path)
     }
 }
 

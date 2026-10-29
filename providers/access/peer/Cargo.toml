@@ -13,6 +13,7 @@ exclude = [".*", "*.local.*"]
 [dependencies]
 coqui-access.workspace = true
 coqui-access-kit.workspace = true
+coqui-peer.workspace = true
 coqui-peer-tls.workspace = true
 
 
