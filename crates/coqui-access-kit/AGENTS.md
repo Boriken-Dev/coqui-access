@@ -37,6 +37,26 @@ pub fn is_hash(value: &str) -> bool;
 - `same` compares in time independent of where the strings differ. `is_hash` checks the
   64-lowercase-hex shape.
 
+## Picking an account (`coqui_access_kit::pick`)
+
+```rust
+pub const IP_FIELD: &str = "san.ip"; pub const DNS_IP_FIELD: &str = "san.dns.ip";
+pub struct Pick { pub field: String, pub by: String, pub domain: Option<String>, pub ip_in_dns: bool }
+    // non_exhaustive; guatiao derives, ip_in_dns defaulting to true
+impl Pick { pub fn new(field, by) -> Self; pub fn domain(self, impl Into<String>) -> Self; pub fn ip_in_dns(self, bool) -> Self; }
+pub enum Picked { Absent, Ambiguous, Found { by: String, value: String } }   // non_exhaustive
+pub fn pick(fields: &BTreeMap<String, Vec<String>>, order: &[Pick]) -> Picked;
+```
+
+- `fields` is a credential's named fields, as coqui-peer-tls's `CertificateFields::to_map`
+  writes them. Picks are tried in order: the first finding one distinct value decides
+  (`Found { by, value }`, answered as `Lookup { by, value }`); one finding two different values
+  is `Ambiguous`; none finding a value is `Absent`.
+- `domain` keeps values ending `@<domain>` (ASCII case-insensitive) and yields the part before.
+- `san.ip` also reads `san.dns.ip` (a DNS name that is an IP literal) unless `ip_in_dns` is
+  false; addresses compare in one spelling (IPv6 compressed, IPv4-mapped as IPv4), so the
+  same address in both kinds of name is one value.
+
 ## Record limits (`coqui_access_kit::record`; `RecordLimits` re-exported at the root)
 
 ```rust

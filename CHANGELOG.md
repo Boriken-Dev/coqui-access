@@ -97,6 +97,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   configuration; `PasswordHasher::max_password_bytes` (default `DEFAULT_MAX_PASSWORD_BYTES`,
   4 096) is the password provider's `max_password_bytes`. Ids and names of keys and peers are
   256 bytes by default, as accounts' are.
+- `coqui-access-kit`: `pick::pick` chooses the account a credential names from its fields (a
+  certificate's SANs, subject attributes, fingerprint) by an ordered list of `Pick`s (`field`,
+  `by`, an optional `domain`): `Found`, `Ambiguous` for two values, or `Absent`. An IP address
+  written as a DNS name counts as an IP name unless a pick's `ip_in_dns` is off, compared in
+  one spelling.
 - `coqui-access-kit` feature `cache`: `Cached<T>` keeps a directory's lookups and an
   authorizer's decisions for a short while (`CacheOptions`: 5 s, 1 s for "not found" or a
   denial, 10 000 entries, each an option, `off()` for none), never a credential or an error;
