@@ -1,6 +1,6 @@
-# `coqui-access-local` — API header
+# `coqui-access-password` — API header
 
-Header-file-style reference for the `coqui-access-local` crate: every public item with its
+Header-file-style reference for the `coqui-access-password` crate: every public item with its
 signature, contract and gotchas, so the crate can be used without reading its source. It
 ships inside the package and is self-contained. Development documentation lives with the
 source at <https://github.com/Boriken-Dev/coqui-access>.
@@ -9,7 +9,7 @@ MSRV Rust 1.89. No Cargo features. Depends on `coqui-access` and `coqui-access-k
 `AccountRecord` derives guatiao's `ToValue`, `FromValue` and `Schema`, so any table (a kit `FileTable` in the format the caller
 picks, say) keeps it. No `unsafe` code.
 It reads no file and no environment variable. The loadable library is the separate crate
-`coqui-access-local-plugin`.
+`coqui-access-password-plugin`.
 
 ```rust
 pub const DEFAULT_MAX_ACCOUNTS: usize = 10_000;
@@ -21,18 +21,18 @@ impl AccountRecord {
     pub fn groups(self, ..) -> Self; pub fn display_name(self, ..) -> Self;
     pub fn email(self, ..) -> Self;  pub fn disabled(self, bool) -> Self;
 }
-pub struct LocalAccountsBuilder;          // Debug
-impl LocalAccountsBuilder {
+pub struct PasswordAccountsBuilder;          // Debug
+impl PasswordAccountsBuilder {
     pub fn table(self, table: Arc<dyn Table<AccountRecord>>) -> Self;   // default: MemoryTable
     pub fn max_accounts(self, max: usize) -> Self;                      // default 10 000
     pub fn argon2(self, params: Argon2Params) -> Self;                  // default Argon2Params::default()
-    pub fn build(self) -> Result<LocalAccounts, SourceError>;
+    pub fn build(self) -> Result<PasswordAccounts, SourceError>;
 }
-pub struct LocalAccounts;
-impl LocalAccounts { pub fn builder() -> LocalAccountsBuilder; }
-impl Authenticator for LocalAccounts { /* takes::PASSWORD */ }
-impl Directory for LocalAccounts { /* by "id", "name", "email" */ }
-impl Accounts for LocalAccounts { /* accounts, put, remove */ }
+pub struct PasswordAccounts;
+impl PasswordAccounts { pub fn builder() -> PasswordAccountsBuilder; }
+impl Authenticator for PasswordAccounts { /* takes::PASSWORD */ }
+impl Directory for PasswordAccounts { /* by "id", "name", "email" */ }
+impl Accounts for PasswordAccounts { /* accounts, put, remove */ }
 ```
 
 Hashing lives in `coqui_access_kit` (`PasswordHasher`, `Argon2Params`); make an account hash

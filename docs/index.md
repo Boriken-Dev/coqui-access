@@ -20,10 +20,11 @@ methods are a pinned contract; providers are built against the host's Guatiao re
 
 | Provider id | Keeps | Takes |
 | --- | --- | --- |
-| `coqui_access_local` | Argon2id passwords in any table | name and password |
+| `coqui_access_password` | Argon2id passwords in any table | name and password |
 | `coqui_access_key` | SHA-256 or Argon2id hashes of generated keys, in any table | a key |
 | `coqui_access_ldap` | nothing; asks LDAP or Active Directory | name and password |
 | `coqui_access_proxy` | nothing; trusts a reverse proxy | request headers |
+| `coqui_access_system` | nothing; asks the operating system (PAM and NSS, or Windows logon) | name and password |
 | `coqui_access_peer` | peer certificate fingerprints, in any table | a verified certificate |
 | `coqui_roles` | role rules (an authorizer) | person, action, resource |
 

@@ -37,13 +37,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   guatiao derives and guatiao-serde's bridge. `Source<F>`/`FileSource<F>` are the
   `{ "file": { "path", "format" } }` configuration a plugin names its table with. The kit
   depends on no format crate under any feature.
-- `coqui-access-local`, `-key`, `-ldap`, `-proxy`, `-peer`: providers, each with a `-plugin`
-  library crate. Local, key and peer also implement `coqui_accounts` and are built with
-  `LocalAccounts::builder()`, `Keys::builder()` and `Peers::builder()` over an
+- `coqui-access-password`, `-key`, `-ldap`, `-proxy`, `-peer`: providers, each with a `-plugin`
+  library crate. Password, key and peer also implement `coqui_accounts` and are built with
+  `PasswordAccounts::builder()`, `Keys::builder()` and `Peers::builder()` over an
   `Arc<dyn Table<Record>>` (memory by default). The record types (`AccountRecord`,
   `KeyRecord`, `PeerRecord`, `Unaccepted`) are public and derive guatiao's `ToValue`,
   `FromValue` and `Schema`, so any table keeps them. The peer waiting list is a table of its own.
-- `coqui-access-local`: the Argon2id costs are an option. `coqui-access-key`: a stored hash is
+- `coqui-access-password`: the Argon2id costs are an option. `coqui-access-key`: a stored hash is
   a self-describing string, `sha256:<hex>` or `$argon2id$...`; the builder's `KeyHash` (default
   SHA-256) picks the algorithm for new keys, and one table may hold both. The key prefix is
   configurable (default `ck_`).
@@ -53,11 +53,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   spelling. Its waiting list is coqui-peer's `WaitingQueue` over a table, under
   `WaitingLimits` (default one place per source, an IPv6 source being its /64; 16 in all; a
   newcomer past them waits unrecorded; one rerecord a minute).
-- `coqui-access-local-plugin`, `-key-plugin`, `-peer-plugin`: configured with a `source` object
+- `coqui-access-password-plugin`, `-key-plugin`, `-peer-plugin`: configured with a `source` object
   (`{ "file": { "path", "format" } }`, `format` being `toml` or `json`, each plugin's own codec
   over the kit's `FileTable`); no `source` means memory. Key also takes
   `prefix`, `key_hash` (`{ "algorithm": "sha256" }`, or `argon2id` with its costs beside it)
-  and `max_keys`; local takes `max_accounts` and `argon2`; peer
+  and `max_keys`; password takes `max_accounts` and `argon2`; peer
   takes `waiting`, `max_peers`, `waiting_per_source`, `waiting_total` and
   `waiting_rerecord_secs`. Peer's `waiting`
   defaults to a file beside a file source (`<path>.waiting`) and to memory otherwise. Every

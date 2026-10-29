@@ -8,8 +8,9 @@
 
 Shared building blocks for **who is asking and may they**: authentication, identity
 directory, authorization and account-management kinds on
-[Guatiao](https://github.com/Boriken-Dev/guatiao), ready-made providers for local accounts,
-bearer keys, LDAP, reverse-proxy headers and peer certificates, and a role authorizer. A host loads the providers it
+[Guatiao](https://github.com/Boriken-Dev/guatiao), ready-made providers for password accounts,
+bearer keys, LDAP, the operating system's accounts, reverse-proxy headers and peer
+certificates, a role authorizer and access control lists on items. A host loads the providers it
 wants; none of them knows the host. See the [documentation](https://boriken-dev.github.io/coqui-access/).
 
 ## Features
@@ -71,10 +72,12 @@ other options). The per-crate READMEs show each provider's configuration.
 | `coqui-access` | The kinds and models; re-exports `guatiao`. |
 | `coqui-access-kit` | `Table` sources, key and password hashing to use with your own data, secrets, private atomic file writes. |
 | `coqui-roles` | First-match role authorizer with configurable scope kinds. |
-| `coqui-access-local` | Argon2id passwords in any table. |
+| `coqui-access-acl` | Access control lists on items: rights, entries, evaluation modes, inheritance. |
+| `coqui-access-password` | Argon2id passwords in any table. |
 | `coqui-access-key` | Hashed bearer keys (SHA-256 or Argon2id) in any table. |
 | `coqui-access-ldap` | LDAP and Active Directory. |
 | `coqui-access-proxy` | Trusted reverse-proxy identity headers. |
+| `coqui-access-system` | The operating system's accounts: PAM and NSS, or a Windows logon. |
 | `coqui-access-peer` | Peer certificate fingerprints, in any table, mapped to identities. |
 
 ## Development

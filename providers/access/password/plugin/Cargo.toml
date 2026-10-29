@@ -1,6 +1,6 @@
 [package]
-name = "coqui-access-local-plugin"
-description = "coqui-access-local as a library a host loads"
+name = "coqui-access-password-plugin"
+description = "coqui-access-password as a library a host loads"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -16,7 +16,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 coqui-access.workspace = true
-coqui-access-local = { path = ".." }
+coqui-access-password = { path = ".." }
 coqui-access-kit = { workspace = true, features = ["file"] }
 # The formats a file source may be written in: this plugin's choice, not the libraries'.
 serde.workspace = true
