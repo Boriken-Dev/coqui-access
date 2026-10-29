@@ -131,6 +131,7 @@ pub struct Argon2Params;                // Copy, FromValue, ToValue, Schema; Def
 impl Argon2Params { pub fn new(memory_kib: u32, iterations: u32, parallelism: u32) -> Result<Self, String>;
                     pub fn memory_kib(&self) -> u32; pub fn iterations(&self) -> u32; pub fn parallelism(&self) -> u32; }
 pub enum KeyHash { Sha256 /* default */, Argon2id(Argon2Params) }          // non_exhaustive
+// FromValue/ToValue/Schema, tagged: { "algorithm": "sha256" } | { "algorithm": "argon2id", <Argon2Params keys> }
 impl KeyHash { pub fn argon2id() -> Self; pub fn hash(&self, secret: &str) -> Result<String, String>; }
 pub fn verify_key(stored: &str, presented: &[u8]) -> bool;
 pub fn is_key_hash(stored: &str) -> bool;

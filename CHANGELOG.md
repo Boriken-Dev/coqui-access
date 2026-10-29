@@ -18,7 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `coqui-access-acl` use.
 - `coqui-access-kit`: prefixed 256-bit secrets, SHA-256 of a secret with optional domain
   separation (`secret::hash`) and of raw bytes (`secret::hash_bytes`), constant-time
-  comparison. `KeyHash` (`Sha256`, `Argon2id`), `verify_key`, `is_key_hash`, `generate_key`,
+  comparison. `KeyHash` (`Sha256`, `Argon2id`; as configuration a map tagged by `algorithm`),
+  `verify_key`, `is_key_hash`, `generate_key`,
   `PasswordHasher` (Argon2id with a dummy-hash path for unknown accounts), `verify_password`,
   `Argon2Params` and `is_password_hash`: hashing and constant-time verification to use with
   your own data. `Argon2Params` is also configuration (guatiao `FromValue`, `ToValue`,
@@ -49,7 +50,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `coqui-access-local-plugin`, `-key-plugin`, `-peer-plugin`: configured with a `source` object
   (`{ "file": { "path", "format" } }`, `format` being `toml` or `json`, each plugin's own codec
   over the kit's `FileTable`); no `source` means memory. Key also takes
-  `prefix`, `key_hash`, `argon2` and `max_keys`; local takes `max_accounts` and `argon2`; peer
+  `prefix`, `key_hash` (`{ "algorithm": "sha256" }`, or `argon2id` with its costs beside it)
+  and `max_keys`; local takes `max_accounts` and `argon2`; peer
   takes `waiting`, `max_peers`, `waiting_places` and `seen_every_secs`. Peer's `waiting`
   defaults to a file beside a file source (`<path>.waiting`) and to memory otherwise.
 - `coqui-access-acl`: access control lists on items. `RightsSchema` names the rights of an

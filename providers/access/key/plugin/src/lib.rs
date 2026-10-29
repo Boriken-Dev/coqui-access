@@ -6,14 +6,14 @@
 //! ```json
 //! { "source": { "file": { "path": "keys.toml", "format": "toml" } },
 //!   "prefix": "ck_",
-//!   "key_hash": "sha256",
-//!   "argon2": { "memory_kib": 19456, "iterations": 2, "parallelism": 1 },
+//!   "key_hash": { "algorithm": "argon2id", "memory_kib": 19456, "iterations": 2 },
 //!   "max_keys": 10000 }
 //! ```
 //!
-//! Every key is optional. With no `source` the keys live in memory. `key_hash` (`sha256`, the
-//! default, or `argon2id`) is how keys made from now on are kept; `argon2` sets the Argon2id
-//! costs. Keys already in the table keep the algorithm their stored string names.
+//! Every key is optional. With no `source` the keys live in memory. `key_hash` is how keys
+//! made from now on are kept: `{ "algorithm": "sha256" }` (the default) or `argon2id` with
+//! its costs beside it, each defaulting. Keys already in the table keep the algorithm their
+//! stored string names.
 
 mod format;
 
@@ -27,20 +27,9 @@ use coqui_access::{
 };
 use coqui_access_key::{DEFAULT_PREFIX, KeyRecord, Keys};
 use coqui_access_kit::file::Source;
-use coqui_access_kit::{Argon2Params, KeyHash, MemoryTable, SourceError, Table};
+use coqui_access_kit::{KeyHash, MemoryTable, SourceError, Table};
 
 pub use format::Format;
-
-/// Which algorithm new keys are kept with.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, FromValue, Schema, ToValue)]
-#[map(crate = ::coqui_access::guatiao, rename_all = "lowercase")]
-pub enum KeyHashKind {
-    /// `sha256:<hex>`, for keys of 256 random bits.
-    #[default]
-    Sha256,
-    /// Argon2id, with the `argon2` costs.
-    Argon2id,
-}
 
 /// Guatiao configuration for the key provider.
 #[derive(Debug, Clone, Default, FromValue, Schema, ToValue)]
@@ -51,11 +40,9 @@ pub struct KeysConfig {
     /// What every key made here begins with.
     #[map(default = String::from(DEFAULT_PREFIX))]
     pub prefix: String,
-    /// How keys made from now on are kept.
+    /// How keys made from now on are kept; SHA-256 by default.
     #[map(default)]
-    pub key_hash: KeyHashKind,
-    /// Argon2id costs for `key_hash = "argon2id"`.
-    pub argon2: Option<Argon2Params>,
+    pub key_hash: KeyHash,
     /// The most keys the table may hold; the library default when absent.
     pub max_keys: Option<u32>,
 }
@@ -81,10 +68,6 @@ impl TryFrom<KeysConfig> for KeysProvider {
     type Error = ProviderError;
 
     fn try_from(config: KeysConfig) -> Result<Self, Self::Error> {
-        let hash = match config.key_hash {
-            KeyHashKind::Sha256 => KeyHash::Sha256,
-            KeyHashKind::Argon2id => KeyHash::Argon2id(config.argon2.unwrap_or_default()),
-        };
         let table: Arc<dyn Table<KeyRecord>> = match &config.source {
             Some(source) => source.open("keys").map_err(|reason| refused(&reason))?,
             None => Arc::new(MemoryTable::new()),
@@ -92,7 +75,7 @@ impl TryFrom<KeysConfig> for KeysProvider {
         let mut builder = Keys::builder()
             .table(table)
             .prefix(config.prefix)
-            .key_hash(hash);
+            .key_hash(config.key_hash);
         if let Some(max) = config.max_keys {
             builder = builder.max_keys(max as usize);
         }
@@ -197,8 +180,7 @@ mod tests {
         let path = directory.path().join("keys.toml");
         let fast = KeysProvider::try_from(config(&path)).unwrap();
         let slow = KeysProvider::try_from(KeysConfig {
-            key_hash: KeyHashKind::Argon2id,
-            argon2: Some(Argon2Params::new(64, 1, 1).unwrap()),
+            key_hash: KeyHash::Argon2id(coqui_access_kit::Argon2Params::new(64, 1, 1).unwrap()),
             ..config(&path)
         })
         .unwrap();
@@ -222,11 +204,32 @@ mod tests {
         assert!(KeysProvider::try_from(config(&path)).is_err());
         let memory = KeysConfig::default();
         assert!(KeysProvider::try_from(memory).is_err(), "an empty prefix");
-        let costs = r#"{"prefix": "ck_", "key_hash": "argon2id", "argon2": {"iterations": 0}}"#;
-        let costs = guatiao_serde::from_serde(&mut serde_json::Deserializer::from_str(costs));
         assert!(
-            KeysConfig::from_value(&costs.unwrap()).is_err(),
+            config_from(r#"{"key_hash": {"algorithm": "argon2id", "iterations": 0}}"#).is_err(),
             "Argon2 refuses the costs"
+        );
+    }
+
+    fn config_from(json: &str) -> Result<KeysConfig, coqui_access::guatiao::MapError> {
+        let value = guatiao_serde::from_serde(&mut serde_json::Deserializer::from_str(json));
+        KeysConfig::from_value(&value.unwrap())
+    }
+
+    #[test]
+    fn the_key_hash_is_tagged_and_defaults_to_sha256() {
+        assert_eq!(config_from("{}").unwrap().key_hash, KeyHash::Sha256);
+        let tagged = r#"{"key_hash": {"algorithm": "argon2id", "memory_kib": 65536}}"#;
+        let KeyHash::Argon2id(costs) = config_from(tagged).unwrap().key_hash else {
+            panic!("an argon2id key hash");
+        };
+        assert_eq!(costs.memory_kib(), 65536);
+        assert_eq!(
+            costs.iterations(),
+            coqui_access_kit::Argon2Params::default().iterations()
+        );
+        assert!(
+            config_from(r#"{"key_hash": "sha256"}"#).is_err(),
+            "a map, not a name"
         );
     }
 

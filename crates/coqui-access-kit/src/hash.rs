@@ -118,7 +118,11 @@ impl Argon2Params {
 }
 
 /// How a bearer key is kept.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+///
+/// As configuration it is a map tagged by `algorithm`, the costs beside it under Argon2id:
+/// `{ "algorithm": "sha256" }` or `{ "algorithm": "argon2id", "memory_kib": 65536 }`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, FromValue, Schema, ToValue)]
+#[map(crate = ::coqui_access::guatiao, tag = "algorithm", rename_all = "lowercase")]
 #[non_exhaustive]
 pub enum KeyHash {
     /// `sha256:<hex>`: fast, and enough for a key of 256 random bits. The default.
@@ -391,6 +395,32 @@ mod tests {
         let schema = Argon2Params::schema().unwrap();
         let text = guatiao_serde::text::json::to_string(&schema, Default::default()).unwrap();
         assert!(text.contains("\"default\":19456"), "{text}");
+    }
+
+    #[test]
+    fn a_key_hash_reads_from_configuration_tagged_by_algorithm() {
+        let read = |json: &str| {
+            let value =
+                guatiao_serde::from_serde(&mut serde_json::Deserializer::from_str(json)).unwrap();
+            KeyHash::from_value(&value)
+        };
+        assert_eq!(read(r#"{"algorithm": "sha256"}"#).unwrap(), KeyHash::Sha256);
+        assert_eq!(
+            read(r#"{"algorithm": "argon2id"}"#).unwrap(),
+            KeyHash::argon2id()
+        );
+        assert_eq!(
+            read(r#"{"algorithm": "argon2id", "memory_kib": 64, "iterations": 1}"#).unwrap(),
+            KeyHash::Argon2id(cheap())
+        );
+        assert!(read(r#"{"algorithm": "argon2id", "iterations": 0}"#).is_err());
+        assert!(read(r#"{"algorithm": "md5"}"#).is_err());
+        for hash in [KeyHash::Sha256, KeyHash::Argon2id(cheap())] {
+            assert_eq!(
+                KeyHash::from_value(&hash.to_value().unwrap()).unwrap(),
+                hash
+            );
+        }
     }
 
     #[test]
