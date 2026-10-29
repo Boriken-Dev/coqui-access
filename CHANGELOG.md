@@ -41,29 +41,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   guatiao derives and guatiao-serde's bridge. `Source<F>`/`FileSource<F>` are the
   `{ "file": { "path", "format" } }` configuration a plugin names its table with. The kit
   depends on no format crate under any feature.
-- `coqui-access-password`, `-key`, `-ldap`, `-proxy`, `-peer`: providers, each with a `-plugin`
-  library crate. Password, key and peer also implement `coqui_accounts` and are built with
-  `PasswordAccounts::builder()`, `Keys::builder()` and `Peers::builder()` over an
+- `coqui-access-password`, `-key`, `-ldap`, `-proxy`, `-mtls`: providers, each with a `-plugin`
+  library crate. Password, key and mtls also implement `coqui_accounts` and are built with
+  `PasswordAccounts::builder()`, `Keys::builder()` and `MtlsAccounts::builder()` over an
   `Arc<dyn Table<Record>>` (memory by default). The record types (`AccountRecord`,
   `KeyRecord`, `PeerRecord`, `Unaccepted`) are public and derive guatiao's `ToValue`,
-  `FromValue` and `Schema`, so any table keeps them. The peer waiting list is a table of its own.
+  `FromValue` and `Schema`, so any table keeps them. The mtls waiting list is a table of its own.
 - `coqui-access-password`: the Argon2id costs are an option. `coqui-access-key`: a stored hash is
   a self-describing string, `sha256:<hex>` or `$argon2id$...`; the builder's `KeyHash` (default
   SHA-256) picks the algorithm for new keys, and one table may hold both. The key prefix is
   configurable (default `ck_`).
-- `coqui-access-peer`: verifies peers through
-  [`coqui-peer-tls`](https://crates.io/crates/coqui-peer-tls) `=0.0.0-alpha.1`. Fingerprints in its records are `PeerId`s, written canonical and read in any
+- `coqui-access-mtls` (id `coqui_access_mtls`): client certificates through
+  [`coqui-peer-tls`](https://crates.io/crates/coqui-peer-tls) `=0.0.0-alpha.1`, trusted as
+  `pinned` (a record of its table, as a paired peer), `ca` (a `CaPolicy`: CA file, subject and
+  SAN globs, the chain from `Attempt::certificates` checked with `verify_client_chain`) or
+  `pinned-or-ca`. A CA-trusted certificate names its account through `account` picks over its
+  fields (default its fingerprint, by `certificate`); two values are `Invalid`. An IP written as
+  a DNS name counts as an IP, by default, in SAN globs and picks. `max_chain` (8) bounds what a
+  client sends. Fingerprints in its records are `PeerId`s, written canonical and read in any
   spelling. Its waiting list is coqui-peer's `WaitingQueue` over a table, under
   `WaitingLimits` (default one place per source, an IPv6 source being its /64; 16 in all; a
   newcomer past them waits unrecorded; one rerecord a minute).
-- `coqui-access-password-plugin`, `-key-plugin`, `-peer-plugin`: configured with a `source` object
+- `coqui-access-password-plugin`, `-key-plugin`, `-mtls-plugin`: configured with a `source` object
   (`{ "file": { "path", "format" } }`, `format` being `toml` or `json`, each plugin's own codec
   over the kit's `FileTable`); no `source` means memory. Key also takes
   `prefix`, `key_hash` (`{ "algorithm": "sha256" }`, or `argon2id` with its costs beside it)
-  and `max_keys`; password takes `max_accounts` and `argon2`; peer
-  takes `waiting`, `max_peers`, `waiting_per_source`, `waiting_total` and
-  `waiting_rerecord_secs`. Peer's `waiting`
-  defaults to a file beside a file source (`<path>.waiting`) and to memory otherwise. Every
+  and `max_keys`; password takes `max_accounts`, `argon2` and `max_password_bytes`; mtls
+  takes `waiting`, `max_records`, `waiting_per_source`, `waiting_total`,
+  `waiting_rerecord_secs`, `trust`, `ca_file`, `subject`, `san`, `ip_in_dns`, `account` and
+  `max_chain`, and its `waiting` defaults to a file beside a file source (`<path>.waiting`)
+  and to memory otherwise. All three take `record_limits`. Every
   numeric option is a plain number whose default the schema declares, and an empty
   configuration reads as those defaults.
 - `coqui-access-acl`: access control lists on items. `RightsSchema` names the rights of an

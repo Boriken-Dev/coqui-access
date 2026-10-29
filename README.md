@@ -78,7 +78,7 @@ other options). The per-crate READMEs show each provider's configuration.
 | `coqui-access-ldap` | LDAP and Active Directory. |
 | `coqui-access-proxy` | Trusted reverse-proxy identity headers. |
 | `coqui-access-system` | The operating system's accounts: PAM and NSS, or a Windows logon. |
-| `coqui-access-peer` | Peer certificate fingerprints, in any table, mapped to identities. |
+| `coqui-access-mtls` | Peer certificate fingerprints, in any table, mapped to identities. |
 
 ## Development
 

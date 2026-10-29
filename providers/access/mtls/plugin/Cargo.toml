@@ -1,6 +1,6 @@
 [package]
-name = "coqui-access-peer-plugin"
-description = "coqui-access-peer as a library a host loads"
+name = "coqui-access-mtls-plugin"
+description = "coqui-access-mtls as a library a host loads"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -16,9 +16,10 @@ crate-type = ["cdylib"]
 
 [dependencies]
 coqui-access.workspace = true
-coqui-access-peer = { path = ".." }
+coqui-access-mtls = { path = ".." }
 coqui-access-kit = { workspace = true, features = ["file"] }
 coqui-peer.workspace = true
+coqui-peer-tls = { workspace = true, features = ["ca"] }
 # The formats a file source may be written in: this plugin's choice, not the libraries'.
 serde.workspace = true
 serde_json.workspace = true

@@ -5,11 +5,13 @@
 //! fingerprints that were accepted in a [`Table`], each under a name and groups. A
 //! certificate nobody accepted is not authenticated and is kept for a while as waiting, in a
 //! second table, so whoever runs the service can accept it. Build the provider in code with
-//! [`Peers::builder`].
+//! [`MtlsAccounts::builder`].
 #![doc = include_str!("../README.md")]
 #![forbid(unsafe_code)]
 #![warn(missing_debug_implementations)]
 #![warn(missing_docs)]
+
+mod trust;
 
 use std::borrow::Cow;
 use std::collections::BTreeSet;
@@ -18,20 +20,27 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
+use coqui_access::Limit;
 use coqui_access::guatiao::library::ProviderError;
 use coqui_access::guatiao::{FromValue, Schema, ToValue};
 use coqui_access::{
     AccountInfo, AccountPut, Accounts, Attempt, Authenticator, Description, Directory, Lookup,
     Person, PutOutcome, Verdict, Waiting, error, takes,
 };
+use coqui_access_kit::pick::Pick;
 use coqui_access_kit::{
     Keyed, MemoryTable, RecordLimits, Reloading, SourceError, Table, check_keys, secret, unix_now,
 };
 use coqui_peer::{WaitingLimits, WaitingQueue};
-use coqui_peer_tls::{Digest, PeerId};
+use coqui_peer_tls::{CaPolicy, Digest, PeerId, Policy, Trust};
+
+pub use trust::{TrustMode, default_account};
 
 /// The most peers a table may hold unless the builder says otherwise.
-pub const DEFAULT_MAX_PEERS: usize = 10_000;
+pub const DEFAULT_MAX_RECORDS: usize = 10_000;
+/// The most certificates a client may send, leaf included, unless the builder says
+/// otherwise.
+pub const DEFAULT_MAX_CHAIN: Limit = Limit::at(8);
 /// The bounds on the waiting list unless the builder says otherwise: one place per source
 /// (an IPv4 address, or an IPv6 /64), 16 in all, and a fingerprint from one source written
 /// down again at most once a minute.
@@ -165,26 +174,73 @@ impl Keyed for Unaccepted {
     }
 }
 
-/// Options for [`Peers`]; every one has a default.
-pub struct PeersBuilder {
+/// Options for [`MtlsAccounts`]; every one has a default.
+pub struct MtlsAccountsBuilder {
     table: Option<Arc<dyn Table<PeerRecord>>>,
     waiting: Option<Arc<dyn Table<Unaccepted>>>,
-    max_peers: usize,
+    max_records: usize,
     limits: RecordLimits,
     waiting_limits: WaitingLimits,
+    trust: TrustMode,
+    ca: Option<CaPolicy>,
+    account: Vec<Pick>,
+    max_chain: Limit,
+    policy: Policy,
 }
 
-impl fmt::Debug for PeersBuilder {
+impl fmt::Debug for MtlsAccountsBuilder {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
-            .debug_struct("PeersBuilder")
-            .field("max_peers", &self.max_peers)
+            .debug_struct("MtlsAccountsBuilder")
+            .field("max_records", &self.max_records)
             .field("waiting_limits", &self.waiting_limits)
+            .field("trust", &self.trust)
+            .field("max_chain", &self.max_chain)
             .finish_non_exhaustive()
     }
 }
 
-impl PeersBuilder {
+impl MtlsAccountsBuilder {
+    /// How client certificates are trusted. Default [`TrustMode::Pinned`].
+    #[must_use]
+    pub fn trust(mut self, trust: TrustMode) -> Self {
+        self.trust = trust;
+        self
+    }
+
+    /// The CA and name globs that [`TrustMode::Ca`] and [`TrustMode::PinnedOrCa`] check a
+    /// chain against; `ip_in_dns` (on by default) lets an `ip:` glob match an address
+    /// written as a DNS name.
+    #[must_use]
+    pub fn ca(mut self, ca: CaPolicy) -> Self {
+        self.ca = Some(ca);
+        self
+    }
+
+    /// How a CA-trusted certificate names its account: picks tried in order over its fields
+    /// (`coqui-peer-tls`'s `CertificateFields::to_map`). Default: its `fingerprint`, by
+    /// `certificate`.
+    #[must_use]
+    pub fn account(mut self, picks: Vec<Pick>) -> Self {
+        self.account = picks;
+        self
+    }
+
+    /// The most certificates a client may send, leaf included. Default 8.
+    #[must_use]
+    pub fn max_chain(mut self, most: Limit) -> Self {
+        self.max_chain = most;
+        self
+    }
+
+    /// The policy a chain is checked under (validity dates, algorithms). Default
+    /// [`Policy::default`].
+    #[must_use]
+    pub fn policy(mut self, policy: Policy) -> Self {
+        self.policy = policy;
+        self
+    }
+
     /// Keeps the accepted peers in `table` instead of in memory.
     #[must_use]
     pub fn table(mut self, table: Arc<dyn Table<PeerRecord>>) -> Self {
@@ -200,10 +256,10 @@ impl PeersBuilder {
         self
     }
 
-    /// The most peers the table may hold. Default [`DEFAULT_MAX_PEERS`].
+    /// The most peers the table may hold. Default [`DEFAULT_MAX_RECORDS`].
     #[must_use]
-    pub fn max_peers(mut self, max: usize) -> Self {
-        self.max_peers = max;
+    pub fn max_records(mut self, max: usize) -> Self {
+        self.max_records = max;
         self
     }
 
@@ -229,12 +285,21 @@ impl PeersBuilder {
     /// # Errors
     ///
     /// Returns an error when the table cannot be loaded or holds an invalid or duplicated
-    /// peer.
-    pub fn build(self) -> Result<Peers, SourceError> {
+    /// peer, or the trust needs a CA and none is given.
+    pub fn build(self) -> Result<MtlsAccounts, SourceError> {
+        let ca = match (self.trust.uses_ca(), self.ca) {
+            (true, Some(ca)) => Some(Trust::Ca(ca)),
+            (true, None) => {
+                return Err(SourceError::invalid(
+                    "trust by a certificate authority needs its ca_file",
+                ));
+            }
+            (false, _) => None,
+        };
         let table = self
             .table
             .unwrap_or_else(|| Arc::new(MemoryTable::<PeerRecord>::new()));
-        let (max, limits) = (self.max_peers, self.limits);
+        let (max, limits) = (self.max_records, self.limits);
         let waiting_table = self
             .waiting
             .unwrap_or_else(|| Arc::new(MemoryTable::<Unaccepted>::new()));
@@ -250,24 +315,29 @@ impl PeersBuilder {
             let at = now.checked_sub(age).unwrap_or(now);
             queue.remember(had.fingerprint, source_of(had.peer.as_deref()), at);
         }
-        Ok(Peers {
+        Ok(MtlsAccounts {
             peers: Reloading::new(table, move |records| validate(records, max, &limits))?,
             limits,
             waiting_table,
             queue: Mutex::new(queue),
+            trust: self.trust,
+            ca,
+            account: self.account,
+            max_chain: self.max_chain,
+            policy: self.policy,
         })
     }
 }
 
-/// Peers as an Authenticator, Directory and Accounts implementation.
+/// MtlsAccounts as an Authenticator, Directory and Accounts implementation.
 ///
 /// The table is read again whenever it reports a change.
 ///
 /// ```
 /// use coqui_access::{Attempt, Authenticator, Verdict};
-/// use coqui_access_peer::Peers;
+/// use coqui_access_mtls::MtlsAccounts;
 ///
-/// let peers = Peers::builder().build().unwrap();
+/// let peers = MtlsAccounts::builder().build().unwrap();
 /// let seen = peers
 ///     .authenticate(Attempt {
 ///         certificate: Some(
@@ -279,34 +349,45 @@ impl PeersBuilder {
 /// // Nobody accepted it: not authenticated, and kept as waiting.
 /// assert_eq!(seen, Verdict::Unknown);
 /// ```
-pub struct Peers {
+pub struct MtlsAccounts {
     peers: Reloading<PeerRecord>,
     waiting_table: Arc<dyn Table<Unaccepted>>,
     /// Decides who is written down as waiting; held while the waiting table is read and
     /// written.
     queue: Mutex<WaitingQueue>,
     limits: RecordLimits,
+    trust: TrustMode,
+    ca: Option<Trust>,
+    account: Vec<Pick>,
+    max_chain: Limit,
+    policy: Policy,
 }
 
-impl fmt::Debug for Peers {
+impl fmt::Debug for MtlsAccounts {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let queue = self.queue.lock().unwrap_or_else(PoisonError::into_inner);
         formatter
-            .debug_struct("Peers")
+            .debug_struct("MtlsAccounts")
             .field("waiting_limits", &queue.limits())
+            .field("trust", &self.trust)
             .finish_non_exhaustive()
     }
 }
 
-impl Peers {
-    /// Options for a peer table, kept in memory unless [`table`](PeersBuilder::table) says
+impl MtlsAccounts {
+    /// Options for a peer table, kept in memory unless [`table`](MtlsAccountsBuilder::table) says
     /// otherwise.
-    pub fn builder() -> PeersBuilder {
-        PeersBuilder {
+    pub fn builder() -> MtlsAccountsBuilder {
+        MtlsAccountsBuilder {
             table: None,
             waiting: None,
-            max_peers: DEFAULT_MAX_PEERS,
+            max_records: DEFAULT_MAX_RECORDS,
             limits: RecordLimits::DEFAULT,
+            trust: TrustMode::Pinned,
+            ca: None,
+            account: default_account(),
+            max_chain: DEFAULT_MAX_CHAIN,
+            policy: Policy::default(),
             waiting_limits: DEFAULT_WAITING_LIMITS,
         }
     }
@@ -337,7 +418,7 @@ impl Peers {
             .put(Unaccepted::new(fingerprint, from, unix_now()));
     }
 
-    /// Peers that are accepted wait no more.
+    /// MtlsAccounts that are accepted wait no more.
     fn waited(&self, accepted: &[PeerId]) {
         let mut queue = self.queue.lock().unwrap_or_else(PoisonError::into_inner);
         for had in self.waits() {
@@ -357,47 +438,69 @@ impl Peers {
     }
 }
 
-impl Authenticator for Peers {
+impl Authenticator for MtlsAccounts {
+    /// Pinned first (unless the trust is `ca`): a known, enabled record is `Valid` by `id`, a
+    /// disabled one `Invalid`. Then the CA (unless the trust is `pinned`), for a `secure`
+    /// attempt carrying `certificates`: a trusted chain is answered by the `account` picks,
+    /// `Ambiguous` being `Invalid`. Anything else is `Unknown`, and under a pinning trust the
+    /// fingerprint waits.
     fn authenticate(&self, attempt: Attempt) -> Result<Verdict, ProviderError> {
-        let Some(fingerprint) = attempt
+        let chain = attempt.certificates.as_deref().unwrap_or_default();
+        if !self.max_chain.allows(chain.len()) {
+            return Ok(Verdict::Unknown);
+        }
+        let fingerprint = attempt
             .certificate
             .as_deref()
             .and_then(|text| text.parse::<PeerId>().ok())
-            .filter(|fingerprint| fingerprint.digest() == Digest::Sha256)
-        else {
-            return Ok(Verdict::Unknown);
-        };
-        let found = self
-            .peers
-            .read(|records| {
-                records
-                    .iter()
-                    .find(|peer| peer.is(&fingerprint))
-                    .map(|peer| (peer.id.clone(), peer.disabled))
-            })
-            .map_err(|reason| reason.reading("peer table"))?;
-        Ok(match found {
-            None => {
-                self.wait(&fingerprint, attempt.peer);
-                Verdict::Unknown
+            .or_else(|| chain.first().map(|leaf| PeerId::of(leaf.as_ref())))
+            .filter(|fingerprint| fingerprint.digest() == Digest::Sha256);
+        if self.trust.pins()
+            && let Some(fingerprint) = &fingerprint
+        {
+            let found = self
+                .peers
+                .read(|records| {
+                    records
+                        .iter()
+                        .find(|peer| peer.is(fingerprint))
+                        .map(|peer| (peer.id.clone(), peer.disabled))
+                })
+                .map_err(|reason| reason.reading("peer table"))?;
+            match found {
+                Some((_, true)) => return Ok(Verdict::Invalid),
+                Some((id, false)) => {
+                    return Ok(Verdict::Valid(Lookup {
+                        by: "id".to_owned(),
+                        value: id,
+                    }));
+                }
+                None => {}
             }
-            Some((_, true)) => Verdict::Invalid,
-            Some((id, false)) => Verdict::Valid(Lookup {
-                by: "id".to_owned(),
-                value: id,
-            }),
-        })
+        }
+        if let Some(ca) = &self.ca
+            && attempt.secure == Some(true)
+            && let Some(verdict) = trust::by_ca(ca, &self.policy, &self.account, chain)?
+        {
+            return Ok(verdict);
+        }
+        if self.trust.pins()
+            && let Some(fingerprint) = fingerprint
+        {
+            self.wait(&fingerprint, attempt.peer);
+        }
+        Ok(Verdict::Unknown)
     }
 
     fn describe(&self) -> Result<Description, ProviderError> {
         Ok(Description {
-            name: Some("Verified peers".to_owned()),
+            name: Some("Client certificates".to_owned()),
             takes: Some(takes::REQUEST.to_owned()),
         })
     }
 }
 
-impl Directory for Peers {
+impl Directory for MtlsAccounts {
     fn lookup(&self, lookup: Lookup) -> Result<Option<Person>, ProviderError> {
         let by_certificate = if lookup.by == "certificate" {
             lookup.value.parse::<PeerId>().ok()
@@ -433,7 +536,7 @@ impl Directory for Peers {
     }
 }
 
-impl Accounts for Peers {
+impl Accounts for MtlsAccounts {
     fn accounts(&self) -> Result<Vec<AccountInfo>, ProviderError> {
         self.peers
             .read(|records| {
@@ -617,7 +720,7 @@ mod tests {
     fn authenticates_only_known_certificates_and_resolves_groups() {
         let known = fingerprint();
         let certificate = known.to_string();
-        let peers = Peers::builder()
+        let peers = MtlsAccounts::builder()
             .table(Arc::new(MemoryTable::from_records([PeerRecord::new(
                 "service-1",
                 "site-a",
@@ -654,7 +757,7 @@ mod tests {
         let known = fingerprint();
         let certificate = known.to_string();
         let build = |records: Vec<PeerRecord>| {
-            Peers::builder()
+            MtlsAccounts::builder()
                 .table(Arc::new(MemoryTable::from_records(records)))
                 .build()
         };
@@ -684,7 +787,7 @@ mod tests {
 
     #[test]
     fn an_unknown_certificate_waits_and_is_accepted_by_putting_it() {
-        let peers = Peers::builder().build().unwrap();
+        let peers = MtlsAccounts::builder().build().unwrap();
         let fingerprint = fingerprint();
         let shown = fingerprint.to_string();
         assert_eq!(
@@ -736,7 +839,7 @@ mod tests {
 
     #[test]
     fn one_address_holds_one_waiting_place() {
-        let peers = Peers::builder().build().unwrap();
+        let peers = MtlsAccounts::builder().build().unwrap();
         for _ in 0..3 {
             let shown = fingerprint().to_string();
             peers.authenticate(attempt(Some(&shown))).unwrap();
@@ -747,7 +850,7 @@ mod tests {
     #[test]
     fn the_waiting_limits_and_the_waiting_table_are_the_callers() {
         let waiting = Arc::new(MemoryTable::<Unaccepted>::new());
-        let peers = Peers::builder()
+        let peers = MtlsAccounts::builder()
             .waiting(waiting.clone())
             .waiting_limits(WaitingLimits {
                 total: 2,
@@ -772,7 +875,7 @@ mod tests {
 
     #[test]
     fn two_addresses_in_one_ipv6_64_share_one_place() {
-        let peers = Peers::builder().build().unwrap();
+        let peers = MtlsAccounts::builder().build().unwrap();
         for (address, expected) in [
             ("[2001:db8:1:2::1]:4000", 1),
             ("[2001:db8:1:2:ffff::9]:4000", 1),
@@ -795,11 +898,17 @@ mod tests {
         let waiting = Arc::new(MemoryTable::<Unaccepted>::new());
         let one = fingerprint();
         let shown = one.to_string();
-        let first = Peers::builder().waiting(waiting.clone()).build().unwrap();
+        let first = MtlsAccounts::builder()
+            .waiting(waiting.clone())
+            .build()
+            .unwrap();
         first.authenticate(attempt(Some(&shown))).unwrap();
         // A provider built over the same table counts the entry against its source: the
         // source's one place goes to the newer fingerprint, not to a second entry.
-        let again = Peers::builder().waiting(waiting.clone()).build().unwrap();
+        let again = MtlsAccounts::builder()
+            .waiting(waiting.clone())
+            .build()
+            .unwrap();
         again.authenticate(attempt(Some(&shown))).unwrap();
         assert_eq!(waiting.load().unwrap().records.len(), 1, "already waiting");
         let other = fingerprint();
@@ -842,7 +951,10 @@ mod tests {
                 ))
             }
         }
-        let peers = Peers::builder().waiting(Arc::new(Fixed)).build().unwrap();
+        let peers = MtlsAccounts::builder()
+            .waiting(Arc::new(Fixed))
+            .build()
+            .unwrap();
         assert_eq!(
             peers
                 .authenticate(attempt(Some(&fingerprint().to_string())))
