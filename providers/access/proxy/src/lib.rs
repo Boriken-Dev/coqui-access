@@ -170,6 +170,7 @@ mod tests {
             peer: peer.map(str::to_owned),
             secure: Some(true),
             certificate: None,
+            certificates: None,
         }
     }
 
