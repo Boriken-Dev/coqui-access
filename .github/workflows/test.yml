@@ -78,13 +78,20 @@ jobs:
         if: runner.os == 'Linux'
       - name: Make a throwaway account (Windows)
         if: runner.os == 'Windows'
-        shell: pwsh
+        # Windows PowerShell has the LocalAccounts module; `net user` stops to ask about a
+        # password over 14 characters and, with no input, makes no account.
+        shell: powershell
         run: |
+          $ErrorActionPreference = 'Stop'
           $password = 'Cq1!' + [guid]::NewGuid().ToString('N')
           Write-Output "::add-mask::$password"
-          net user coquitest $password /add | Out-Null
-          net localgroup coquitestgroup /add | Out-Null
-          net localgroup coquitestgroup coquitest /add | Out-Null
+          $secret = ConvertTo-SecureString $password -AsPlainText -Force
+          New-LocalUser -Name coquitest -Password $secret -AccountNeverExpires -PasswordNeverExpires | Out-Null
+          New-LocalGroup -Name coquitestgroup | Out-Null
+          Add-LocalGroupMember -Group coquitestgroup -Member coquitest
+          if (-not (Get-LocalGroupMember -Group coquitestgroup | Where-Object Name -like '*\coquitest')) {
+            throw 'the throwaway account is not in its group'
+          }
           "COQUI_ACCESS_TEST_SYSTEM_USER=coquitest" >> $env:GITHUB_ENV
           "COQUI_ACCESS_TEST_SYSTEM_PASSWORD=$password" >> $env:GITHUB_ENV
           "COQUI_ACCESS_TEST_SYSTEM_GROUP=coquitestgroup" >> $env:GITHUB_ENV
@@ -115,10 +122,10 @@ jobs:
             "$binary" --include-ignored
       - name: Remove the throwaway account (Windows)
         if: always() && runner.os == 'Windows'
-        shell: pwsh
+        shell: powershell
         run: |
-          net user coquitest /delete 2>$null | Out-Null
-          net localgroup coquitestgroup /delete 2>$null | Out-Null
+          Remove-LocalUser -Name coquitest -ErrorAction SilentlyContinue
+          Remove-LocalGroup -Name coquitestgroup -ErrorAction SilentlyContinue
       - name: Remove the throwaway account (Linux)
         if: always() && runner.os == 'Linux'
         run: |
