@@ -23,20 +23,30 @@ use coqui_access::{
 };
 use coqui_access_kit::file::Source;
 use coqui_access_kit::{Argon2Params, MemoryTable, Table};
-use coqui_access_local::{AccountRecord, LocalAccounts};
+use coqui_access_local::{AccountRecord, DEFAULT_MAX_ACCOUNTS, LocalAccounts};
 
 pub use format::Format;
 
 /// Guatiao configuration for the local accounts provider.
-#[derive(Debug, Clone, Default, FromValue, Schema, ToValue)]
+#[derive(Debug, Clone, FromValue, Schema, ToValue)]
 #[map(crate = ::coqui_access::guatiao)]
 pub struct LocalAccountsConfig {
     /// Where the accounts are kept; memory when absent.
     pub source: Option<Source<Format>>,
-    /// The most accounts the table may hold; the library default when absent.
-    pub max_accounts: Option<u32>,
+    /// The most accounts the table may hold.
+    #[map(default = DEFAULT_MAX_ACCOUNTS as u32)]
+    pub max_accounts: u32,
     /// Argon2id costs for new passwords; the library default for each one absent.
-    pub argon2: Option<Argon2Params>,
+    #[map(default)]
+    pub argon2: Argon2Params,
+}
+
+impl Default for LocalAccountsConfig {
+    /// What an empty configuration reads as: every default the schema declares.
+    fn default() -> Self {
+        Self::from_value(&coqui_access::guatiao::Map::new().into())
+            .expect("an empty configuration reads, every key having a default")
+    }
 }
 
 /// The local accounts provider a host loads.
@@ -62,14 +72,10 @@ impl TryFrom<LocalAccountsConfig> for LocalAccountsProvider {
                 .map_err(|reason| reason.writing("account table"))?,
             None => Arc::new(MemoryTable::new()),
         };
-        let mut builder = LocalAccounts::builder().table(table);
-        if let Some(max) = config.max_accounts {
-            builder = builder.max_accounts(max as usize);
-        }
-        if let Some(argon2) = config.argon2 {
-            builder = builder.argon2(argon2);
-        }
-        builder
+        LocalAccounts::builder()
+            .table(table)
+            .max_accounts(config.max_accounts as usize)
+            .argon2(config.argon2)
             .build()
             .map(Self)
             .map_err(|reason| reason.writing("account table"))
@@ -129,7 +135,7 @@ mod tests {
     fn config_in(path: &std::path::Path, format: Format) -> LocalAccountsConfig {
         LocalAccountsConfig {
             source: Some(Source::file(path.to_str().unwrap(), format)),
-            argon2: Some(cheap()),
+            argon2: cheap(),
             ..LocalAccountsConfig::default()
         }
     }
@@ -199,7 +205,7 @@ mod tests {
         };
         assert!(LocalAccountsProvider::try_from(empty).is_err());
         let memory = LocalAccountsProvider::try_from(LocalAccountsConfig {
-            argon2: Some(cheap()),
+            argon2: cheap(),
             ..LocalAccountsConfig::default()
         })
         .unwrap();
@@ -211,14 +217,14 @@ mod tests {
         let config = LocalAccountsConfig::from_value(
             &LocalAccountsConfig {
                 source: Some(Source::file("accounts.toml", Format::Toml)),
-                max_accounts: Some(5),
-                argon2: None,
+                max_accounts: 5,
+                argon2: Argon2Params::default(),
             }
             .to_value()
             .unwrap(),
         )
         .unwrap();
-        assert_eq!(config.max_accounts, Some(5));
+        assert_eq!(config.max_accounts, 5);
         assert_eq!(config.source.unwrap().file.unwrap().path, "accounts.toml");
     }
 
@@ -246,5 +252,22 @@ mod tests {
             LocalAccountsProvider::try_from(config(&path)).is_err(),
             "JSON is not TOML"
         );
+    }
+    /// The `default` a schema declares for one of its properties.
+    fn default_in(schema: &coqui_access::guatiao::Value, field: &str) -> Option<u64> {
+        use coqui_access::guatiao::Map;
+        let schema = <&Map>::try_from(schema).ok()?;
+        let properties = <&Map>::try_from(schema.get("properties")?).ok()?;
+        let property = <&Map>::try_from(properties.get(field)?).ok()?;
+        u64::from_value(property.get("default")?).ok()
+    }
+
+    #[test]
+    fn the_schema_declares_the_defaults_an_empty_config_reads_as() {
+        let schema = LocalAccountsConfig::schema().unwrap();
+        assert_eq!(default_in(&schema, "max_accounts"), Some(10_000));
+        let empty = LocalAccountsConfig::default();
+        assert_eq!(empty.max_accounts, 10_000);
+        assert_eq!(empty.argon2, Argon2Params::default());
     }
 }

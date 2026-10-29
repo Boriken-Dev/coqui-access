@@ -25,14 +25,14 @@ use coqui_access::{
     AccountInfo, AccountPut, Accounts, Attempt, Authenticator, Description, Directory, Lookup,
     Person, PutOutcome, Verdict,
 };
-use coqui_access_key::{DEFAULT_PREFIX, KeyRecord, Keys};
+use coqui_access_key::{DEFAULT_MAX_KEYS, DEFAULT_PREFIX, KeyRecord, Keys};
 use coqui_access_kit::file::Source;
 use coqui_access_kit::{KeyHash, MemoryTable, Table};
 
 pub use format::Format;
 
 /// Guatiao configuration for the key provider.
-#[derive(Debug, Clone, Default, FromValue, Schema, ToValue)]
+#[derive(Debug, Clone, FromValue, Schema, ToValue)]
 #[map(crate = ::coqui_access::guatiao)]
 pub struct KeysConfig {
     /// Where the keys are kept; memory when absent.
@@ -43,8 +43,17 @@ pub struct KeysConfig {
     /// How keys made from now on are kept; SHA-256 by default.
     #[map(default)]
     pub key_hash: KeyHash,
-    /// The most keys the table may hold; the library default when absent.
-    pub max_keys: Option<u32>,
+    /// The most keys the table may hold.
+    #[map(default = DEFAULT_MAX_KEYS as u32)]
+    pub max_keys: u32,
+}
+
+impl Default for KeysConfig {
+    /// What an empty configuration reads as: every default the schema declares.
+    fn default() -> Self {
+        Self::from_value(&coqui_access::guatiao::Map::new().into())
+            .expect("an empty configuration reads, every key having a default")
+    }
 }
 
 /// The key provider a host loads.
@@ -70,14 +79,12 @@ impl TryFrom<KeysConfig> for KeysProvider {
                 .map_err(|reason| reason.writing("key table"))?,
             None => Arc::new(MemoryTable::new()),
         };
-        let mut builder = Keys::builder()
+        let builder = Keys::builder()
             .table(table)
             .prefix(config.prefix)
             .key_hash(config.key_hash);
-        if let Some(max) = config.max_keys {
-            builder = builder.max_keys(max as usize);
-        }
         builder
+            .max_keys(config.max_keys as usize)
             .build()
             .map(Self)
             .map_err(|reason| reason.writing("key table"))
@@ -203,8 +210,11 @@ mod tests {
         let path = directory.path().join("keys.toml");
         std::fs::write(&path, "[[keys]]\nid='a'\nname='a'\nhash='short'\n").unwrap();
         assert!(KeysProvider::try_from(config(&path)).is_err());
-        let memory = KeysConfig::default();
-        assert!(KeysProvider::try_from(memory).is_err(), "an empty prefix");
+        let blank = KeysConfig {
+            prefix: String::new(),
+            ..KeysConfig::default()
+        };
+        assert!(KeysProvider::try_from(blank).is_err(), "an empty prefix");
         assert!(
             config_from(r#"{"key_hash": {"algorithm": "argon2id", "iterations": 0}}"#).is_err(),
             "Argon2 refuses the costs"
@@ -245,5 +255,24 @@ mod tests {
         assert!(key.starts_with("ck_"));
         let bare = coqui_access::guatiao::Map::new();
         assert!(KeysConfig::from_value(&bare.into()).is_ok_and(|c| c.prefix == "ck_"));
+    }
+    /// The `default` a schema declares for one of its properties.
+    fn default_in(schema: &coqui_access::guatiao::Value, field: &str) -> Option<u64> {
+        use coqui_access::guatiao::Map;
+        let schema = <&Map>::try_from(schema).ok()?;
+        let properties = <&Map>::try_from(schema.get("properties")?).ok()?;
+        let property = <&Map>::try_from(properties.get(field)?).ok()?;
+        u64::from_value(property.get("default")?).ok()
+    }
+
+    #[test]
+    fn the_schema_declares_the_defaults_an_empty_config_reads_as() {
+        let schema = KeysConfig::schema().unwrap();
+        assert_eq!(default_in(&schema, "max_keys"), Some(10_000));
+        let empty = KeysConfig::default();
+        assert_eq!(
+            (empty.max_keys, empty.prefix.as_str()),
+            (10_000, DEFAULT_PREFIX)
+        );
     }
 }
