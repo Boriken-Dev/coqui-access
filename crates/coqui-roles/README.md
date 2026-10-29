@@ -38,8 +38,9 @@ let authorizer = RoleAuthorizer::builder()
 ```
 
 `RolePolicy` holds the same data (`scope_kinds`, `roles`, `rules`) for a caller that keeps
-its policy elsewhere: `RoleAuthorizer::new(policy)`. It derives serde behind the `serde`
-feature.
+its policy elsewhere: `RoleAuthorizer::new(policy)`. It derives guatiao's value traits, so
+any format carries it, and it is the configuration of the `coqui_roles` provider
+`RoleAuthorizer` derives.
 
 The plugin takes `{ "scope_kinds": ["site"], "roles": [{ "name": "viewer", "actions":
 ["document.read"] }], "rules": [{ "subject": "group:staff", "scope": "site:north", "role":
@@ -51,7 +52,7 @@ The plugin takes `{ "scope_kinds": ["site"], "roles": [{ "name": "viewer", "acti
 | --- | --- |
 | `RoleAuthorizer` | `builder()`, `new(policy)`; implements `Authorizer`. |
 | `RoleAuthorizerBuilder` | `scope_kinds`, `role`, `rule`, `build`. |
-| `RolePolicy`, `Role`, `Rule` | The policy as plain data; `serde` feature. |
+| `RolePolicy`, `Role`, `Rule` | The policy as plain data and provider configuration; guatiao value traits. |
 | `RolePolicyError` | An invalid policy. |
 | `MAX_ROLES`, `MAX_ROLE_ACTIONS`, `MAX_RULES`, `MAX_SCOPE_KINDS` | The bounds. |
 

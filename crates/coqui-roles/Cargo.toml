@@ -12,11 +12,4 @@ exclude = [".*", "*.local.*"]
 
 [dependencies]
 coqui-access.workspace = true
-serde = { workspace = true, optional = true }
 
-[features]
-# Serialize and Deserialize on the policy types, for whatever format a caller picks.
-serde = ["dep:serde"]
-
-[dev-dependencies]
-toml.workspace = true

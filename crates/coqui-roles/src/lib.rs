@@ -21,8 +21,9 @@
 //! # let _ = authorizer;
 //! ```
 //!
-//! [`RolePolicy`] is the same thing as plain data (it derives serde behind the `serde`
-//! feature), for a caller that keeps its policy somewhere else.
+//! [`RolePolicy`] is the same thing as plain data with guatiao's value traits, so a caller
+//! keeps it in any format; it is also the configuration [`RoleAuthorizer`] takes as the
+//! `coqui_roles` provider, which `coqui-roles-plugin` exports.
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
@@ -30,7 +31,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use coqui_access::guatiao::library::ProviderError;
-use coqui_access::{AuthorizationDecision, AuthorizationRequest, Authorizer, Subject};
+use coqui_access::guatiao::{FromValue, Provider, Schema, ToValue};
+use coqui_access::{AuthorizationDecision, AuthorizationRequest, Authorizer, Subject, error};
 
 /// The most roles a policy may define.
 pub const MAX_ROLES: usize = 256;
@@ -42,12 +44,8 @@ pub const MAX_RULES: usize = 10_000;
 pub const MAX_SCOPE_KINDS: usize = 64;
 
 /// A named set of actions.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Serialize, serde::Deserialize),
-    serde(deny_unknown_fields)
-)]
+#[derive(Debug, Clone, PartialEq, Eq, FromValue, Schema, ToValue)]
+#[map(crate = ::coqui_access::guatiao, deny_unknown_fields)]
 #[non_exhaustive]
 pub struct Role {
     /// The name rules refer to.
@@ -70,12 +68,8 @@ impl Role {
 }
 
 /// Binds a subject to a role at a scope.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Serialize, serde::Deserialize),
-    serde(deny_unknown_fields)
-)]
+#[derive(Debug, Clone, PartialEq, Eq, FromValue, Schema, ToValue)]
+#[map(crate = ::coqui_access::guatiao, deny_unknown_fields)]
 #[non_exhaustive]
 pub struct Rule {
     /// `account:<name>`, `person:<id>` or `group:<name>`.
@@ -102,23 +96,19 @@ impl Rule {
 }
 
 /// A role policy as plain data: what [`RoleAuthorizer::new`] checks and compiles.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Serialize, serde::Deserialize),
-    serde(deny_unknown_fields)
-)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, FromValue, Schema, ToValue)]
+#[map(crate = ::coqui_access::guatiao, deny_unknown_fields)]
 #[non_exhaustive]
 pub struct RolePolicy {
     /// The kinds a rule scope may use (`site` allows `site:north`); empty allows any kind.
     /// `*` is always allowed.
-    #[cfg_attr(feature = "serde", serde(default))]
+    #[map(default)]
     pub scope_kinds: Vec<String>,
     /// The roles.
-    #[cfg_attr(feature = "serde", serde(default))]
+    #[map(default)]
     pub roles: Vec<Role>,
     /// The rules, in the order they are tried.
-    #[cfg_attr(feature = "serde", serde(default))]
+    #[map(default)]
     pub rules: Vec<Rule>,
 }
 
@@ -171,8 +161,16 @@ impl RoleAuthorizerBuilder {
     }
 }
 
-/// First-match role authorizer.
-#[derive(Clone, Default)]
+/// First-match role authorizer, and the `coqui_roles` provider, configured with a
+/// [`RolePolicy`].
+#[derive(Clone, Default, Provider)]
+#[provider(
+    Authorizer,
+    id = "coqui_roles",
+    name = "Role authorizer",
+    config = RolePolicy,
+    crate = ::coqui_access::guatiao
+)]
 pub struct RoleAuthorizer {
     roles: BTreeMap<String, BTreeSet<String>>,
     rules: Vec<CompiledRule>,
@@ -197,6 +195,21 @@ impl fmt::Display for RolePolicyError {
 }
 
 impl core::error::Error for RolePolicyError {}
+
+/// A policy refused while building the provider is a bad configuration value.
+impl From<RolePolicyError> for ProviderError {
+    fn from(error: RolePolicyError) -> Self {
+        error::bad_value(&error.0)
+    }
+}
+
+impl TryFrom<RolePolicy> for RoleAuthorizer {
+    type Error = RolePolicyError;
+
+    fn try_from(policy: RolePolicy) -> Result<Self, RolePolicyError> {
+        Self::new(policy)
+    }
+}
 
 impl fmt::Debug for RoleAuthorizer {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -520,33 +533,41 @@ mod tests {
         assert!(RoleAuthorizer::builder().role("r", actions).build().is_ok());
     }
 
-    #[cfg(feature = "serde")]
     #[test]
-    fn a_policy_is_plain_data_in_whatever_format_the_caller_picks() {
-        let policy: RolePolicy = toml::from_str(
-            r#"
-            scope_kinds = ["site"]
-            [[roles]]
-            name = "viewer"
-            actions = ["document.read"]
-            [[rules]]
-            subject = "group:staff"
-            scope = "site:north"
-            role = "viewer"
-            "#,
-        )
-        .unwrap();
-        let authorizer = RoleAuthorizer::new(policy.clone()).unwrap();
+    fn a_policy_is_plain_data_that_any_format_carries() {
+        let mut policy = RolePolicy::new();
+        policy.scope_kinds = vec!["site".to_owned()];
+        policy.roles = vec![Role::new("viewer", ["document.read"])];
+        policy.rules = vec![Rule::new("group:staff", "site:north", "viewer")];
+        let value = policy.to_value().unwrap();
+        assert_eq!(RolePolicy::from_value(&value).unwrap(), policy);
+        let authorizer = RoleAuthorizer::try_from(policy).unwrap();
         assert!(allowed(
             &authorizer,
             &person("i", "n", &["staff"]),
             "document.read",
             "site:north"
         ));
-        assert!(toml::from_str::<RolePolicy>("surprise = 1").is_err());
+        let mut surprise = coqui_access::guatiao::Map::new();
+        surprise.set("surprise", true);
+        assert!(RolePolicy::from_value(&surprise.into()).is_err());
+        let empty = coqui_access::guatiao::Map::new();
         assert_eq!(
-            toml::from_str::<RolePolicy>(&toml::to_string(&policy).unwrap()).unwrap(),
-            policy
+            RolePolicy::from_value(&empty.into()).unwrap(),
+            RolePolicy::new()
+        );
+    }
+
+    #[test]
+    fn a_refused_policy_is_a_bad_value_for_the_host() {
+        let refused = RoleAuthorizer::builder()
+            .rule(Rule::new("account:x", "*", "missing"))
+            .build()
+            .unwrap_err();
+        let error = ProviderError::from(refused);
+        assert_eq!(
+            error.status,
+            coqui_access::guatiao::Status::GUATIAO_ERR_BAD_VALUE
         );
     }
 }
