@@ -60,7 +60,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   and `max_keys`; local takes `max_accounts` and `argon2`; peer
   takes `waiting`, `max_peers`, `waiting_per_source`, `waiting_total` and
   `waiting_rerecord_secs`. Peer's `waiting`
-  defaults to a file beside a file source (`<path>.waiting`) and to memory otherwise.
+  defaults to a file beside a file source (`<path>.waiting`) and to memory otherwise. Every
+  numeric option is a plain number whose default the schema declares, and an empty
+  configuration reads as those defaults.
 - `coqui-access-acl`: access control lists on items. `RightsSchema` names the rights of an
   item type as bits of a growable `Rights` set, with aliases and cancelling names; `Entry`
   (a `Principal`, allow or deny, rights, inheritance flags, a condition), `Acl` and

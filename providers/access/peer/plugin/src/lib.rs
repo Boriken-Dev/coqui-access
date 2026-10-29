@@ -27,7 +27,7 @@ use coqui_access::{
 };
 use coqui_access_kit::file::Source;
 use coqui_access_kit::{Keyed, MemoryTable, Table};
-use coqui_access_peer::{DEFAULT_WAITING_LIMITS, PeerRecord, Peers, Unaccepted};
+use coqui_access_peer::{DEFAULT_MAX_PEERS, DEFAULT_WAITING_LIMITS, PeerRecord, Peers, Unaccepted};
 use coqui_peer::WaitingLimits;
 
 pub use format::Format;
@@ -40,8 +40,9 @@ pub struct PeersConfig {
     pub source: Option<Source<Format>>,
     /// Where the fingerprints waiting to be accepted are kept.
     pub waiting: Option<Source<Format>>,
-    /// The most peers the table may hold; the library default when absent.
-    pub max_peers: Option<u32>,
+    /// The most peers the table may hold.
+    #[map(default = DEFAULT_MAX_PEERS as u32)]
+    pub max_peers: u32,
     /// Waiting places per source: an IPv4 address, or an IPv6 /64.
     #[map(default = DEFAULT_WAITING_LIMITS.per_source as u32)]
     pub waiting_per_source: u32,
@@ -54,16 +55,10 @@ pub struct PeersConfig {
 }
 
 impl Default for PeersConfig {
-    /// What an empty configuration reads as.
+    /// What an empty configuration reads as: every default the schema declares.
     fn default() -> Self {
-        Self {
-            source: None,
-            waiting: None,
-            max_peers: None,
-            waiting_per_source: DEFAULT_WAITING_LIMITS.per_source as u32,
-            waiting_total: DEFAULT_WAITING_LIMITS.total as u32,
-            waiting_rerecord_secs: DEFAULT_WAITING_LIMITS.rerecord.as_secs(),
-        }
+        Self::from_value(&coqui_access::guatiao::Map::new().into())
+            .expect("an empty configuration reads, every key having a default")
     }
 }
 
@@ -109,9 +104,7 @@ impl TryFrom<PeersConfig> for PeersProvider {
         let mut builder = Peers::builder()
             .table(open::<PeerRecord>(config.source.as_ref(), "peers")?)
             .waiting(open::<Unaccepted>(waiting_source.as_ref(), "waiting")?);
-        if let Some(max) = config.max_peers {
-            builder = builder.max_peers(max as usize);
-        }
+        builder = builder.max_peers(config.max_peers as usize);
         builder = builder.waiting_limits(WaitingLimits {
             per_source: config.waiting_per_source as usize,
             total: config.waiting_total as usize,
@@ -297,6 +290,7 @@ mod tests {
             ("waiting_per_source", 1),
             ("waiting_total", 16),
             ("waiting_rerecord_secs", 60),
+            ("max_peers", 10_000),
         ] {
             assert_eq!(default_in(&schema, field), Some(expected), "{field}");
         }
