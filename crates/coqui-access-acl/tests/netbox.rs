@@ -229,6 +229,7 @@ fn the_authorizer_answers_netboxs_questions_through_the_kind() {
                 person: who.clone(),
                 action: action.to_owned(),
                 resource: item.to_owned(),
+                ancestors: Vec::new(),
             })
             .unwrap()
             .allowed

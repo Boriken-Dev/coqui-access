@@ -139,6 +139,11 @@ pub struct AuthorizationRequest {
     /// Resource identifier in the host's own scheme, such as `site:north`, or `*` for the
     /// whole service.
     pub resource: String,
+    /// The resources `resource` sits under in the host's own hierarchy, nearest first, such
+    /// as `["site:europe", "site:world"]` for `site:north`; empty when it has none. An
+    /// authorizer may let a grant on one of them reach `resource`.
+    #[map(default, skip_serializing_if = Vec::is_empty)]
+    pub ancestors: Vec<String>,
 }
 
 /// Authorization result and provider-defined limits for the granted action.

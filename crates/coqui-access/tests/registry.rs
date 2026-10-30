@@ -163,6 +163,7 @@ fn one_provider_serves_all_four_kinds_through_a_registry() {
                 person: person.clone(),
                 action: "document.read".to_owned(),
                 resource: "*".to_owned(),
+                ancestors: Vec::new(),
             })
             .unwrap()
             .allowed
@@ -173,6 +174,7 @@ fn one_provider_serves_all_four_kinds_through_a_registry() {
                 person,
                 action: "document.write".to_owned(),
                 resource: "*".to_owned(),
+                ancestors: Vec::new(),
             })
             .unwrap()
             .allowed

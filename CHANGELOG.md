@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `coqui-access`: `AuthorizationRequest::ancestors`, the resources a request's `resource`
+  sits under in the host's hierarchy, nearest first; empty by default and not written then,
+  so the pinned contract is unchanged. `coqui-access-kit`'s decision cache keys on it.
+- `coqui-roles`: a rule also matches a request that names its scope among the request's
+  `ancestors`, unless `Rule::propagate` is `false` (it defaults to `true`); first match
+  still decides. `RoleLimits::ancestors` (64 by default) bounds the ancestors one request
+  names; more is an error, never a denial.
 - `coqui-access`: `Attempt::certificates`, the client's certificates as DER (leaf first, then
   the intermediates it sent) for a provider that decides trust or reads names from them.
 - `coqui-access`: `Limit`, a count bound or none (`null` in configuration), for the resource

@@ -14,7 +14,10 @@ person or group to a role at a scope, and anything not allowed is denied. Scope 
 
 - **Code first** - a builder, or a plain-data `RolePolicy`; it never parses a format.
 - **Configurable scopes** - `*` or `<kind>:<id>` for the kinds you allow, or any kind.
-- **Bounded** - at most 256 roles, 256 actions per role, 10 000 rules and 64 scope kinds.
+- **Hierarchies** - a request names the scopes its resource sits under (`ancestors`), and a
+  grant on a parent reaches its children unless the rule sets `propagate = false`.
+- **Bounded** - at most 256 roles, 256 actions per role, 10 000 rules, 64 scope kinds and
+  64 ancestors per request, each a limit the caller changes or lifts.
 - **Loadable** - `coqui-roles-plugin` is the `coqui_roles` Guatiao provider, configured with
   structured lists of roles and rules.
 

@@ -3,11 +3,14 @@
 //! A policy is named roles that list actions, and ordered rules that bind one
 //! `account:<name>`, `person:<id>` or `group:<name>` to a role at one scope. A scope is `*`
 //! (everything) or `<kind>:<id>`, where the kinds a deployment uses are configured, for
-//! example `site` or `project`; the library has no scope vocabulary of its own. A request's
-//! `resource` is compared with a rule's scope as an exact string.
+//! example `site` or `project`; the library has no scope vocabulary of its own. A rule's
+//! scope matches a request when it is `*`, when it equals the request's `resource` as an
+//! exact string, or when the request names it among its `ancestors` and the rule propagates
+//! (the default), so a grant on a parent reaches what sits under it.
 //!
 //! The first rule whose subject and scope match is decisive: when its role lacks the
-//! requested action, access is denied. With no matching rule access is denied.
+//! requested action, access is denied. With no matching rule access is denied. A child
+//! narrows its parent's grant with a rule placed before the parent's.
 //!
 //! ```
 //! use coqui_roles::{RoleAuthorizer, Rule};
@@ -40,7 +43,7 @@ use coqui_access::{
 ///
 /// They bound the work and memory a policy costs, not who may do what: the rule scan per
 /// request, and the tables built once. By default at most 256 roles, 256 actions per role,
-/// 10 000 rules, 64 scope kinds, and names of 256 bytes.
+/// 10 000 rules, 64 scope kinds, names of 256 bytes, and 64 ancestors in one request.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, FromValue, Schema, ToValue)]
 #[map(crate = ::coqui_access::guatiao, deny_unknown_fields)]
 #[non_exhaustive]
@@ -60,6 +63,9 @@ pub struct RoleLimits {
     /// Bytes in a role, action, subject value, scope kind or scope id.
     #[map(default = Limit::at(256))]
     pub name_bytes: Limit,
+    /// Ancestors one request names; a request naming more is an error, never a denial.
+    #[map(default = Limit::at(64))]
+    pub ancestors: Limit,
 }
 
 impl Default for RoleLimits {
@@ -70,6 +76,7 @@ impl Default for RoleLimits {
             rules: Limit::at(10_000),
             scope_kinds: Limit::at(64),
             name_bytes: Limit::at(256),
+            ancestors: Limit::at(64),
         }
     }
 }
@@ -82,6 +89,7 @@ impl RoleLimits {
         rules: Limit::UNBOUNDED,
         scope_kinds: Limit::UNBOUNDED,
         name_bytes: Limit::UNBOUNDED,
+        ancestors: Limit::UNBOUNDED,
     };
 
     /// These limits with `roles`.
@@ -116,6 +124,13 @@ impl RoleLimits {
     #[must_use]
     pub const fn name_bytes(mut self, bytes: Limit) -> Self {
         self.name_bytes = bytes;
+        self
+    }
+
+    /// These limits with `ancestors`.
+    #[must_use]
+    pub const fn ancestors(mut self, ancestors: Limit) -> Self {
+        self.ancestors = ancestors;
         self
     }
 }
@@ -155,10 +170,14 @@ pub struct Rule {
     pub scope: String,
     /// The name of a role the policy defines.
     pub role: String,
+    /// Whether it also matches a request that names `scope` among its `ancestors`; true
+    /// unless configured. `*` matches every request either way.
+    #[map(default = true)]
+    pub propagate: bool,
 }
 
 impl Rule {
-    /// A rule: `subject` holds `role` at `scope`.
+    /// A rule: `subject` holds `role` at `scope` and at whatever sits under it.
     pub fn new(
         subject: impl Into<String>,
         scope: impl Into<String>,
@@ -168,7 +187,15 @@ impl Rule {
             subject: subject.into(),
             scope: scope.into(),
             role: role.into(),
+            propagate: true,
         }
+    }
+
+    /// This rule, reaching what sits under its scope or (`false`) its scope alone.
+    #[must_use]
+    pub fn propagate(mut self, propagate: bool) -> Self {
+        self.propagate = propagate;
+        self
     }
 }
 
@@ -250,7 +277,7 @@ impl RoleAuthorizerBuilder {
 
 /// First-match role authorizer, and the `coqui_roles` provider, configured with a
 /// [`RolePolicy`].
-#[derive(Clone, Default, Provider)]
+#[derive(Clone, Provider)]
 #[provider(
     Authorizer,
     id = "coqui_roles",
@@ -261,6 +288,18 @@ impl RoleAuthorizerBuilder {
 pub struct RoleAuthorizer {
     roles: BTreeMap<String, BTreeSet<String>>,
     rules: Vec<CompiledRule>,
+    ancestors: Limit,
+}
+
+/// The empty policy, which denies everything, with the default limits.
+impl Default for RoleAuthorizer {
+    fn default() -> Self {
+        Self {
+            roles: BTreeMap::new(),
+            rules: Vec::new(),
+            ancestors: RoleLimits::default().ancestors,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -268,6 +307,7 @@ struct CompiledRule {
     subject: Subject,
     scope: String,
     role: String,
+    propagate: bool,
 }
 
 /// An invalid role policy.
@@ -393,17 +433,32 @@ impl RoleAuthorizer {
                 subject,
                 scope: rule.scope,
                 role: rule.role,
+                propagate: rule.propagate,
             });
         }
-        Ok(Self { roles, rules })
+        Ok(Self {
+            roles,
+            rules,
+            ancestors: limits.ancestors,
+        })
     }
 
-    fn decision(&self, request: &AuthorizationRequest) -> AuthorizationDecision {
+    fn decision(
+        &self,
+        request: &AuthorizationRequest,
+    ) -> Result<AuthorizationDecision, ProviderError> {
+        if !self.ancestors.allows(request.ancestors.len()) {
+            return Err(error::bad_value(
+                "the request names more ancestors than the policy's limits allow",
+            ));
+        }
         let allowed = self
             .rules
             .iter()
             .find(|rule| {
-                (rule.scope == "*" || rule.scope == request.resource)
+                (rule.scope == "*"
+                    || rule.scope == request.resource
+                    || (rule.propagate && request.ancestors.contains(&rule.scope)))
                     && rule.subject.matches(&request.person)
             })
             .is_some_and(|rule| {
@@ -411,19 +466,22 @@ impl RoleAuthorizer {
                     .get(&rule.role)
                     .is_some_and(|actions| actions.contains(&request.action))
             });
-        AuthorizationDecision {
+        Ok(AuthorizationDecision {
             allowed,
             limits: BTreeMap::new(),
-        }
+        })
     }
 }
 
 impl Authorizer for RoleAuthorizer {
+    /// # Errors
+    ///
+    /// A request naming more `ancestors` than [`RoleLimits::ancestors`] allows.
     fn authorize(
         &self,
         request: AuthorizationRequest,
     ) -> Result<AuthorizationDecision, ProviderError> {
-        Ok(self.decision(&request))
+        self.decision(&request)
     }
 }
 
@@ -450,14 +508,82 @@ mod tests {
     }
 
     fn allowed(policy: &RoleAuthorizer, person: &Person, action: &str, resource: &str) -> bool {
+        under(policy, person, action, resource, &[]).unwrap()
+    }
+
+    fn under(
+        policy: &RoleAuthorizer,
+        person: &Person,
+        action: &str,
+        resource: &str,
+        ancestors: &[&str],
+    ) -> Result<bool, ProviderError> {
         policy
             .authorize(AuthorizationRequest {
                 person: person.clone(),
                 action: action.to_owned(),
                 resource: resource.to_owned(),
+                ancestors: ancestors.iter().map(|scope| (*scope).to_owned()).collect(),
             })
+            .map(|decision| decision.allowed)
+    }
+
+    #[test]
+    fn a_grant_on_an_ancestor_reaches_what_sits_under_it_unless_it_does_not_propagate() {
+        let policy = RoleAuthorizer::builder()
+            .scope_kinds(["site"])
+            .role("viewer", ["document.read"])
+            .role("none", ["x.nothing"])
+            .rule(Rule::new("group:staff", "site:secret", "none"))
+            .rule(Rule::new("group:staff", "site:europe", "viewer"))
+            .rule(Rule::new("group:guests", "site:europe", "viewer").propagate(false))
+            .build()
+            .unwrap();
+        let staff = person("s", "staff", &["staff"]);
+        let guest = person("g", "guest", &["guests"]);
+        let lineage = ["site:europe", "site:world"];
+        assert!(under(&policy, &staff, "document.read", "site:north", &lineage).unwrap());
+        assert!(
+            !under(&policy, &staff, "document.read", "site:north", &[]).unwrap(),
+            "without its ancestry a request reaches only direct rules"
+        );
+        assert!(!under(&policy, &guest, "document.read", "site:north", &lineage).unwrap());
+        assert!(
+            under(
+                &policy,
+                &guest,
+                "document.read",
+                "site:europe",
+                &["site:world"]
+            )
             .unwrap()
-            .allowed
+        );
+        assert!(
+            !under(
+                &policy,
+                &staff,
+                "document.read",
+                "site:north",
+                &["site:secret", "site:europe"]
+            )
+            .unwrap(),
+            "an earlier rule on a nearer ancestor narrows the later grant"
+        );
+
+        let deep: Vec<String> = (0..65).map(|level| format!("site:l{level}")).collect();
+        let deep: Vec<&str> = deep.iter().map(String::as_str).collect();
+        assert!(under(&policy, &staff, "document.read", "site:north", &deep[..64]).is_ok());
+        assert!(
+            under(&policy, &staff, "document.read", "site:north", &deep).is_err(),
+            "65 ancestors is an error by default, never a denial"
+        );
+        let lifted = RoleAuthorizer::builder()
+            .role("viewer", ["document.read"])
+            .rule(Rule::new("group:staff", "site:l64", "viewer"))
+            .limits(RoleLimits::default().ancestors(Limit::UNBOUNDED))
+            .build()
+            .unwrap();
+        assert!(under(&lifted, &staff, "document.read", "site:north", &deep).unwrap());
     }
 
     fn standard() -> RoleAuthorizerBuilder {

@@ -81,6 +81,7 @@ fn request(groups: &[&str], action: &str) -> AuthorizationRequest {
         },
         action: action.to_owned(),
         resource: "site:north".to_owned(),
+        ancestors: Vec::new(),
     }
 }
 
@@ -191,6 +192,14 @@ fn a_decision_is_kept_by_who_what_and_where_whatever_the_group_order() {
         authorizer.calls(),
         3,
         "the grant is still kept, the denial is not"
+    );
+    let mut moved = request(&["a", "b"], "read");
+    moved.ancestors = vec!["site:europe".to_owned()];
+    cached.authorize(moved).unwrap();
+    assert_eq!(
+        authorizer.calls(),
+        4,
+        "another ancestry is another question"
     );
 }
 
