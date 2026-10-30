@@ -34,6 +34,7 @@ mod tests {
                 },
                 action: "document.write".to_owned(),
                 resource: resource.to_owned(),
+                ancestors: Vec::new(),
             })
             .unwrap()
             .allowed

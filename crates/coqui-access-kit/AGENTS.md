@@ -99,7 +99,7 @@ impl<T: ?Sized> Cached<T> {
     pub fn invalidate(&self, lookup: &Lookup); pub fn invalidate_all(&self);
 }
 impl<T: Directory + ?Sized> Directory for Cached<T>;    // keyed by (by, value)
-impl<T: Authorizer + ?Sized> Authorizer for Cached<T>;  // keyed by person id, name, sorted groups, action, resource
+impl<T: Authorizer + ?Sized> Authorizer for Cached<T>;  // keyed by person id, name, sorted groups, action, resource, ancestors
 impl<T: Accounts + ?Sized> Accounts for Cached<T>;      // delegates; put/remove clear everything kept
 ```
 

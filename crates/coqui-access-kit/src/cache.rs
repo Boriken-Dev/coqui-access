@@ -165,7 +165,7 @@ where
 }
 
 /// A decision's key: who (id, name, groups in order), what and on what.
-type DecisionKey = (String, String, Vec<String>, String, String);
+type DecisionKey = (String, String, Vec<String>, String, String, Vec<String>);
 
 /// A provider with its lookups and decisions kept for a short while.
 ///
@@ -293,6 +293,8 @@ impl<T: Authorizer + ?Sized> Authorizer for Cached<T> {
             groups,
             request.action.clone(),
             request.resource.clone(),
+            // The same resource under another parent may be decided otherwise.
+            request.ancestors.clone(),
         );
         if let Some(kept) = decisions.get(&key) {
             return Ok(kept);

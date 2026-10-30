@@ -65,7 +65,7 @@ fields. Unknown keys are skipped when reading.
 | `Lookup` | `by`, `value` — `by` is `id`, `name` or `email` (a provider may add more) |
 | `Verdict` | enum tagged by `kind`: `Unknown`, `Invalid`, `Valid(Lookup)` |
 | `Person` | `id`, `name`, `groups`, `attributes: BTreeMap<String, Value>`, `display_name?`, `email?` |
-| `AuthorizationRequest` | `person`, `action`, `resource` |
+| `AuthorizationRequest` | `person`, `action`, `resource`, `ancestors: Vec<String>` (the resources `resource` sits under, nearest first; empty by default and then not written) |
 | `AuthorizationDecision` | `allowed`, `limits: BTreeMap<String, Value>` |
 | `Description` | `name?`, `takes?` (one of `takes::PASSWORD`, `KEY`, `REQUEST`) |
 | `AccountInfo` | `id`, `name`, `groups`, `disabled?`, `made_unix?`, `expires_unix?` |

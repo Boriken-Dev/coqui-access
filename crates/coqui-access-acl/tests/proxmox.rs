@@ -365,6 +365,7 @@ fn an_authorizer_over_a_table_answers_through_the_kind() {
             person: who.clone(),
             action: action.to_owned(),
             resource: resource.to_owned(),
+            ancestors: Vec::new(),
         })
     };
     let op = person("o@pve", &["ops"]);
@@ -394,6 +395,7 @@ fn a_store_that_cannot_answer_is_an_error_never_a_denial() {
         person: person("o@pve", &[]),
         action: "VM.Audit".to_owned(),
         resource: "/vms/100".to_owned(),
+        ancestors: Vec::new(),
     });
     let error = refused.unwrap_err();
     assert_eq!(error.message(), "unreachable");
@@ -407,6 +409,7 @@ fn a_store_that_cannot_answer_is_an_error_never_a_denial() {
                 person: person("o@pve", &["ops"]),
                 action: "VM.Audit".to_owned(),
                 resource: "/vms/100".to_owned(),
+                ancestors: Vec::new(),
             })
             .is_err()
     );
