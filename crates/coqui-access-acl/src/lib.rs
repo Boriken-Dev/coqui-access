@@ -27,7 +27,9 @@ pub use condition::{Conditions, Truth};
 pub use entry::{Acl, Effect, Entry, Inherit, ItemAcl, Mode};
 pub use error::AclError;
 pub use inherit::Child;
-pub use options::{Limits, OnMissing, Options, Weakening};
+#[allow(deprecated)]
+pub use options::Weakening;
+pub use options::{Limits, NonDefault, OnMissing, Options};
 pub use path::AclStore;
 pub use principal::{Principal, PrincipalError};
 pub use rights::{Rights, RightsSchema, RightsSchemaBuilder};

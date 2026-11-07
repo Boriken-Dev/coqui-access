@@ -18,8 +18,8 @@ use std::collections::BTreeMap;
 use coqui_access::guatiao::library::ProviderError;
 use coqui_access::{AuthorizationRequest, Authorizer, Person};
 use coqui_access_acl::{
-    Acl, AclAuthorizer, AclError, AclStore, Conditions, Context, Entry, ItemAcl, Mode, Options,
-    Principal, RightsSchema, Truth, Weakening,
+    Acl, AclAuthorizer, AclError, AclStore, Conditions, Context, Entry, ItemAcl, Mode, NonDefault,
+    Options, Principal, RightsSchema, Truth,
 };
 use support::{person, subject};
 
@@ -171,7 +171,7 @@ fn nothing_is_granted_by_default_and_there_is_no_deny() {
 }
 
 #[test]
-fn exempt_view_types_are_open_to_anyone_and_reported_as_a_weakening() {
+fn exempt_view_types_are_open_to_anyone_and_reported_as_a_non_default() {
     let netbox = Netbox::new();
     let schema = actions();
     let anonymous = Context::new(&schema);
@@ -183,10 +183,10 @@ fn exempt_view_types_are_open_to_anyone_and_reported_as_a_weakening() {
             .allowed
     );
     assert_eq!(
-        netbox.types["dcim.region"].weakened(),
-        [Weakening::EveryoneAllowed { entry: 0 }]
+        netbox.types["dcim.region"].non_defaults(),
+        [NonDefault::EveryoneAllowed { entry: 0 }]
     );
-    assert!(netbox.types["dcim.site"].weakened().is_empty());
+    assert!(netbox.types["dcim.site"].non_defaults().is_empty());
 }
 
 #[test]

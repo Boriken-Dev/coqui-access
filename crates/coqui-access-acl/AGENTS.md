@@ -92,7 +92,7 @@ pub struct Acl { pub entries: Vec<Entry>, pub protected: bool, pub mode: Mode } 
 impl Acl {
     pub fn new(mode: Mode) -> Self;  pub fn entry(self, Entry) -> Self;  pub fn protected(self, bool) -> Self;
     pub fn canonicalize(&mut self);                     // explicit deny, explicit allow, inherited (stable)
-    pub fn weakened(&self) -> Vec<Weakening>;           // every effective Everyone allow
+    pub fn non_defaults(&self) -> Vec<NonDefault>;     // every effective Everyone allow
     pub fn validate(&self, schema: &RightsSchema, options: &Options) -> Result<(), AclError>;
     pub fn check(&self, context: &Context<'_>, wanted: &Rights) -> Result<Decision, AclError>;
 }
@@ -249,7 +249,7 @@ impl<S: AclStore + Send + Sync> Authorizer for AclAuthorizer<S>;
 - A superuser (NetBox superuser, Proxmox `root@pam`) is the caller's check before asking;
   there is no bypass option here.
 
-## Options (`Options`, `Limits`, `OnMissing`, `Weakening`)
+## Options (`Options`, `Limits`, `OnMissing`, `NonDefault`)
 
 ```rust
 #[non_exhaustive]
@@ -260,12 +260,13 @@ pub enum OnMissing { Deny /* default */, AllowAll }
 #[non_exhaustive]
 pub struct Options { pub limits: Limits, pub on_missing: OnMissing }
 impl Options { pub fn new() -> Self; pub fn limits(self, Limits) -> Self;
-               pub fn on_missing(self, OnMissing) -> Self; pub fn weakened(&self) -> Vec<Weakening>; }
+               pub fn on_missing(self, OnMissing) -> Self; pub fn non_defaults(&self) -> Vec<NonDefault>; }
 #[non_exhaustive]
-pub enum Weakening { MissingAllowsAll, EveryoneAllowed { entry: usize } }
+pub enum NonDefault { MissingAllowsAll, EveryoneAllowed { entry: usize } }
+// Weakening and the `weakened()` methods are deprecated aliases for one release
 ```
 
-The limits bound work and memory, not trust: lifting one is not a weakening.
+The limits bound work and memory, not trust: lifting one is not listed.
 
 ## Conditions (`Conditions`, `Truth`)
 

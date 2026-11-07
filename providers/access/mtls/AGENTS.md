@@ -75,7 +75,7 @@ impl Accounts for MtlsAccounts { /* accounts, put, remove, waiting */ }
   read. `Unaccepted` is keyed by the canonical text.
 - Waiting list: coqui-peer's `WaitingQueue` decides, under `waiting_limits`. A source is an
   IPv4 address (IPv4-mapped included) or an IPv6 /64, and an unknown address is one shared
-  source; a source holds `per_source` entries (its oldest is replaced), the list holds `total`
+  source; a source holds `per_source` entries (past it the newcomer is not written down), the list holds `total`
   (past it the newcomer is not written down, nobody is pushed out), and one certificate from
   one source is written down again only after `rerecord`. A fingerprint already waiting stays
   as it is. A provider built over a waiting table counts what is there. `Accounts::waiting` lists them newest first with

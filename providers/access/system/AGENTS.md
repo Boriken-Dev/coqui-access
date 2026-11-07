@@ -25,10 +25,10 @@ pub struct SystemAccountsConfig {
     pub domain: String,                  // default "." (Windows): the machine's own accounts
 }
 impl Default for SystemAccountsConfig;   // the defaults above
-impl SystemAccountsConfig { pub fn weakenings(&self) -> Vec<Weakening>; }
+impl SystemAccountsConfig { pub fn non_defaults(&self) -> Vec<NonDefault>; }   // weakenings(): deprecated alias for one release
 
 #[non_exhaustive]
-pub enum Weakening { AdmitsRoot, AdmitsServiceAccounts }   // Display; Copy, Eq
+pub enum NonDefault { AdmitsRoot, AdmitsServiceAccounts }   // Display; Copy, Eq; Weakening: deprecated alias for one release
 
 pub struct SystemAccountsBuilder;        // Debug, Clone, Default, must_use
 impl SystemAccountsBuilder {
@@ -56,9 +56,9 @@ impl Directory for SystemAccounts;       // by "id" or "name"
   `GUATIAO_ERR_BAD_VALUE` for an empty `pam_service` or one holding `/`, an empty `domain`, an
   empty group, or a control character in any of them.
 - An account is **admitted** when its uid is at least `min_uid` (Unix) and, with `groups`
-  set, it belongs to one of them. `weakenings()` reports `AdmitsRoot` for `min_uid` 0 and
-  `AdmitsServiceAccounts` for one below `DEFAULT_MIN_UID`, on Unix; empty on Windows. Nothing
-  is refused for it.
+  set, it belongs to one of them. `non_defaults()` reports `AdmitsRoot` for `min_uid` 0 and
+  `AdmitsServiceAccounts` for one below `DEFAULT_MIN_UID`, on Unix; nothing is refused for it.
+  Windows accounts carry no uid, so there a `min_uid` other than `DEFAULT_MIN_UID` is `GUATIAO_ERR_BAD_VALUE`.
 - `authenticate`: no name or no secret, a name the OS does not have, or one not admitted, is
   `Unknown`; an empty password, a disabled account, a wrong password, or an account the OS
   refuses now (expired, locked, password to change, outside its hours) is `Invalid`; success

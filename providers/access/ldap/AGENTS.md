@@ -29,7 +29,7 @@ pub struct LdapAccountsConfig {
 pub struct LdapAccounts;                  // provider id "coqui_access_ldap"
 impl LdapAccounts {
     pub fn new(config: LdapAccountsConfig) -> Result<Self, String>;
-    pub fn weakened(&self) -> &[coqui_peer_tls::Weakening];   // what the ca_file TLS config allows past strict
+    pub fn non_defaults(&self) -> &[coqui_peer_tls::NonDefault];   // what the ca_file TLS config allows past the default; weakened(): deprecated alias for one release
     pub fn cache(&self) -> coqui_access_kit::CacheOptions;     // how lookups are kept
 }
 impl Authenticator for LdapAccounts { /* takes name + secret */ }
@@ -42,7 +42,7 @@ impl Directory for LdapAccounts { /* by "name" only */ }
   `base`, a `user_filter` without `{name}`, and `bind` without `bind_password` or the reverse,
   and a `ca_file` that cannot be read or holds no certificate (`ca_file <path>: <reason>`).
 - With a `ca_file`, the client configuration is coqui-peer-tls's under `Policy::default()`
-  (intermediate: TLS 1.2 with extended master secret, and 1.3; resumption off); `weakened()`
+  (intermediate: TLS 1.2 with extended master secret, and 1.3; resumption off); `non_defaults()`
   reports what it allows past that default, nothing as built. Without one, ldap3's own rustls
   defaults apply and nothing is reported.
 - `authenticate`: unknown account `Unknown`; disabled account (AD `userAccountControl` bit 2),

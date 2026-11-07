@@ -6,7 +6,7 @@ use alloc::vec::Vec;
 use coqui_access::Subject;
 use coqui_access::guatiao::{FromValue, Schema, ToValue};
 
-use crate::options::Weakening;
+use crate::options::NonDefault;
 use crate::principal::Principal;
 
 /// Whether an entry grants or refuses its rights.
@@ -227,9 +227,9 @@ impl Acl {
         });
     }
 
-    /// What this ACL grants more widely than a strict reading would, for the caller to
+    /// What this ACL grants more widely than the default does, for the caller to
     /// report or refuse: every allow entry naming `Everyone`.
-    pub fn weakened(&self) -> Vec<Weakening> {
+    pub fn non_defaults(&self) -> Vec<NonDefault> {
         self.entries
             .iter()
             .enumerate()
@@ -238,8 +238,14 @@ impl Acl {
                     && entry.principal == Principal::Everyone
                     && !entry.inherit.inherit_only
             })
-            .map(|(entry, _)| Weakening::EveryoneAllowed { entry })
+            .map(|(entry, _)| NonDefault::EveryoneAllowed { entry })
             .collect()
+    }
+
+    /// The old name of [`non_defaults`](Self::non_defaults).
+    #[deprecated(since = "0.0.0", note = "renamed to `non_defaults`")]
+    pub fn weakened(&self) -> Vec<NonDefault> {
+        self.non_defaults()
     }
 }
 

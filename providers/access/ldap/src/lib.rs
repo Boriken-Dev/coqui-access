@@ -14,7 +14,7 @@ use coqui_access::guatiao::library::ProviderError;
 use coqui_access::guatiao::{FromValue, Provider, Schema, ToValue};
 use coqui_access::{Attempt, Authenticator, Directory, Lookup, Person, Verdict};
 use coqui_access_kit::{CacheOptions, CacheSetting, Cached};
-use coqui_peer_tls::{Policy, Roots, Trust, Weakening, client_config_without_identity_with};
+use coqui_peer_tls::{NonDefault, Policy, Roots, Trust, client_config_without_identity_with};
 use ldap3::{LdapConn, LdapConnSettings, Scope, SearchEntry};
 
 /// LDAP result code for credentials rejected by a directory.
@@ -131,8 +131,14 @@ impl LdapAccounts {
     /// What the TLS configuration for `ca_file` allows beyond coqui-peer-tls's default policy
     /// (TLS 1.2 and 1.3), as data for the host to act on. Empty without a `ca_file`, where
     /// ldap3's own rustls defaults apply.
-    pub fn weakened(&self) -> &[Weakening] {
-        &self.directory.inner().weakened
+    pub fn non_defaults(&self) -> &[NonDefault] {
+        &self.directory.inner().non_defaults
+    }
+
+    /// The old name of [`non_defaults`](Self::non_defaults).
+    #[deprecated(since = "0.0.0", note = "renamed to `non_defaults`")]
+    pub fn weakened(&self) -> &[NonDefault] {
+        self.non_defaults()
     }
 
     /// How lookups are kept.
@@ -157,7 +163,7 @@ impl Directory for LdapAccounts {
 struct Ldap {
     config: LdapAccountsConfig,
     trusted: Option<Arc<rustls::ClientConfig>>,
-    weakened: Vec<Weakening>,
+    non_defaults: Vec<NonDefault>,
 }
 
 impl fmt::Debug for Ldap {
@@ -194,7 +200,7 @@ impl Ldap {
         if config.bind.is_some() != config.bind_password.is_some() {
             return Err("bind and bind_password must be configured together".to_owned());
         }
-        let (trusted, weakened) = match config.ca_file.as_deref() {
+        let (trusted, non_defaults) = match config.ca_file.as_deref() {
             Some(file) => {
                 let built = client_config_without_identity_with(
                     &Trust::Roots(Roots::bundle_file(file)),
@@ -202,14 +208,14 @@ impl Ldap {
                     &Policy::default(),
                 )
                 .map_err(|reason| format!("ca_file {file}: {reason}"))?;
-                (Some(Arc::new(built.config)), built.weakened)
+                (Some(Arc::new(built.config)), built.non_defaults)
             }
             None => (None, Vec::new()),
         };
         Ok(Self {
             config,
             trusted,
-            weakened,
+            non_defaults,
         })
     }
 
@@ -435,13 +441,13 @@ mod tests {
         let accounts = LdapAccounts::new(trusting).unwrap();
         assert!(accounts.directory.inner().trusted.is_some());
         assert!(
-            accounts.weakened().is_empty(),
-            "the default policy weakens nothing"
+            accounts.non_defaults().is_empty(),
+            "the default policy lists nothing"
         );
         assert!(
             LdapAccounts::new(config("ldaps://directory.example.org"))
                 .unwrap()
-                .weakened()
+                .non_defaults()
                 .is_empty()
         );
         for bad in ["missing.pem", "empty.pem"] {

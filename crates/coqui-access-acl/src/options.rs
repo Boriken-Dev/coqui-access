@@ -1,4 +1,4 @@
-//! Bounds and choices an evaluation runs with, and the weakenings they amount to.
+//! Bounds and choices an evaluation runs with, and the non-default settings they amount to.
 
 use alloc::vec::Vec;
 
@@ -70,7 +70,7 @@ pub enum OnMissing {
     /// Nothing. The default.
     #[default]
     Deny,
-    /// Every right, as a Windows NULL DACL grants. A weakening ([`Weakening::MissingAllowsAll`]).
+    /// Every right, as a Windows NULL DACL grants. A non-default setting ([`NonDefault::MissingAllowsAll`]).
     AllowAll,
 }
 
@@ -104,19 +104,25 @@ impl Options {
         self
     }
 
-    /// What these choices weaken, for the caller to report or refuse.
-    pub fn weakened(&self) -> Vec<Weakening> {
+    /// What these choices set off the default, for the caller to report or refuse.
+    pub fn non_defaults(&self) -> Vec<NonDefault> {
         match self.on_missing {
-            OnMissing::AllowAll => alloc::vec![Weakening::MissingAllowsAll],
+            OnMissing::AllowAll => alloc::vec![NonDefault::MissingAllowsAll],
             OnMissing::Deny => Vec::new(),
         }
     }
+
+    /// The old name of [`non_defaults`](Self::non_defaults).
+    #[deprecated(since = "0.0.0", note = "renamed to `non_defaults`")]
+    pub fn weakened(&self) -> Vec<NonDefault> {
+        self.non_defaults()
+    }
 }
 
-/// A choice that grants more than the strict default would, reported as data.
+/// A choice that grants more than the default does, reported as data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
-pub enum Weakening {
+pub enum NonDefault {
     /// [`OnMissing::AllowAll`]: an item with no ACL grants every right.
     MissingAllowsAll,
     /// The entry at this index allows something to `Everyone`, signed in or not.
@@ -125,3 +131,7 @@ pub enum Weakening {
         entry: usize,
     },
 }
+
+/// The old name of [`NonDefault`].
+#[deprecated(since = "0.0.0", note = "renamed to `NonDefault`")]
+pub type Weakening = NonDefault;

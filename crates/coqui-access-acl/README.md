@@ -28,8 +28,8 @@ evaluates. See the [narrative docs](https://boriken-dev.github.io/coqui-access/a
 - **Conditions and tokens** - entry conditions are the consumer's callback (unknown: an allow
   is skipped, a deny applies); `Decision::intersect` narrows a person's decision to a
   token's, `Decision::union_where_unset` adds a second parent's (a Proxmox pool).
-- **Options, not floors** - every bound is a default the caller lifts, and what weakens a
-  decision (`OnMissing::AllowAll`, an `Everyone` allow) is reported as data.
+- **Options, not floors** - every bound is a default the caller lifts, and what sets a
+  decision off the default (`OnMissing::AllowAll`, an `Everyone` allow) is reported as data.
 
 ## Installation
 
@@ -74,7 +74,7 @@ assert_eq!(decision.deciding, Some(1));
 | `Context`, `Decision` | Who asks and with what options; what the check came to. |
 | `AclAuthorizer` | coqui-access's `Authorizer` kind over an `AclStore`. |
 | `Child`, `AclStore` | Copied inheritance for a new child; walked inheritance over the consumer's tree. |
-| `Options`, `Limits`, `OnMissing`, `Weakening` | Bounds and choices, and what they weaken. |
+| `Options`, `Limits`, `OnMissing`, `NonDefault` | Bounds and choices, and what sets them off the default. |
 | `Conditions`, `Truth` | The consumer's decision on an entry's condition. |
 | `AclError` | Why a schema, list or walk could not be used. |
 

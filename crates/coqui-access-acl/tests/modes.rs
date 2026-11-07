@@ -3,8 +3,8 @@
 use coqui_access::guatiao::{Alloc, FromValue, ToValue};
 use coqui_access::{Person, Subject};
 use coqui_access_acl::{
-    Acl, AclError, Context, Decision, Entry, Inherit, ItemAcl, Limits, Mode, OnMissing, Options,
-    Principal, Rights, RightsSchema, Weakening,
+    Acl, AclError, Context, Decision, Entry, Inherit, ItemAcl, Limits, Mode, NonDefault, OnMissing,
+    Options, Principal, Rights, RightsSchema,
 };
 use guatiao_serde::Presentation;
 use guatiao_serde::text::json;
@@ -313,16 +313,21 @@ fn unknown_names_and_too_many_entries_are_errors_not_answers() {
 }
 
 #[test]
-fn weakenings_are_reported_as_data() {
+fn non_defaults_are_reported_as_data() {
     let acl = Acl::new(Mode::DenyOverrides)
         .entry(Entry::allow(subject("group:a"), ["read"]))
         .entry(Entry::allow(Principal::Everyone, ["read"]))
         .entry(Entry::deny(Principal::Everyone, ["write"]));
-    assert_eq!(acl.weakened(), [Weakening::EveryoneAllowed { entry: 1 }]);
-    assert!(Options::new().weakened().is_empty());
     assert_eq!(
-        Options::new().on_missing(OnMissing::AllowAll).weakened(),
-        [Weakening::MissingAllowsAll]
+        acl.non_defaults(),
+        [NonDefault::EveryoneAllowed { entry: 1 }]
+    );
+    assert!(Options::new().non_defaults().is_empty());
+    assert_eq!(
+        Options::new()
+            .on_missing(OnMissing::AllowAll)
+            .non_defaults(),
+        [NonDefault::MissingAllowsAll]
     );
 }
 
@@ -347,4 +352,15 @@ fn an_item_acl_round_trips_through_a_stored_document() {
         let value = json::from_str(bad, Alloc::rust(), Presentation::new()).unwrap();
         assert!(Acl::from_value(&value).is_err(), "{bad}");
     }
+}
+
+#[test]
+#[allow(deprecated)]
+fn the_old_names_answer_the_new_ones() {
+    let options = Options::new().on_missing(OnMissing::AllowAll);
+    assert_eq!(options.weakened(), options.non_defaults());
+    assert_eq!(
+        options.weakened(),
+        [coqui_access_acl::Weakening::MissingAllowsAll]
+    );
 }

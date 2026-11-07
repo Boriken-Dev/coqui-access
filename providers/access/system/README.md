@@ -60,8 +60,8 @@ assert!(matches!(verdict, Verdict::Valid(_) | Verdict::Invalid | Verdict::Unknow
 | Item | Purpose |
 | --- | --- |
 | `SystemAccounts` | The provider: `builder()`, `new(config)`, `config()`, `Authenticator` and `Directory`. |
-| `SystemAccountsConfig` | The Guatiao configuration; `weakenings()` reports what it admits beyond the defaults. |
-| `Weakening` | `AdmitsRoot`, `AdmitsServiceAccounts`. |
+| `SystemAccountsConfig` | The Guatiao configuration; `non_defaults()` reports what it admits beyond the defaults. |
+| `NonDefault` | `AdmitsRoot`, `AdmitsServiceAccounts`. |
 | `SUPPORTED`, `DEFAULT_*` | Whether this build reaches an account database, and the defaults. |
 
 ## PAM service
