@@ -346,14 +346,12 @@ dependencies = [
 [[package]]
 name = "coqui-net-acl"
 version = "0.0.0-alpha.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d116efeb3a87b3e4f9c9c00dc93124d1c1c212c05c49f86c616c0fc8a3ff305e"
+source = "git+https://github.com/Boriken-Dev/coqui-net-acl?rev=1b21d825f66ffac5599136e07021534c2c9b3ad5#1b21d825f66ffac5599136e07021534c2c9b3ad5"
 
 [[package]]
 name = "coqui-peer"
 version = "0.0.0-alpha.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a1104dd1f80f66a107e141b425516487c83f04b9bc570ab9e4acd06fe0f4dace"
+source = "git+https://github.com/Boriken-Dev/coqui-peer?rev=b6aa1f47ca956578ffcd20f936c43e8663ed059a#b6aa1f47ca956578ffcd20f936c43e8663ed059a"
 dependencies = [
  "data-encoding",
  "sha1",
@@ -365,8 +363,7 @@ dependencies = [
 [[package]]
 name = "coqui-peer-tls"
 version = "0.0.0-alpha.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b3dc15e86bd976c69b29425319a822dd3415393b41e8550d44180f6a2e5cca4"
+source = "git+https://github.com/Boriken-Dev/coqui-peer-tls?rev=365a6498af6389fe89cc50e0a51e6eb685996da2#365a6498af6389fe89cc50e0a51e6eb685996da2"
 dependencies = [
  "coqui-peer",
  "globset",
