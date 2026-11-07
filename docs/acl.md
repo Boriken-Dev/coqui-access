@@ -67,5 +67,5 @@ a second parent such as a Proxmox pool adds rights the item's own walk left unse
 ## Options
 
 Every bound is an option with a default (1 024 entries, 1 024 rights, 64 levels; `None`
-lifts it). What weakens a decision is reported as data, never refused: an item with no list
+lifts it). What sets a decision off the default is reported as data, never refused: an item with no list
 granting everything (`OnMissing::AllowAll`, a Windows NULL DACL) and an allow to `everyone`.

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking: a weakening is a non-default setting.** `coqui-access-acl`'s `Weakening` enum is `NonDefault` (variants
+  unchanged) and `Options::weakened` and `ItemAcl::weakened` are `non_defaults`; `coqui-access-system`'s `Weakening` is
+  `NonDefault` and `SystemAccountsConfig::weakenings` is `non_defaults`; `LdapAccounts::weakened` is `non_defaults` and
+  returns coqui-peer-tls's `NonDefault`. The old names stay one release as deprecated aliases.
+- **Breaking:** `SystemAccounts` refuses, with a bad value, a `min_uid` other than the default where accounts carry no
+  uid (Windows): it used to be accepted and admit nothing.
+
 ### Added
 
 - `coqui-access`: `AuthorizationRequest::ancestors`, the resources a request's `resource`
