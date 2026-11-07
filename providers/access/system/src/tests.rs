@@ -14,7 +14,7 @@ fn account(uid: Option<u32>, groups: &[&str]) -> os::Account {
 }
 
 #[test]
-fn the_defaults_are_the_documented_ones_and_weaken_nothing() {
+fn the_defaults_are_the_documented_ones_and_list_no_non_default() {
     let config = SystemAccountsConfig::default();
     assert_eq!(config.pam_service, "coqui-access");
     assert_eq!(config.domain, ".");
@@ -25,7 +25,7 @@ fn the_defaults_are_the_documented_ones_and_weaken_nothing() {
     assert_eq!(config.min_uid, 1001);
     #[cfg(target_os = "macos")]
     assert_eq!(config.min_uid, 501);
-    assert!(config.weakenings().is_empty());
+    assert!(config.non_defaults().is_empty());
 }
 
 #[test]
@@ -35,8 +35,10 @@ fn a_configuration_omitting_every_key_reads_as_the_defaults() {
         SystemAccountsConfig::from_value(&empty).unwrap(),
         SystemAccountsConfig::default()
     );
+    // Windows accounts carry no uid, so a min_uid there is refused and the default is kept.
+    let uid = if cfg!(unix) { 5 } else { DEFAULT_MIN_UID };
     let written = SystemAccounts::builder()
-        .min_uid(5)
+        .min_uid(uid)
         .groups(["wheel"])
         .build()
         .unwrap()
@@ -44,7 +46,7 @@ fn a_configuration_omitting_every_key_reads_as_the_defaults() {
         .to_value()
         .unwrap();
     let read = SystemAccountsConfig::from_value(&written).unwrap();
-    assert_eq!(read.min_uid, 5);
+    assert_eq!(read.min_uid, uid);
     assert_eq!(read.groups, ["wheel"]);
 }
 
@@ -57,19 +59,29 @@ fn a_misspelled_key_is_refused() {
 
 #[test]
 fn admitting_root_or_service_accounts_is_reported_not_refused() {
-    let root = SystemAccounts::builder().min_uid(0).build().unwrap();
-    let service = SystemAccounts::builder().min_uid(1).build().unwrap();
     #[cfg(unix)]
     {
-        assert_eq!(root.config().weakenings(), [Weakening::AdmitsRoot]);
+        let root = SystemAccounts::builder().min_uid(0).build().unwrap();
+        let service = SystemAccounts::builder().min_uid(1).build().unwrap();
+        assert_eq!(root.config().non_defaults(), [NonDefault::AdmitsRoot]);
         assert_eq!(
-            service.config().weakenings(),
-            [Weakening::AdmitsServiceAccounts]
+            service.config().non_defaults(),
+            [NonDefault::AdmitsServiceAccounts]
         );
     }
-    #[cfg(not(unix))]
-    assert!(root.config().weakenings().is_empty() && service.config().weakenings().is_empty());
-    assert_eq!(Weakening::AdmitsRoot.to_string(), "min_uid 0 admits root");
+    assert_eq!(NonDefault::AdmitsRoot.to_string(), "min_uid 0 admits root");
+}
+
+#[cfg(not(unix))]
+#[test]
+fn a_min_uid_is_refused_where_accounts_carry_no_uid() {
+    assert!(
+        SystemAccounts::builder()
+            .min_uid(DEFAULT_MIN_UID)
+            .build()
+            .is_ok()
+    );
+    assert!(SystemAccounts::builder().min_uid(5).build().is_err());
 }
 
 #[test]

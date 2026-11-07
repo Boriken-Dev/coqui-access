@@ -65,14 +65,18 @@ impl Default for SystemAccountsConfig {
 /// decides what to do about it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
-pub enum Weakening {
+pub enum NonDefault {
     /// `min_uid` is 0 on Unix: root can sign in.
     AdmitsRoot,
     /// `min_uid` is below [`DEFAULT_MIN_UID`] but not 0 on Unix: service accounts can sign in.
     AdmitsServiceAccounts,
 }
 
-impl fmt::Display for Weakening {
+/// The old name of [`NonDefault`].
+#[deprecated(since = "0.0.0", note = "renamed to `NonDefault`")]
+pub type Weakening = NonDefault;
+
+impl fmt::Display for NonDefault {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
             Self::AdmitsRoot => "min_uid 0 admits root",
@@ -84,20 +88,33 @@ impl fmt::Display for Weakening {
 impl SystemAccountsConfig {
     /// What these options admit beyond the defaults, on this platform. Empty with the
     /// defaults.
-    pub fn weakenings(&self) -> Vec<Weakening> {
+    pub fn non_defaults(&self) -> Vec<NonDefault> {
         // Windows accounts carry no uid, so `min_uid` admits nothing there.
         #[cfg(unix)]
         match self.min_uid {
-            0 => vec![Weakening::AdmitsRoot],
-            uid if uid < DEFAULT_MIN_UID => vec![Weakening::AdmitsServiceAccounts],
+            0 => vec![NonDefault::AdmitsRoot],
+            uid if uid < DEFAULT_MIN_UID => vec![NonDefault::AdmitsServiceAccounts],
             _ => Vec::new(),
         }
         #[cfg(not(unix))]
         Vec::new()
     }
 
+    /// The old name of [`non_defaults`](Self::non_defaults).
+    #[deprecated(since = "0.0.0", note = "renamed to `non_defaults`")]
+    pub fn weakenings(&self) -> Vec<NonDefault> {
+        self.non_defaults()
+    }
+
     fn check(&self) -> Result<(), ProviderError> {
         let plain = |text: &str| !text.is_empty() && !text.chars().any(char::is_control);
+        // Windows accounts carry no uid: a threshold there would silently admit everyone.
+        #[cfg(not(unix))]
+        if self.min_uid != DEFAULT_MIN_UID {
+            return Err(error::bad_value(
+                "min_uid has no meaning here: Windows accounts carry no uid",
+            ));
+        }
         if !plain(&self.pam_service) || self.pam_service.contains('/') {
             return Err(error::bad_value(
                 "pam_service must be a service name: not empty, no '/' and no control characters",

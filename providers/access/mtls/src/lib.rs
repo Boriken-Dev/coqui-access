@@ -904,7 +904,7 @@ mod tests {
             .unwrap();
         first.authenticate(attempt(Some(&shown))).unwrap();
         // A provider built over the same table counts the entry against its source: the
-        // source's one place goes to the newer fingerprint, not to a second entry.
+        // source's one place stays with the first fingerprint, and a newcomer is not written down.
         let again = MtlsAccounts::builder()
             .waiting(waiting.clone())
             .build()
@@ -917,7 +917,7 @@ mod tests {
             .unwrap();
         let kept = waiting.load().unwrap().records;
         assert_eq!(kept.len(), 1, "one place for 192.0.2.7");
-        assert_eq!(kept[0].fingerprint, other);
+        assert_eq!(kept[0].fingerprint, one);
     }
 
     #[test]
