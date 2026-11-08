@@ -26,9 +26,9 @@ coqui-peer-tls = { git = "https://github.com/Boriken-Dev/coqui-peer-tls", rev = 
 coqui-roles = { path = "crates/coqui-roles" }
 
 # guatiao main, pinned until a release carries what these crates use.
-guatiao = { git = "https://github.com/Boriken-Dev/guatiao", rev = "2877975e72f77e6d02277fafc046238e9d5c9c2f" }
+guatiao = { git = "https://github.com/Boriken-Dev/guatiao", rev = "f193e1dd289315fffc628720271135a701f5bbce" }
 # No format by default: the kit names none, and each plugin brings its own.
-guatiao-serde = { git = "https://github.com/Boriken-Dev/guatiao", rev = "2877975e72f77e6d02277fafc046238e9d5c9c2f", default-features = false }
+guatiao-serde = { git = "https://github.com/Boriken-Dev/guatiao", rev = "f193e1dd289315fffc628720271135a701f5bbce", default-features = false }
 
 serde = { version = "1", default-features = false, features = ["derive", "std"] }
 # The formats the plugins write their file tables in; no library crate names one.
