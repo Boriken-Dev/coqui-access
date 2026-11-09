@@ -72,10 +72,6 @@ pub enum NonDefault {
     AdmitsServiceAccounts,
 }
 
-/// The old name of [`NonDefault`].
-#[deprecated(since = "0.0.0", note = "renamed to `NonDefault`")]
-pub type Weakening = NonDefault;
-
 impl fmt::Display for NonDefault {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
@@ -98,12 +94,6 @@ impl SystemAccountsConfig {
         }
         #[cfg(not(unix))]
         Vec::new()
-    }
-
-    /// The old name of [`non_defaults`](Self::non_defaults).
-    #[deprecated(since = "0.0.0", note = "renamed to `non_defaults`")]
-    pub fn weakenings(&self) -> Vec<NonDefault> {
-        self.non_defaults()
     }
 
     fn check(&self) -> Result<(), ProviderError> {

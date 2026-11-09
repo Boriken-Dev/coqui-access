@@ -135,12 +135,6 @@ impl LdapAccounts {
         &self.directory.inner().non_defaults
     }
 
-    /// The old name of [`non_defaults`](Self::non_defaults).
-    #[deprecated(since = "0.0.0", note = "renamed to `non_defaults`")]
-    pub fn weakened(&self) -> &[NonDefault] {
-        self.non_defaults()
-    }
-
     /// How lookups are kept.
     pub fn cache(&self) -> CacheOptions {
         self.directory.options()

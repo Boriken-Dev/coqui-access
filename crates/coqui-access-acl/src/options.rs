@@ -111,12 +111,6 @@ impl Options {
             OnMissing::Deny => Vec::new(),
         }
     }
-
-    /// The old name of [`non_defaults`](Self::non_defaults).
-    #[deprecated(since = "0.0.0", note = "renamed to `non_defaults`")]
-    pub fn weakened(&self) -> Vec<NonDefault> {
-        self.non_defaults()
-    }
 }
 
 /// A choice that grants more than the default does, reported as data.
@@ -132,6 +126,3 @@ pub enum NonDefault {
     },
 }
 
-/// The old name of [`NonDefault`].
-#[deprecated(since = "0.0.0", note = "renamed to `NonDefault`")]
-pub type Weakening = NonDefault;

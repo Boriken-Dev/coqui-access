@@ -25,10 +25,10 @@ pub struct SystemAccountsConfig {
     pub domain: String,                  // default "." (Windows): the machine's own accounts
 }
 impl Default for SystemAccountsConfig;   // the defaults above
-impl SystemAccountsConfig { pub fn non_defaults(&self) -> Vec<NonDefault>; }   // weakenings(): deprecated alias for one release
+impl SystemAccountsConfig { pub fn non_defaults(&self) -> Vec<NonDefault>; }
 
 #[non_exhaustive]
-pub enum NonDefault { AdmitsRoot, AdmitsServiceAccounts }   // Display; Copy, Eq; Weakening: deprecated alias for one release
+pub enum NonDefault { AdmitsRoot, AdmitsServiceAccounts }   // Display; Copy, Eq
 
 pub struct SystemAccountsBuilder;        // Debug, Clone, Default, must_use
 impl SystemAccountsBuilder {

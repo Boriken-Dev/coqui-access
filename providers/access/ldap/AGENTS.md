@@ -29,7 +29,7 @@ pub struct LdapAccountsConfig {
 pub struct LdapAccounts;                  // provider id "coqui_access_ldap"
 impl LdapAccounts {
     pub fn new(config: LdapAccountsConfig) -> Result<Self, String>;
-    pub fn non_defaults(&self) -> &[coqui_peer_tls::NonDefault];   // what the ca_file TLS config allows past the default; weakened(): deprecated alias for one release
+    pub fn non_defaults(&self) -> &[coqui_peer_tls::NonDefault];   // what the ca_file TLS config allows past the default
     pub fn cache(&self) -> coqui_access_kit::CacheOptions;     // how lookups are kept
 }
 impl Authenticator for LdapAccounts { /* takes name + secret */ }

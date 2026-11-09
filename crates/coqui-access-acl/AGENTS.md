@@ -263,7 +263,6 @@ impl Options { pub fn new() -> Self; pub fn limits(self, Limits) -> Self;
                pub fn on_missing(self, OnMissing) -> Self; pub fn non_defaults(&self) -> Vec<NonDefault>; }
 #[non_exhaustive]
 pub enum NonDefault { MissingAllowsAll, EveryoneAllowed { entry: usize } }
-// Weakening and the `weakened()` methods are deprecated aliases for one release
 ```
 
 The limits bound work and memory, not trust: lifting one is not listed.

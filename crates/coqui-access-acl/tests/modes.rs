@@ -353,14 +353,3 @@ fn an_item_acl_round_trips_through_a_stored_document() {
         assert!(Acl::from_value(&value).is_err(), "{bad}");
     }
 }
-
-#[test]
-#[allow(deprecated)]
-fn the_old_names_answer_the_new_ones() {
-    let options = Options::new().on_missing(OnMissing::AllowAll);
-    assert_eq!(options.weakened(), options.non_defaults());
-    assert_eq!(
-        options.weakened(),
-        [coqui_access_acl::Weakening::MissingAllowsAll]
-    );
-}

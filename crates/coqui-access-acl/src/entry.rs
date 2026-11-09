@@ -241,12 +241,6 @@ impl Acl {
             .map(|(entry, _)| NonDefault::EveryoneAllowed { entry })
             .collect()
     }
-
-    /// The old name of [`non_defaults`](Self::non_defaults).
-    #[deprecated(since = "0.0.0", note = "renamed to `non_defaults`")]
-    pub fn weakened(&self) -> Vec<NonDefault> {
-        self.non_defaults()
-    }
 }
 
 impl Extend<Entry> for Acl {
