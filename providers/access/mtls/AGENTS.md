@@ -18,7 +18,8 @@ pub const DEFAULT_MAX_RECORDS: usize = 10_000;
 pub const DEFAULT_MAX_CHAIN: Limit = Limit::at(8);
 pub enum TrustMode { Pinned /* default */, Ca, PinnedOrCa }    // guatiao: "pinned" | "ca" | "pinned-or-ca"
 pub fn default_account() -> Vec<Pick>;                        // [fingerprint by certificate]
-pub const DEFAULT_WAITING_LIMITS: coqui_peer::WaitingLimits;   // per_source 1, total 16, rerecord 60 s
+pub fn default_waiting_limits() -> coqui_peer::WaitingLimits;   // per_source 1, total 16, rerecord 60 s
+pub const DEFAULT_WAITING_PER_SOURCE: usize = 1;  pub const DEFAULT_WAITING_TOTAL: usize = 16;  pub const DEFAULT_WAITING_RERECORD: Duration = 60 s;
 pub struct PeerRecord { pub id, pub name, pub certificate: PeerId, pub email: Option<String>,
     pub groups: Vec<String>, pub disabled: bool, pub made_unix: Option<i64> }
                                           // non_exhaustive; Keyed by name; Debug redacts
@@ -33,7 +34,7 @@ impl MtlsAccountsBuilder {
     pub fn waiting(self, table: Arc<dyn Table<Unaccepted>>) -> Self;   // default: MemoryTable
     pub fn max_records(self, max: usize) -> Self;                        // default 10 000
     pub fn record_limits(self, limits: RecordLimits) -> Self;         // default RecordLimits::DEFAULT
-    pub fn waiting_limits(self, limits: WaitingLimits) -> Self;        // default DEFAULT_WAITING_LIMITS
+    pub fn waiting_limits(self, limits: WaitingLimits) -> Self;        // default default_waiting_limits()
     pub fn trust(self, trust: TrustMode) -> Self;                      // default Pinned
     pub fn ca(self, ca: coqui_peer_tls::CaPolicy) -> Self;             // needed by Ca and PinnedOrCa
     pub fn account(self, picks: Vec<Pick>) -> Self;                    // default default_account()

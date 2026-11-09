@@ -14,7 +14,7 @@ use coqui_access::guatiao::library::ProviderError;
 use coqui_access::guatiao::{FromValue, Provider, Schema, ToValue};
 use coqui_access::{Attempt, Authenticator, Directory, Lookup, Person, Verdict};
 use coqui_access_kit::{CacheOptions, CacheSetting, Cached};
-use coqui_peer_tls::{NonDefault, Policy, Roots, Trust, client_config_without_identity_with};
+use coqui_peer_tls::{ClientBuilder, NonDefault, Policy, Roots, Trust};
 use ldap3::{LdapConn, LdapConnSettings, Scope, SearchEntry};
 
 /// LDAP result code for credentials rejected by a directory.
@@ -196,12 +196,10 @@ impl Ldap {
         }
         let (trusted, non_defaults) = match config.ca_file.as_deref() {
             Some(file) => {
-                let built = client_config_without_identity_with(
-                    &Trust::Roots(Roots::bundle_file(file)),
-                    &[],
-                    &Policy::default(),
-                )
-                .map_err(|reason| format!("ca_file {file}: {reason}"))?;
+                let built = ClientBuilder::new(Trust::Roots(Roots::bundle_file(file)))
+                    .policy(Policy::default())
+                    .build()
+                    .map_err(|reason| format!("ca_file {file}: {reason}"))?;
                 (Some(Arc::new(built.config)), built.non_defaults)
             }
             None => (None, Vec::new()),

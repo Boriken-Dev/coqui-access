@@ -39,9 +39,9 @@ Build `coqui-access-mtls-plugin` for the loadable library.
 
 ```rust
 use coqui_access::{Attempt, Authenticator, Verdict};
-use coqui_access_mtls::{DEFAULT_WAITING_LIMITS, MtlsAccounts};
+use coqui_access_mtls::{MtlsAccounts, default_waiting_limits};
 
-let peers = MtlsAccounts::builder().waiting_limits(DEFAULT_WAITING_LIMITS).build().unwrap();
+let peers = MtlsAccounts::builder().waiting_limits(default_waiting_limits()).build().unwrap();
 let verdict = peers
     .authenticate(Attempt { certificate: Some("not a fingerprint".into()), ..Attempt::default() })
     .unwrap();

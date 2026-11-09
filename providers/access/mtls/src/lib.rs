@@ -44,11 +44,21 @@ pub const DEFAULT_MAX_CHAIN: Limit = Limit::at(8);
 /// The bounds on the waiting list unless the builder says otherwise: one place per source
 /// (an IPv4 address, or an IPv6 /64), 16 in all, and a fingerprint from one source written
 /// down again at most once a minute.
-pub const DEFAULT_WAITING_LIMITS: WaitingLimits = WaitingLimits {
-    per_source: 1,
-    total: 16,
-    rerecord: Duration::from_secs(60),
-};
+pub fn default_waiting_limits() -> WaitingLimits {
+    let mut limits = WaitingLimits::default();
+    limits.per_source = DEFAULT_WAITING_PER_SOURCE;
+    limits.total = DEFAULT_WAITING_TOTAL;
+    limits.rerecord = DEFAULT_WAITING_RERECORD;
+    limits
+}
+
+/// Places one source holds on the waiting list unless the builder says otherwise.
+pub const DEFAULT_WAITING_PER_SOURCE: usize = 1;
+/// Places on the waiting list in all unless the builder says otherwise.
+pub const DEFAULT_WAITING_TOTAL: usize = 16;
+/// How soon one fingerprint from one source is written down again unless the builder says
+/// otherwise.
+pub const DEFAULT_WAITING_RERECORD: Duration = Duration::from_secs(60);
 
 /// One accepted peer as a [`Table`] keeps it, keyed by [`name`](PeerRecord::name).
 ///
@@ -273,7 +283,7 @@ impl MtlsAccountsBuilder {
     /// The bounds on the waiting list, applied by coqui-peer's [`WaitingQueue`]: places per
     /// source, places in all (a newcomer past them is not written down; nobody is pushed out
     /// for it), and how soon one fingerprint from one source is written down again. Default
-    /// [`DEFAULT_WAITING_LIMITS`].
+    /// [`default_waiting_limits`].
     #[must_use]
     pub fn waiting_limits(mut self, limits: WaitingLimits) -> Self {
         self.waiting_limits = limits;
@@ -388,7 +398,7 @@ impl MtlsAccounts {
             account: default_account(),
             max_chain: DEFAULT_MAX_CHAIN,
             policy: Policy::default(),
-            waiting_limits: DEFAULT_WAITING_LIMITS,
+            waiting_limits: default_waiting_limits(),
         }
     }
 
@@ -852,9 +862,10 @@ mod tests {
         let waiting = Arc::new(MemoryTable::<Unaccepted>::new());
         let peers = MtlsAccounts::builder()
             .waiting(waiting.clone())
-            .waiting_limits(WaitingLimits {
-                total: 2,
-                ..DEFAULT_WAITING_LIMITS
+            .waiting_limits({
+                let mut limits = default_waiting_limits();
+                limits.total = 2;
+                limits
             })
             .build()
             .unwrap();

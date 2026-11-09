@@ -125,4 +125,3 @@ pub enum NonDefault {
         entry: usize,
     },
 }
-

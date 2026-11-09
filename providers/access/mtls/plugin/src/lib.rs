@@ -38,8 +38,8 @@ use coqui_access_kit::file::Source;
 use coqui_access_kit::pick::Pick;
 use coqui_access_kit::{Keyed, MemoryTable, RecordLimits, Table};
 use coqui_access_mtls::{
-    DEFAULT_MAX_CHAIN, DEFAULT_MAX_RECORDS, DEFAULT_WAITING_LIMITS, MtlsAccounts, PeerRecord,
-    TrustMode, Unaccepted, default_account,
+    DEFAULT_MAX_CHAIN, DEFAULT_MAX_RECORDS, DEFAULT_WAITING_PER_SOURCE, DEFAULT_WAITING_RERECORD,
+    DEFAULT_WAITING_TOTAL, MtlsAccounts, PeerRecord, TrustMode, Unaccepted, default_account,
 };
 use coqui_peer::WaitingLimits;
 use coqui_peer_tls::CaPolicy;
@@ -62,13 +62,13 @@ pub struct MtlsAccountsConfig {
     #[map(default)]
     pub record_limits: RecordLimits,
     /// Waiting places per source: an IPv4 address, or an IPv6 /64.
-    #[map(default = DEFAULT_WAITING_LIMITS.per_source as u32)]
+    #[map(default = DEFAULT_WAITING_PER_SOURCE as u32)]
     pub waiting_per_source: u32,
     /// Waiting places in all; past them a newcomer is not written down.
-    #[map(default = DEFAULT_WAITING_LIMITS.total as u32)]
+    #[map(default = DEFAULT_WAITING_TOTAL as u32)]
     pub waiting_total: u32,
     /// Seconds before one fingerprint from one source is written down again.
-    #[map(default = DEFAULT_WAITING_LIMITS.rerecord.as_secs())]
+    #[map(default = DEFAULT_WAITING_RERECORD.as_secs())]
     pub waiting_rerecord_secs: u64,
     /// How a certificate is trusted: `pinned` (a record of the table), `ca`, or
     /// `pinned-or-ca`.
@@ -148,11 +148,11 @@ impl TryFrom<MtlsAccountsConfig> for MtlsAccountsProvider {
         builder = builder
             .max_records(config.max_records as usize)
             .record_limits(config.record_limits);
-        builder = builder.waiting_limits(WaitingLimits {
-            per_source: config.waiting_per_source as usize,
-            total: config.waiting_total as usize,
-            rerecord: Duration::from_secs(config.waiting_rerecord_secs),
-        });
+        let mut limits = WaitingLimits::default();
+        limits.per_source = config.waiting_per_source as usize;
+        limits.total = config.waiting_total as usize;
+        limits.rerecord = Duration::from_secs(config.waiting_rerecord_secs);
+        builder = builder.waiting_limits(limits);
         builder = builder
             .trust(config.trust)
             .account(config.account)
