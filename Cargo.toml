@@ -19,16 +19,16 @@ publish = false
 coqui-access = { path = "crates/coqui-access" }
 coqui-access-kit = { path = "crates/coqui-access-kit" }
 # Address and network lists, at the commit coqui-peer-tls depends on, so a build has one.
-coqui-net-acl = { git = "https://github.com/Boriken-Dev/coqui-net-acl", rev = "1b21d825f66ffac5599136e07021534c2c9b3ad5" }
+coqui-net-acl = { git = "https://github.com/Boriken-Dev/coqui-net-acl", rev = "6cbcb4b937ea1902291aaf1636d4d6bd391adc3a" }
 # The waiting queue's bounds, at the commit coqui-peer-tls depends on.
-coqui-peer = { git = "https://github.com/Boriken-Dev/coqui-peer", rev = "b6aa1f47ca956578ffcd20f936c43e8663ed059a" }
-coqui-peer-tls = { git = "https://github.com/Boriken-Dev/coqui-peer-tls", rev = "50bd7ffc6ee75e9fdf1838d5668cfdbd07f286d1" }
+coqui-peer = { git = "https://github.com/Boriken-Dev/coqui-peer", rev = "381e2a8144a228e592dc7d82eeb7db85885422ec" }
+coqui-peer-tls = { git = "https://github.com/Boriken-Dev/coqui-peer-tls", rev = "e5c1e6df27260ba3b4cec0a1ad5e37a04652e5f4" }
 coqui-roles = { path = "crates/coqui-roles" }
 
 # guatiao main, pinned until a release carries what these crates use.
-guatiao = { git = "https://github.com/Boriken-Dev/guatiao", rev = "fe9efd3797ec5e178e1f9381db0e65146d2c866e" }
+guatiao = { git = "https://github.com/Boriken-Dev/guatiao", rev = "0350bae7fef4cef2aa46ce73f1ef6be15983d83b" }
 # No format by default: the kit names none, and each plugin brings its own.
-guatiao-serde = { git = "https://github.com/Boriken-Dev/guatiao", rev = "fe9efd3797ec5e178e1f9381db0e65146d2c866e", default-features = false }
+guatiao-serde = { git = "https://github.com/Boriken-Dev/guatiao", rev = "0350bae7fef4cef2aa46ce73f1ef6be15983d83b", default-features = false }
 
 serde = { version = "1", default-features = false, features = ["derive", "std"] }
 # The formats the plugins write their file tables in; no library crate names one.
