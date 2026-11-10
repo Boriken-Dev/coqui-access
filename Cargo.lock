@@ -366,6 +366,7 @@ source = "git+https://github.com/Boriken-Dev/coqui-builder?rev=c1875f8276bd6366c
 dependencies = [
  "coqui-builder-derive",
  "serde",
+ "zeroize",
 ]
 
 [[package]]

@@ -14,7 +14,7 @@ use coqui_access::guatiao::Provider;
 use coqui_access::guatiao::library::ProviderError;
 use coqui_access::{Attempt, Authenticator, Directory, Lookup, Person, Verdict};
 use coqui_access_kit::{CacheOptions, CacheSetting, Cached};
-use coqui_builder::Describe;
+use coqui_builder::{Describe, Secret};
 use coqui_peer_tls::{ClientBuilder, NonDefault, Policy, Roots, Trust};
 use guatiao_builder::Described;
 use ldap3::{LdapConn, LdapConnSettings, Scope, SearchEntry};
@@ -37,9 +37,8 @@ pub struct LdapAccountsConfig {
     pub base: String,
     /// Service-account distinguished name used for searches.
     pub bind: Option<String>,
-    /// Service-account password; do not include it in logs.
-    #[schema(sensitive)]
-    pub bind_password: Option<String>,
+    /// Service-account password; wiped when dropped and never shown.
+    pub bind_password: Option<Secret<String>>,
     /// LDAP filter with `{name}` for the escaped account name.
     #[map(default = String::from("(sAMAccountName={name})"))]
     pub user_filter: String,
@@ -228,9 +227,11 @@ impl Ldap {
             })?;
         connection.with_timeout(timeout);
         if let (Some(bind), Some(password)) = (&self.config.bind, &self.config.bind_password) {
-            let bound = connection.simple_bind(bind, password).map_err(|error| {
-                coqui_access::error::internal(&format!("directory bind failed: {error}"))
-            })?;
+            let bound = connection
+                .simple_bind(bind, password.expose())
+                .map_err(|error| {
+                    coqui_access::error::internal(&format!("directory bind failed: {error}"))
+                })?;
             bound.success().map_err(|_| {
                 coqui_access::error::internal("directory refused its configured search account")
             })?;
@@ -427,7 +428,7 @@ mod tests {
     fn debug_output_redacts_directory_credentials_and_url() {
         let mut config = config("ldaps://user:secret@directory.example.org");
         config.bind = Some("CN=search".to_owned());
-        config.bind_password = Some("very-secret".to_owned());
+        config.bind_password = Some(Secret::new("very-secret".to_owned()));
         let debug = format!("{:?}", config);
         assert!(!debug.contains("very-secret"));
         assert!(!debug.contains("user:secret"));

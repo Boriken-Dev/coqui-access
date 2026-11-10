@@ -29,6 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `[secs, nanos]`.
 - **Breaking:** `Argon2Params` is not checked as it is read; `Argon2Params::new`, `PasswordHasher::new`,
   `KeyHash::hash` and building the key provider refuse a combination Argon2 refuses.
+- `LdapAccountsConfig::bind_password` is `Option<coqui_builder::Secret<String>>` (coqui-builder's `zeroize` feature): wiped when
+  dropped and never shown. A `Limit`'s schema is a string leaf (its default is `"4096"`); reads still accept a number.
 - Pins: `coqui-peer-tls`, `coqui-peer` and `coqui-net-acl` at the revisions that moved onto coqui-builder, guatiao at
   the revision with `guatiao-builder`. LDAP builds its CA client with `ClientBuilder::new().server(..)`.
 
