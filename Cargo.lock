@@ -181,6 +181,7 @@ checksum = "0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a"
 name = "coqui-access"
 version = "0.1.0"
 dependencies = [
+ "coqui-builder",
  "guatiao",
  "guatiao-serde",
 ]
@@ -191,7 +192,8 @@ version = "0.1.0"
 dependencies = [
  "coqui-access",
  "coqui-access-kit",
- "guatiao-serde",
+ "coqui-builder",
+ "serde_json",
 ]
 
 [[package]]
@@ -209,6 +211,8 @@ dependencies = [
  "coqui-access",
  "coqui-access-key",
  "coqui-access-kit",
+ "coqui-builder",
+ "guatiao-builder",
  "guatiao-serde",
  "serde",
  "serde_json",
@@ -222,6 +226,7 @@ version = "0.1.0"
 dependencies = [
  "argon2",
  "coqui-access",
+ "coqui-builder",
  "data-encoding",
  "getrandom 0.4.3",
  "guatiao-serde",
@@ -240,7 +245,9 @@ version = "0.1.0"
 dependencies = [
  "coqui-access",
  "coqui-access-kit",
+ "coqui-builder",
  "coqui-peer-tls",
+ "guatiao-builder",
  "ldap3",
  "rcgen",
  "rustls",
@@ -261,6 +268,7 @@ version = "0.1.0"
 dependencies = [
  "coqui-access",
  "coqui-access-kit",
+ "coqui-builder",
  "coqui-peer",
  "coqui-peer-tls",
  "rcgen",
@@ -274,8 +282,10 @@ dependencies = [
  "coqui-access",
  "coqui-access-kit",
  "coqui-access-mtls",
+ "coqui-builder",
  "coqui-peer",
  "coqui-peer-tls",
+ "guatiao-builder",
  "serde",
  "serde_json",
  "tempfile",
@@ -297,6 +307,8 @@ dependencies = [
  "coqui-access",
  "coqui-access-kit",
  "coqui-access-password",
+ "coqui-builder",
+ "guatiao-builder",
  "serde",
  "serde_json",
  "tempfile",
@@ -309,9 +321,11 @@ version = "0.1.0"
 dependencies = [
  "coqui-access",
  "coqui-access-kit",
+ "coqui-builder",
  "coqui-net-acl",
  "coqui-peer-tls",
  "data-encoding",
+ "guatiao-builder",
  "percent-encoding",
  "rcgen",
  "rustls-pki-types",
@@ -330,6 +344,8 @@ name = "coqui-access-system"
 version = "0.1.0"
 dependencies = [
  "coqui-access",
+ "coqui-builder",
+ "guatiao-builder",
  "nonstick",
  "uzers",
  "windows-sys 0.61.2",
@@ -344,18 +360,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "coqui-builder"
+version = "0.0.0-alpha.0"
+source = "git+https://github.com/Boriken-Dev/coqui-builder?rev=c1875f8276bd6366c38e9133fdb1181a0ffbaaad#c1875f8276bd6366c38e9133fdb1181a0ffbaaad"
+dependencies = [
+ "coqui-builder-derive",
+ "serde",
+]
+
+[[package]]
+name = "coqui-builder-derive"
+version = "0.0.0-alpha.0"
+source = "git+https://github.com/Boriken-Dev/coqui-builder?rev=c1875f8276bd6366c38e9133fdb1181a0ffbaaad#c1875f8276bd6366c38e9133fdb1181a0ffbaaad"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "coqui-net-acl"
 version = "0.0.0-alpha.0"
-source = "git+https://github.com/Boriken-Dev/coqui-net-acl?rev=6cbcb4b937ea1902291aaf1636d4d6bd391adc3a#6cbcb4b937ea1902291aaf1636d4d6bd391adc3a"
+source = "git+https://github.com/Boriken-Dev/coqui-net-acl?rev=839435acc29b76ec0190b7099f870863313d3fcd#839435acc29b76ec0190b7099f870863313d3fcd"
 
 [[package]]
 name = "coqui-peer"
 version = "0.0.0-alpha.1"
-source = "git+https://github.com/Boriken-Dev/coqui-peer?rev=381e2a8144a228e592dc7d82eeb7db85885422ec#381e2a8144a228e592dc7d82eeb7db85885422ec"
+source = "git+https://github.com/Boriken-Dev/coqui-peer?rev=984db3d54b73de10c7892b06fe269a259de2d1c5#984db3d54b73de10c7892b06fe269a259de2d1c5"
 dependencies = [
+ "coqui-builder",
  "data-encoding",
- "guatiao",
- "guatiao-serde",
  "sha1",
  "sha2 0.11.1",
  "subtle",
@@ -365,11 +399,11 @@ dependencies = [
 [[package]]
 name = "coqui-peer-tls"
 version = "0.0.0-alpha.1"
-source = "git+https://github.com/Boriken-Dev/coqui-peer-tls?rev=e5c1e6df27260ba3b4cec0a1ad5e37a04652e5f4#e5c1e6df27260ba3b4cec0a1ad5e37a04652e5f4"
+source = "git+https://github.com/Boriken-Dev/coqui-peer-tls?rev=7cbd7ee208595c055d74eed79a4dafcd0175883d#7cbd7ee208595c055d74eed79a4dafcd0175883d"
 dependencies = [
+ "coqui-builder",
  "coqui-peer",
  "globset",
- "guatiao",
  "rcgen",
  "rustls",
  "rustls-webpki",
@@ -382,6 +416,8 @@ name = "coqui-roles"
 version = "0.1.0"
 dependencies = [
  "coqui-access",
+ "coqui-builder",
+ "guatiao-builder",
 ]
 
 [[package]]
@@ -390,6 +426,7 @@ version = "0.1.0"
 dependencies = [
  "coqui-access",
  "coqui-roles",
+ "guatiao-builder",
 ]
 
 [[package]]
@@ -549,7 +586,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -708,7 +745,7 @@ dependencies = [
 [[package]]
 name = "guatiao"
 version = "0.0.0-alpha.1"
-source = "git+https://github.com/Boriken-Dev/guatiao?rev=0350bae7fef4cef2aa46ce73f1ef6be15983d83b#0350bae7fef4cef2aa46ce73f1ef6be15983d83b"
+source = "git+https://github.com/Boriken-Dev/guatiao?rev=e0136dcc9760ddd6dd8dc89fc4d41320eec6306e#e0136dcc9760ddd6dd8dc89fc4d41320eec6306e"
 dependencies = [
  "guatiao-derive",
  "libloading",
@@ -718,9 +755,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "guatiao-builder"
+version = "0.0.0-alpha.1"
+source = "git+https://github.com/Boriken-Dev/guatiao?rev=e0136dcc9760ddd6dd8dc89fc4d41320eec6306e#e0136dcc9760ddd6dd8dc89fc4d41320eec6306e"
+dependencies = [
+ "coqui-builder",
+ "guatiao",
+ "guatiao-intake",
+]
+
+[[package]]
 name = "guatiao-derive"
 version = "0.0.0-alpha.1"
-source = "git+https://github.com/Boriken-Dev/guatiao?rev=0350bae7fef4cef2aa46ce73f1ef6be15983d83b#0350bae7fef4cef2aa46ce73f1ef6be15983d83b"
+source = "git+https://github.com/Boriken-Dev/guatiao?rev=e0136dcc9760ddd6dd8dc89fc4d41320eec6306e#e0136dcc9760ddd6dd8dc89fc4d41320eec6306e"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -728,9 +775,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "guatiao-intake"
+version = "0.0.0-alpha.1"
+source = "git+https://github.com/Boriken-Dev/guatiao?rev=e0136dcc9760ddd6dd8dc89fc4d41320eec6306e#e0136dcc9760ddd6dd8dc89fc4d41320eec6306e"
+dependencies = [
+ "guatiao",
+]
+
+[[package]]
 name = "guatiao-serde"
 version = "0.0.0-alpha.1"
-source = "git+https://github.com/Boriken-Dev/guatiao?rev=0350bae7fef4cef2aa46ce73f1ef6be15983d83b#0350bae7fef4cef2aa46ce73f1ef6be15983d83b"
+source = "git+https://github.com/Boriken-Dev/guatiao?rev=e0136dcc9760ddd6dd8dc89fc4d41320eec6306e#e0136dcc9760ddd6dd8dc89fc4d41320eec6306e"
 dependencies = [
  "guatiao",
  "serde",
@@ -1307,7 +1362,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1586,7 +1641,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1868,7 +1923,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]

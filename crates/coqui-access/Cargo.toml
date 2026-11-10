@@ -11,6 +11,7 @@ publish.workspace = true
 exclude = [".*", "*.local.*"]
 
 [dependencies]
+coqui-builder.workspace = true
 guatiao = { workspace = true, features = ["provider"] }
 
 [dev-dependencies]

@@ -12,6 +12,8 @@ exclude = [".*", "*.local.*"]
 
 [dependencies]
 coqui-access.workspace = true
+coqui-builder.workspace = true
+guatiao-builder.workspace = true
 coqui-access-kit = { workspace = true, features = ["cache"] }
 # The client TLS configuration for a directory with its own CA, under its default policy.
 coqui-peer-tls.workspace = true

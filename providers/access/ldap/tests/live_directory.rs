@@ -3,6 +3,7 @@ use std::env;
 use coqui_access::guatiao::{FromValue, Map};
 use coqui_access::{Attempt, Authenticator, Directory, Lookup, Verdict};
 use coqui_access_ldap::{LdapAccounts, LdapAccountsConfig};
+use guatiao_builder::Described;
 
 fn required(name: &str) -> String {
     env::var(name).unwrap_or_else(|_| panic!("set {name} for the live LDAP test"))
@@ -33,8 +34,9 @@ fn config() -> LdapAccountsConfig {
     value.set("group_filter", "(&(objectClass=groupOfNames)(member={dn}))");
     value.set("group_base", format!("ou=groups,{base}"));
     value.set("timeout_seconds", 5_u32);
-    LdapAccountsConfig::from_value(&value.into())
+    Described::<LdapAccountsConfig>::from_value(&value.into())
         .expect("the disposable LDAP configuration should match the provider schema")
+        .0
 }
 
 #[test]

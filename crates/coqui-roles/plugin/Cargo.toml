@@ -17,3 +17,6 @@ crate-type = ["cdylib"]
 [dependencies]
 coqui-access.workspace = true
 coqui-roles = { path = ".." }
+
+[dev-dependencies]
+guatiao-builder.workspace = true

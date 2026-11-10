@@ -13,6 +13,8 @@ exclude = [".*", "*.local.*"]
 [dependencies]
 coqui-access.workspace = true
 coqui-access-kit.workspace = true
+coqui-builder.workspace = true
+guatiao-builder.workspace = true
 coqui-net-acl.workspace = true
 # The fields of a forwarded certificate.
 coqui-peer-tls = { workspace = true, features = ["fields"] }

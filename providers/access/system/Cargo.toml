@@ -12,6 +12,8 @@ exclude = [".*", "*.local.*"]
 
 [dependencies]
 coqui-access.workspace = true
+coqui-builder.workspace = true
+guatiao-builder.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 nonstick.workspace = true

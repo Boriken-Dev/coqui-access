@@ -1,13 +1,11 @@
 //! Each evaluation mode on one flat ACL.
 
-use coqui_access::guatiao::{Alloc, FromValue, ToValue};
 use coqui_access::{Person, Subject};
 use coqui_access_acl::{
     Acl, AclError, Context, Decision, Entry, Inherit, ItemAcl, Limits, Mode, NonDefault, OnMissing,
     Options, Principal, Rights, RightsSchema,
 };
-use guatiao_serde::Presentation;
-use guatiao_serde::text::json;
+use coqui_builder::Partial;
 
 fn subject(text: &str) -> Subject {
     text.parse().unwrap()
@@ -331,25 +329,40 @@ fn non_defaults_are_reported_as_data() {
     );
 }
 
+fn partial<T: coqui_builder::Describe>(text: &str) -> Result<T, String> {
+    let partial: Partial<T> = serde_json::from_str(text).map_err(|error| error.to_string())?;
+    partial.build().map_err(|error| error.to_string())
+}
+
 #[test]
-fn an_item_acl_round_trips_through_a_stored_document() {
+fn an_item_acl_is_read_from_a_stored_document() {
     let item = posix_acl();
-    let text = json::to_string(&item.to_value().unwrap(), Presentation::new()).unwrap();
-    assert!(text.contains("\"principal\":\"account:bob\""), "{text}");
-    assert!(text.contains("\"owner\":\"account:alice\""), "{text}");
-    let back = json::from_str(&text, Alloc::rust(), Presentation::new()).unwrap();
-    assert_eq!(ItemAcl::from_value(&back).unwrap(), item);
+    let entries: Vec<serde_json::Value> = item
+        .acl
+        .entries
+        .iter()
+        .map(|entry| {
+            serde_json::json!({
+                "principal": entry.principal.to_string(),
+                "rights": entry.rights,
+            })
+        })
+        .collect();
+    let document = serde_json::json!({
+        "acl": { "entries": entries, "mode": "posix" },
+        "owner": "account:alice",
+        "owner_group": "group:users",
+    });
+    assert_eq!(partial::<ItemAcl>(&document.to_string()).unwrap(), item);
     let stored = r#"{"entries":[{"principal":"group:staff","effect":"deny","rights":["write"],
         "inherit":{"items":true}}],"mode":"ordered"}"#;
-    let acl = Acl::from_value(&json::from_str(stored, Alloc::rust(), Presentation::new()).unwrap())
-        .unwrap();
+    let acl = partial::<Acl>(stored).unwrap();
     assert_eq!(acl.mode, Mode::Ordered);
     assert!(acl.entries[0].inherit.items && !acl.entries[0].inherit.containers);
     for bad in [
         r#"{"entries":[{"principal":"nobody","rights":[]}]}"#,
         r#"{"entries":[],"surprise":1}"#,
     ] {
-        let value = json::from_str(bad, Alloc::rust(), Presentation::new()).unwrap();
-        assert!(Acl::from_value(&value).is_err(), "{bad}");
+        assert!(partial::<Acl>(bad).is_err(), "{bad}");
     }
 }

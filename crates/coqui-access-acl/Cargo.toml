@@ -12,7 +12,9 @@ exclude = [".*", "*.local.*"]
 
 [dependencies]
 coqui-access.workspace = true
+coqui-builder.workspace = true
 
 [dev-dependencies]
 coqui-access-kit.workspace = true
-guatiao-serde = { workspace = true, features = ["json"] }
+coqui-builder = { workspace = true, features = ["serde"] }
+serde_json.workspace = true

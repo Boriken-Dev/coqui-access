@@ -19,16 +19,19 @@ publish = false
 coqui-access = { path = "crates/coqui-access" }
 coqui-access-kit = { path = "crates/coqui-access-kit" }
 # Address and network lists, at the commit coqui-peer-tls depends on, so a build has one.
-coqui-net-acl = { git = "https://github.com/Boriken-Dev/coqui-net-acl", rev = "6cbcb4b937ea1902291aaf1636d4d6bd391adc3a" }
+coqui-net-acl = { git = "https://github.com/Boriken-Dev/coqui-net-acl", rev = "839435acc29b76ec0190b7099f870863313d3fcd" }
 # The waiting queue's bounds, at the commit coqui-peer-tls depends on.
-coqui-peer = { git = "https://github.com/Boriken-Dev/coqui-peer", rev = "381e2a8144a228e592dc7d82eeb7db85885422ec" }
-coqui-peer-tls = { git = "https://github.com/Boriken-Dev/coqui-peer-tls", rev = "e5c1e6df27260ba3b4cec0a1ad5e37a04652e5f4" }
+coqui-peer = { git = "https://github.com/Boriken-Dev/coqui-peer", rev = "984db3d54b73de10c7892b06fe269a259de2d1c5" }
+coqui-peer-tls = { git = "https://github.com/Boriken-Dev/coqui-peer-tls", rev = "7cbd7ee208595c055d74eed79a4dafcd0175883d" }
 coqui-roles = { path = "crates/coqui-roles" }
+# Settings types: described field by field, read through guatiao-builder's `Described`.
+coqui-builder = { git = "https://github.com/Boriken-Dev/coqui-builder", rev = "c1875f8276bd6366c38e9133fdb1181a0ffbaaad", features = ["derive"] }
 
 # guatiao main, pinned until a release carries what these crates use.
-guatiao = { git = "https://github.com/Boriken-Dev/guatiao", rev = "0350bae7fef4cef2aa46ce73f1ef6be15983d83b" }
+guatiao = { git = "https://github.com/Boriken-Dev/guatiao", rev = "e0136dcc9760ddd6dd8dc89fc4d41320eec6306e" }
+guatiao-builder = { git = "https://github.com/Boriken-Dev/guatiao", rev = "e0136dcc9760ddd6dd8dc89fc4d41320eec6306e" }
 # No format by default: the kit names none, and each plugin brings its own.
-guatiao-serde = { git = "https://github.com/Boriken-Dev/guatiao", rev = "0350bae7fef4cef2aa46ce73f1ef6be15983d83b", default-features = false }
+guatiao-serde = { git = "https://github.com/Boriken-Dev/guatiao", rev = "e0136dcc9760ddd6dd8dc89fc4d41320eec6306e", default-features = false }
 
 serde = { version = "1", default-features = false, features = ["derive", "std"] }
 # The formats the plugins write their file tables in; no library crate names one.

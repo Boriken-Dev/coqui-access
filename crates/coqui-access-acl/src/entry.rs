@@ -4,14 +4,14 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use coqui_access::Subject;
-use coqui_access::guatiao::{FromValue, Schema, ToValue};
+use coqui_builder::{Describe, Leaf};
 
 use crate::options::NonDefault;
 use crate::principal::Principal;
 
 /// Whether an entry grants or refuses its rights.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, FromValue, Schema, ToValue)]
-#[map(crate = ::coqui_access::guatiao, rename_all = "lowercase")]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Leaf)]
+#[map(rename_all = "lowercase")]
 pub enum Effect {
     /// Grants. The default.
     #[default]
@@ -24,8 +24,8 @@ pub enum Effect {
 /// four flags): `items` is OBJECT_INHERIT, `containers` CONTAINER_INHERIT, `no_propagate`
 /// NO_PROPAGATE_INHERIT and `inherit_only` INHERIT_ONLY. In `MostSpecific` mode,
 /// `containers` is Proxmox's `propagate`.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, FromValue, Schema, ToValue)]
-#[map(crate = ::coqui_access::guatiao, deny_unknown_fields)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Describe)]
+#[map(deny_unknown_fields)]
 #[non_exhaustive]
 pub struct Inherit {
     /// Passes to items (leaves) inside.
@@ -82,8 +82,8 @@ impl Inherit {
 /// { "principal": "group:staff", "effect": "deny", "rights": ["write"],
 ///   "inherit": { "items": true, "containers": true } }
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, FromValue, Schema, ToValue)]
-#[map(crate = ::coqui_access::guatiao, deny_unknown_fields)]
+#[derive(Debug, Clone, PartialEq, Eq, Describe)]
+#[map(deny_unknown_fields)]
 #[non_exhaustive]
 pub struct Entry {
     /// Who it applies to.
@@ -155,8 +155,8 @@ impl Entry {
 }
 
 /// How an ACL's entries combine into a decision.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, FromValue, Schema, ToValue)]
-#[map(crate = ::coqui_access::guatiao, rename_all = "snake_case")]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Leaf)]
+#[map(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum Mode {
     /// Windows and NFSv4: entries in order, each right decided by the first entry that
@@ -178,8 +178,8 @@ pub enum Mode {
 }
 
 /// An access control list.
-#[derive(Debug, Clone, Default, PartialEq, Eq, FromValue, Schema, ToValue)]
-#[map(crate = ::coqui_access::guatiao, deny_unknown_fields)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Describe)]
+#[map(deny_unknown_fields)]
 #[non_exhaustive]
 pub struct Acl {
     /// The entries, in order.
@@ -251,8 +251,8 @@ impl Extend<Entry> for Acl {
 
 /// The ACL of one item, with the owner and owning group its `Owner` and `OwnerGroup`
 /// entries resolve against. As configuration the subjects are their text.
-#[derive(Debug, Clone, Default, PartialEq, Eq, FromValue, Schema, ToValue)]
-#[map(crate = ::coqui_access::guatiao, deny_unknown_fields)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Describe)]
+#[map(deny_unknown_fields)]
 #[non_exhaustive]
 pub struct ItemAcl {
     /// The ACL.

@@ -16,6 +16,8 @@ crate-type = ["cdylib"]
 
 [dependencies]
 coqui-access.workspace = true
+coqui-builder.workspace = true
+guatiao-builder.workspace = true
 coqui-access-mtls = { path = ".." }
 coqui-access-kit = { workspace = true, features = ["file"] }
 coqui-peer.workspace = true

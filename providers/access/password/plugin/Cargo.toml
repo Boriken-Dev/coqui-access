@@ -16,6 +16,8 @@ crate-type = ["cdylib"]
 
 [dependencies]
 coqui-access.workspace = true
+coqui-builder.workspace = true
+guatiao-builder.workspace = true
 coqui-access-password = { path = ".." }
 coqui-access-kit = { workspace = true, features = ["file"] }
 # The formats a file source may be written in: this plugin's choice, not the libraries'.
