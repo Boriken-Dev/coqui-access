@@ -20,7 +20,8 @@ wants; none of them knows the host. See the [documentation](https://boriken-dev.
   optional `coqui_accounts` (list, put, remove, waiting).
 - **Code first** — every provider is built with a builder over a typed `Table` of records
   (memory by default; a file, a SQL database or an HTTP API are tables you supply). The
-  libraries name no format: records derive guatiao's value traits, and a plugin hands the
+  libraries name no format: records derive guatiao's value traits, settings derive
+  `coqui_builder::Describe`, and a plugin hands the
   kit's file table the serde format it offers.
 - **Providers as plugins** — each provider library has a `cdylib` plugin crate, which is where
   a storage format is chosen from its Guatiao config.

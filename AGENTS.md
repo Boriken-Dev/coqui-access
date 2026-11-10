@@ -35,16 +35,18 @@ Regenerate the kind description after a deliberate contract change:
 ## Rules
 
 - Kind names and the hashes of required methods are an ABI. A new method has a default body
-  and comes after every required one; the contract test names a break.
-- Providers depend on `coqui-access`, `coqui-access-kit` and at most `coqui-peer-tls`,
+- Providers depend on `coqui-access`, `coqui-access-kit`, `coqui-builder` and `guatiao-builder` (a settings
+  type and its configuration) and at most `coqui-peer-tls`, `coqui-peer` and `coqui-net-acl`; never on a
+  host or on each other. Code two providers share belongs in a crate under `crates/`.
   `coqui-peer` and `coqui-net-acl`; never on a host or on each other. Code two providers share belongs in a crate under `crates/`.
 - `coqui-peer-tls` is pinned to an exact version (`=0.0.0-alpha.1`) in
   `[workspace.dependencies]`, and `coqui-peer` and `coqui-net-acl` at what it depends on, so a
   build has one of each. A version not published yet resolves through a local
   `[patch.crates-io]` that is never committed; a published change it needs pins a commit of
   that repository's `main` by git revision, never a branch.
-- The shared libraries are code first: builders over `coqui_access_kit::Table`, records and
-  configuration with guatiao derives, no `from_toml`/`from_json`, no format crate in a normal
+- The shared libraries are code first: builders over `coqui_access_kit::Table`, records with
+  guatiao derives, settings types deriving `coqui_builder::Describe` (a plugin reads its
+  configuration through `guatiao_builder::Described`), no `from_toml`/`from_json`, no format crate in a normal
   dependency under any feature (a dev-dependency for tests is fine), nothing read from a file
   or the environment unless the caller asks. A storage format is chosen only in a `-plugin`
   crate, which implements the kit's `Codec` over the format crate it depends on.

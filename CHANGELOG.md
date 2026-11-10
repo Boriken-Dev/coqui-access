@@ -15,6 +15,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   returns coqui-peer-tls's `NonDefault`. The old names are gone; nothing keeps an alias before a release without a pre-release tag.
 - **Breaking:** `SystemAccounts` refuses, with a bad value, a `min_uid` other than the default where accounts carry no
   uid (Windows): it used to be accepted and admit nothing.
+- **Breaking: settings types derive `coqui_builder::Describe`.** `Limit`, `RecordLimits`, `RoleLimits`,
+  `RolePolicy`, `Role`, `Rule`, `Pick`, `KeyHash`, `Argon2Params`, `CacheOptions`, `CacheSetting`, `Source`,
+  `FileSource`, `SystemAccountsConfig`, the plugin configs (`LdapAccountsConfig`, `KeysConfig`,
+  `PasswordAccountsConfig`, `MtlsAccountsConfig`, `ProxyWordConfig`) and `coqui-access-acl`'s `Acl`, `ItemAcl`, `Entry`,
+  `Inherit` derive `Describe` (`Effect`, `Mode`, `TrustMode`, `CertificateEncoding` and the plugins' `Format` derive
+  `Leaf`) in place of guatiao's `ToValue`, `FromValue` and `Schema`: they are filled through `coqui_builder::Partial`
+  and nothing writes one out. A provider's configuration is `guatiao_builder::Described<Config>`, and each provider
+  also builds from `Described<Config>` (`TryFrom`). Records and kind models keep guatiao's derives.
+- **Breaking: the text of "no bound" is `none`.** `Limit` reads and writes a count or `none`; `null` in a document is
+  a key that is not given, so it reads the default. A `Limit`'s schema is a string.
+- **Breaking:** a duration setting (`CacheOptions::ttl`, `negative_ttl`) reads `5`, `1.5`, `5s` or `250ms`, not
+  `[secs, nanos]`.
+- **Breaking:** `Argon2Params` is not checked as it is read; `Argon2Params::new`, `PasswordHasher::new`,
+  `KeyHash::hash` and building the key provider refuse a combination Argon2 refuses.
+- Pins: `coqui-peer-tls`, `coqui-peer` and `coqui-net-acl` at the revisions that moved onto coqui-builder, guatiao at
+  the revision with `guatiao-builder`. LDAP builds its CA client with `ClientBuilder::new().server(..)`.
+
+### Removed
+
+- `FromValue`, `ToValue` and `Schema` of the settings types above, and `Limit`'s guatiao derives. A configuration
+  is read, never written.
 
 ### Added
 
@@ -27,7 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   names; more is an error, never a denial.
 - `coqui-access`: `Attempt::certificates`, the client's certificates as DER (leaf first, then
   the intermediates it sent) for a provider that decides trust or reads names from them.
-- `coqui-access`: `Limit`, a count bound or none (`null` in configuration), for the resource
+- `coqui-access`: `Limit`, a count bound or none (`none` in configuration), for the resource
   bounds of the crates here.
 - `coqui-access`: the kinds `coqui_authenticator`, `coqui_directory`, `coqui_authorizer` and
   the optional `coqui_accounts`, with their models. `Attempt::headers` is an ordered list of

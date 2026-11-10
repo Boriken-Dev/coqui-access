@@ -2,7 +2,7 @@
 
 `coqui-access-acl` decides requests against access control lists the consumer keeps on its
 own items: each item carries entries naming who may do what to it. The consumer stores items
-and lists (any format, through guatiao's derives); the crate evaluates them. It is a library,
+and lists (read from any format through `coqui_builder::Partial`); the crate evaluates them. It is a library,
 not a plugin: its `AclAuthorizer` answers the `coqui_authorizer` kind for a host that builds
 it over its own store.
 

@@ -5,11 +5,11 @@ signature, contract and gotchas, so the crate can be used without reading its so
 ships inside the package and is self-contained. Development documentation lives with the
 source at <https://github.com/Boriken-Dev/coqui-access>.
 
-No Cargo features. MSRV Rust 1.89. A default build depends on `coqui-access` alone (guatiao
-through it); no format crate. Everything is re-exported at the root; the modules are
+No Cargo features. MSRV Rust 1.89. A default build depends on `coqui-access` (guatiao
+through it) and `coqui-builder`; no format crate. Everything is re-exported at the root; the modules are
 private. No `unsafe` code (`#![forbid(unsafe_code)]`).
 
-The consumer stores items and their ACLs (any format, through guatiao's derives); this
+The consumer stores items and their ACLs (read from any format through `coqui_builder::Partial`); this
 crate evaluates them. It defines no plugin kind.
 
 ## Rights (`Rights`, `RightsSchema`)
@@ -102,7 +102,7 @@ impl ItemAcl { pub fn new(Acl) -> Self; pub fn owner(self, Subject) -> Self; pub
                pub fn check(&self, context: &Context<'_>, wanted: &Rights) -> Result<Decision, AclError>; }
 ```
 
-Every type above derives guatiao `ToValue`, `FromValue` and `Schema`; principals and
+Every type above derives `coqui_builder::Describe` (`Effect` and `Mode` derive `Leaf`); principals and
 subjects cross as their text, structs refuse unknown keys. An ACL as configuration:
 
 ```json
