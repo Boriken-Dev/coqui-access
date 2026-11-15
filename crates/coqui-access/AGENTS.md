@@ -12,8 +12,10 @@ feature and on `coqui-builder` (for `Limit`). The crate holds no `unsafe` code. 
 ## Kinds
 
 All methods are synchronous; a host calls them from a blocking thread. A kind grows by
-appending methods with default bodies after the required ones. The hash of a kind covers its
-required methods only.
+appending methods with default bodies after the required ones. The floor hash of a kind covers
+every method, optional ones too, so appending to a kind that exists changes its hash and
+providers built before are refused: a kind is extended by a new kind, and a model by an
+`Option` field.
 
 ```rust
 #[guatiao::kind(name = "coqui_authenticator")]   // floor hash 0xc9379b44
@@ -69,7 +71,8 @@ fields. Unknown keys are skipped when reading.
 | Model | Fields (required first) |
 | --- | --- |
 | `Attempt` | `name?`, `secret?`, `headers: Vec<(String, String)>`, `peer?`, `secure?`, `certificate?`, `certificates?: Vec<Bytes>` (DER, leaf first), `method?` (the `methods` word the credential is presented as; `None` is the provider's default) |
-| `Lookup` | `by`, `value` — `by` is `id`, `name` or `email` (a provider may add more) |
+| `Lookup` | `by`, `value`, `claims?` — `by` is `id`, `name`, `email`, `filter` (an LDAP filter) or `claims` (the authenticator names no account; a matcher decides from `claims`); a provider may add more |
+| `Claims` | `values: BTreeMap<String, Vec<String>>` (empty is not written), `certificate?: Bytes` (the leaf as DER); `get(name) -> &[String]`; `Debug` shows counts |
 | `Verdict` | enum tagged by `kind`: `Unknown`, `Invalid`, `Valid(Lookup)` |
 | `Person` | `id`, `name`, `groups`, `attributes: BTreeMap<String, Value>`, `display_name?`, `email?` |
 | `AuthorizationRequest` | `person`, `action`, `resource`, `ancestors: Vec<String>` (the resources `resource` sits under, nearest first; empty by default and then not written) |
@@ -91,6 +94,17 @@ certificate and the intermediates the client sent, as DER, leaf first. `Debug` s
 their count. `Debug` of `Attempt`, `Lookup`, `Person`, `AccountPut`, `PutOutcome` and
 `SignInContext` shows no secret, code, address or identity value (an `Attempt`'s `method` and a
 context's `purpose`, `client` and `service` are words and are shown).
+
+## Claims
+
+What an authenticator obtained, in full, for a matcher (`coqui_access_kit::matcher`) to tie to a
+directory account; the credential's claim is never the account or its groups. The names an
+authenticator that reads a certificate uses: `subject.dn`, `subject.cn` and the other
+`subject.<attribute>` (`o`, `ou`, `c`, `st`, `l`, `dc`, `uid`, `email`, `serialnumber`), `issuer.dn`
+and `issuer.<attribute>`, `serial.hex`, `serial.reversed` (the same bytes last first), `san.upn`,
+`san.email`, `san.dns`, `san.uri`, `san.ip`, `fingerprint` and `spki` (both `sha256:<hex>`),
+`not_before` and `not_after` (Unix seconds); a name it has nothing for is absent. A password
+authenticator names the account in `by`/`value` and has no claims.
 
 ## Words (`methods`, `purposes`, `clients`)
 
@@ -150,7 +164,10 @@ impl From<u32> for Limit; impl From<Option<u32>> for Limit;
 ## Errors (`coqui_access::error`)
 
 `bad_value`, `not_found`, `unsupported`, `internal`: each `fn(&str) -> ProviderError` with the
-matching Guatiao status. Messages never hold credentials.
+matching Guatiao status. Messages never hold credentials. `ambiguous() -> ProviderError` is what a
+directory answers when one lookup finds more than one account (`bad_value` with the message
+`AMBIGUOUS`); `is_ambiguous(&ProviderError) -> bool` tells it from any other refusal, and a matcher
+refuses the sign-in on it.
 
 ## Gotchas
 

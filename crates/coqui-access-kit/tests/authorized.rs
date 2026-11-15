@@ -175,7 +175,7 @@ fn a_file_with_too_many_pin_lines_is_refused_whole() {
 #[test]
 fn the_path_is_rendered_from_the_account_and_unsafe_ones_never_reach_a_reader() {
     let reader = Stand::new(|_| Ok(FileRead::Missing));
-    let source = AuthorizedFile::new("{home}/.canoa/authorized_certificates")
+    let source = AuthorizedFile::new("{home}/.myapp/authorized_certificates")
         .unwrap()
         .reader(reader.clone());
     let alice = person("alice", Some("/home/alice"), Some(1000));
@@ -184,7 +184,7 @@ fn the_path_is_rendered_from_the_account_and_unsafe_ones_never_reach_a_reader() 
         *reader.asked.lock().unwrap(),
         [(
             "alice".to_owned(),
-            PathBuf::from("/home/alice/.canoa/authorized_certificates")
+            PathBuf::from("/home/alice/.myapp/authorized_certificates")
         )]
     );
 
@@ -517,7 +517,7 @@ mod matched {
             }
         });
         let files = Arc::new(
-            AuthorizedFile::new("{home}/.canoa/authorized_certificates")
+            AuthorizedFile::new("{home}/.myapp/authorized_certificates")
                 .unwrap()
                 .reader(reader.clone()),
         );

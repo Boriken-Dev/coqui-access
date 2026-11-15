@@ -92,8 +92,8 @@ pub struct MtlsAccountsConfig {
     /// Whether an IP address written as a DNS name matches an `ip:` glob. Default `true`.
     #[map(default = true)]
     pub ip_in_dns: bool,
-    /// How a CA-trusted certificate names its account: picks tried in order. Default its
-    /// `fingerprint`, by `certificate`.
+    /// How a CA-trusted certificate names its account: picks tried in order. Default none: the
+    /// certificate is answered by its claims, for the consumer's matcher to decide.
     #[map(default = default_account())]
     pub account: Vec<Pick>,
     /// The most certificates a client may send, leaf included; `none` for no bound.

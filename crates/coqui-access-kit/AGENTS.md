@@ -57,6 +57,93 @@ pub fn pick(fields: &BTreeMap<String, Vec<String>>, order: &[Pick]) -> Picked;
   false; addresses compare in one spelling (IPv6 compressed, IPv4-mapped as IPv4), so the
   same address in both kinds of name is one value.
 
+## Matching claims to an account (`coqui_access_kit::matcher`)
+
+```rust
+pub const MAX_CANDIDATES: usize = 16;
+pub struct MatchRule { pub by: String, pub template: String, pub pins: Option<String> }
+    // non_exhaustive; Describe, deny_unknown_fields; MatchRule::new(by, template), .pins(source_name)
+pub fn default_rules() -> Vec<MatchRule>;    // name {san.upn}; email {san.email}; name {subject.cn}
+pub struct MatcherConfig { pub rule: Vec<MatchRule> }   // non_exhaustive; Describe; Default = default_rules(); an empty list matches nobody
+pub struct MatcherError;                                 // Display, Error, From -> ProviderError (bad value); never quotes a template
+pub enum Match { Found(Person), NotFound, Ambiguous }    // non_exhaustive
+pub struct Matched { pub result: Match, pub notes: Vec<String> }
+pub struct MatcherBuilder;   // Matcher::builder(config).pin_source(name, Arc<dyn PinSource>).build()
+pub struct Matcher;          // Default = the default rules
+impl Matcher {
+    pub fn new(config: MatcherConfig) -> Result<Self, MatcherError>;
+    pub fn builder(config: MatcherConfig) -> MatcherBuilder;
+    pub fn resolve(&self, lookup: &Lookup, directory: &dyn Directory) -> Result<Matched, ProviderError>;
+}
+pub fn escape_filter_value(value: &str) -> String;
+```
+
+- A `Lookup` with `by: "claims"` and claims is matched; with no claims, `NotFound`; any other
+  `by` is looked up as it is. Rules are tried in order. A rule renders its template once per
+  combination of the values of the claims it names (at most `MAX_CANDIDATES`, else an `Err`) and
+  asks the directory for each: a claim that is missing, or whose value is empty, or whose `domain`
+  has no `@`, makes no candidate. `by` is `name`, `email` or `id` (the lookup `{by, value}`) or
+  `filter` (`{by: "filter", value: <filter>}`, a directory that supports it, such as ldap).
+- Templates: `{claim}` and `{claim|filter|...}` (`lower`, `upper`, `local` = before the last `@`,
+  `domain` = after), `{{` and `}}` for braces, claim names lowercase words with `.`, `_`, `-`. A
+  template names at least one claim. A `filter` template is one balanced parenthesised group.
+- **In a `filter` rule every substituted value is escaped** with `escape_filter_value`: `*`, `(`,
+  `)`, `\`, NUL, controls and every byte of a non-ASCII character become `\xx` (lowercase hex).
+  The template's own text is the filter's structure and is never escaped. Names, emails and ids are
+  substituted as they are.
+- A rule that finds the same account (`Person::id`) through several candidates found one. Exactly one
+  account ends the walk with `Found`; more than one, or a directory answering `error::ambiguous`,
+  ends it with `Ambiguous`; none goes on to the next rule. A directory `Err` is returned, never
+  skipped. A rule with `pins` asks the named source about the one account it found and counts
+  `PinCheck::Holds` as a find; `Absent` and `Refused` (whose reason is added to `notes`) go on.
+- `build`/`new` refuse: a `by` other than the four, an unmatched brace, a claim name or filter that
+  is not valid, a template naming no claim (it would be one account for everybody), a `filter`
+  that is not one group, a rule naming a pin source that was not given.
+
+## Pin sources (`coqui_access_kit::pins`)
+
+```rust
+pub struct PinSet { pub fingerprint: Option<String>, pub key: Option<String> }  // non_exhaustive; `sha256:<hex>` lowercase
+impl PinSet { pub fn from_claims(&Claims) -> Self; pub fn is_empty(&self) -> bool; }   // claims `fingerprint`, `spki`
+pub enum PinCheck { Holds, Absent, Refused(String) }     // non_exhaustive
+pub trait PinSource: Send + Sync { fn check(&self, person: &Person, pins: &PinSet) -> Result<PinCheck, ProviderError>; }
+pub fn pin_matches(text: &str, wanted: &PinSet) -> Option<bool>;   // None: not a pin line
+pub struct AccountPin { pub name: String, pub pin: String }        // non_exhaustive; Keyed; Debug redacted
+pub struct TablePins;   // PinSource over a Table<AccountPin>: TablePins::new(Arc<dyn Table<AccountPin>>) -> Result<Self, SourceError>
+// pins::authorized
+pub const MAX_FILE_BYTES: u64 = 64 * 1024;  pub const MAX_PIN_LINES: usize = 1024;
+pub enum FileRead { Text(String), Missing }               // non_exhaustive
+pub struct ReadFailure;                                    // new(reason), reason(); Error
+pub trait PinFileReader: Send + Sync { fn read(&self, account: &Person, path: &Path) -> Result<FileRead, ReadFailure>; }
+pub struct DirectReader;                                   // the default reader
+pub struct AuthorizedFile;   // AuthorizedFile::new(path_template) -> Result<Self, TemplateError>; .reader(Arc<dyn PinFileReader>); PinSource
+```
+
+- A source is asked about **one account a rule already named**, never to scan. It answers
+  `Holds`, `Absent`, or `Refused(reason)` (counted as no pins and reported); `Err` is "could not
+  find out" and ends the match with that error.
+- **`AuthorizedFile`**: the file is one pin per line, `sha256:<hex>` (fingerprint) or
+  `spki-sha256:<hex>` (public key), then optional whitespace and a comment; blank lines and lines
+  starting `#` are ignored; a line that is not a pin is skipped and, when no pin is held, counted in
+  the refusal reason; more than `MAX_PIN_LINES` lines is a refusal. The path template takes `{home}`
+  (the person's `home` attribute, absolute), `{name}` and `{id}` (each one safe path component: not
+  empty, `.`, `..`, with no `/`, `\` or control character, else a refusal before any read); the
+  rendered path must be absolute with no `..`. A missing `home` is a refusal; a file that is not
+  there is `Absent`.
+- **The reader contract.** The reader is the only thing that touches the file system. It receives the
+  account (with `home` and `uid` attributes as the directory gave them) and the rendered path, and
+  returns the text, `Missing`, or a `ReadFailure` with the reason it would not. The library parses what
+  a reader returns and reports a refusal as no pins; it does not repeat any check it cannot see. A
+  consumer whose process cannot read homes (it reads through a helper running as root) supplies its
+  own reader and makes the checks below wherever it has access.
+- **`DirectReader`** (Unix; elsewhere it refuses everything): needs the account's `uid` and `home`
+  attributes; the real path of the file must be inside the real home; the file must not be a symlink and
+  must be a regular file of at most `MAX_FILE_BYTES`; the file and every directory from its parent up to
+  and including the home must be owned by the account's uid or by root and not writable by group or
+  others. The checks are made on the opened file. A parent that is a symlink staying inside the home is
+  followed; one that leaves it is refused.
+- `MtlsAccounts` implements `PinSource` over its own records (`coqui-access-mtls`).
+
 ## Record limits (`coqui_access_kit::record`; `RecordLimits` re-exported at the root)
 
 ```rust

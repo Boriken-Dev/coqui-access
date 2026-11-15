@@ -29,6 +29,7 @@ theme:
 nav:
   - Home: index.md
   - Access control lists: acl.md
+  - Credential to account: identity.md
   - Rust API: https://boriken-dev.github.io/coqui-access/rust/index.html
 
 markdown_extensions:

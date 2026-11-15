@@ -1,5 +1,5 @@
 //! Where the pins of an account are kept: the contract a matcher asks, and the two sources
-//! that ship (a per-user file in `authorized`, and any [`Table`](crate::Table) of pins).
+//! that ship (a per-user file in `authorized`, and any [`Table`] of pins).
 //!
 //! A pin is what one account has said it is known by: the SHA-256 of a whole certificate (a
 //! *fingerprint*) or of its public key (a *key*). The library never decides where pins live;

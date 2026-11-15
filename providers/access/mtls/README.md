@@ -23,6 +23,9 @@ subject's CN, the fingerprint.
   source (an IPv4 address or an IPv6 /64), 16 in all, the same certificate from one source
   written down at most once a minute; each bound is an option.
 - **Any spelling** - `sha256:<hex>`, bare hex, colon-separated hex or grouped base32.
+- **Claims** - a certificate is answered with everything it said (subject and issuer names,
+  serial, UPN, email, DNS, URI and IP SANs, fingerprint, public key hash and the DER), and with no
+  `account` picks as `by: "claims"`, for the consumer's matcher to tie to a directory account.
 - **Pinned by fingerprint or by public key** - a key pin (`key:sha256:<hex>` of the
   SubjectPublicKeyInfo) keeps signing in a certificate renewed on the same key, as a smartcard's
   is; an account holds several pins, up to `max_pins` (4), and one is removed alone.

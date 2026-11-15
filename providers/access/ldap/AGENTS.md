@@ -48,13 +48,20 @@ impl Directory for LdapAccounts { /* by "name" only */ }
 - `authenticate`: unknown account `Unknown`; disabled account (AD `userAccountControl` bit 2),
   empty password or rejected credentials `Invalid`; success is `Lookup { by: "name", value:
   canonical name }`. Other directory failures are errors.
-- `lookup` returns `Person { id: DN, name, groups }`; disabled accounts are `None`.
+- `lookup` returns `Person { id: DN, name, groups }`; disabled accounts are `None`. `by: "name"` uses
+  `user_filter`. `by: "filter"` takes an LDAP filter that is one parenthesised group (else
+  `GUATIAO_ERR_BAD_VALUE`) and searches `base`, subtree, with `(&<object_filter><filter>)`: no
+  account, or a disabled one, is `None`; more than one is `error::ambiguous()`. The filter is the
+  caller's (a matcher's, whose values are escaped); `object_filter` (default `(objectClass=user)`, one
+  parenthesised group) is what every account matches, so a filter can only narrow it. Any other `by`
+  is `None`.
 - Debug output redacts the URL and bind password.
 
 ## `search` module
 
-`IN_CHAIN`, `escaped(value)`, `filter(template, field, value)`, `group_name(dn)`,
-`disabled(flags)`, `in_the_clear(url, start_tls)`.
+`IN_CHAIN`, `escaped(value)` (coqui-access-kit's `escape_filter_value`: metacharacters, controls and
+every byte of a non-ASCII character as `\xx`), `filter(template, field, value)`, `all_of(account_filter,
+given)`, `one_group(filter)`, `group_name(dn)`, `disabled(flags)`, `in_the_clear(url, start_tls)`.
 
 ## Live test
 

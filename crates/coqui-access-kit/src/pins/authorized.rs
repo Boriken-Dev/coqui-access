@@ -5,7 +5,7 @@
 //! and lines starting `#` are ignored; a line that is not a pin is skipped and counted. A file
 //! may hold [`MAX_PIN_LINES`] lines and be [`MAX_FILE_BYTES`] long.
 //!
-//! [`AuthorizedFile`] finds the file by a path template, `{home}/.canoa/authorized_certificates`
+//! [`AuthorizedFile`] finds the file by a path template, `{home}/.myapp/authorized_certificates`
 //! say, with `{home}` (the account's `home` attribute), `{name}` and `{id}` filled from the
 //! account a rule already named; it never looks at any other account's file. Who reads the
 //! file is a [`PinFileReader`]: the default, [`DirectReader`], opens it and makes the checks
