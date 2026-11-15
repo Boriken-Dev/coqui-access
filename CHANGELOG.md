@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`coqui-access-mtls` pins by public key as well as by fingerprint, and an account holds several pins.** `Pin`
+  (`kind` `fingerprint` or `key`, SHA-256 of the whole certificate or of its SubjectPublicKeyInfo) names what a record
+  pins; `PeerRecord::pins` lists them beside the existing `certificate`, `PeerRecord::keyed` makes a record from one,
+  `MtlsAccountsBuilder::max_pins` (and the plugin's `max_pins`, default 4) bounds them. A certificate renewed on the
+  same key signs in under a key pin. `Accounts::put` takes `key:sha256:<hex>` as well as a fingerprint, adds the pin
+  to an existing account, and `remove:<pin>` takes one away alone.
 - **`coqui_sign_in_policy`**, a kind (`SignInPolicy::decide`) that decides which methods a sign-in may use and what
   it still needs, with the models `SignInContext`, `SignInDecision`, `Factor` and `Offer`, and the word modules
   `methods`, `purposes` and `clients`. `takes::OTP` names an authenticator that takes a one-time code.
@@ -17,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Breaking: `PeerRecord::certificate` is `Option<PeerId>`, and `put` with a pin for an existing mtls account adds
+  it.** A record pinned only by key has none. A pin given for a name that exists used to move the account to that
+  certificate and now adds one more pin up to `max_pins`; `remove:<pin>` takes the old one away. Files written before
+  pins existed still read.
 - **Breaking for struct literals:** `Attempt`, `PutOutcome` and `AccountPut` have a new field each, so code that builds
   one without `..Default::default()` stops compiling. Reading and the kinds' hashes are unchanged.
 

@@ -271,8 +271,11 @@ dependencies = [
  "coqui-builder",
  "coqui-peer",
  "coqui-peer-tls",
+ "data-encoding",
  "rcgen",
+ "sha2 0.11.1",
  "tempfile",
+ "x509-parser",
 ]
 
 [[package]]
@@ -337,6 +340,26 @@ version = "0.1.0"
 dependencies = [
  "coqui-access",
  "coqui-access-proxy",
+]
+
+[[package]]
+name = "coqui-access-signin"
+version = "0.1.0"
+dependencies = [
+ "coqui-access",
+ "coqui-builder",
+ "coqui-net-acl",
+ "guatiao-builder",
+]
+
+[[package]]
+name = "coqui-access-signin-plugin"
+version = "0.1.0"
+dependencies = [
+ "coqui-access",
+ "coqui-access-signin",
+ "guatiao",
+ "guatiao-serde",
 ]
 
 [[package]]
