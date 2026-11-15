@@ -347,9 +347,12 @@ name = "coqui-access-signin"
 version = "0.1.0"
 dependencies = [
  "coqui-access",
+ "coqui-access-signin",
  "coqui-builder",
  "coqui-net-acl",
  "guatiao-builder",
+ "guatiao-serde",
+ "serde_json",
 ]
 
 [[package]]

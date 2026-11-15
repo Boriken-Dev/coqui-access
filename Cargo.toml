@@ -5,6 +5,7 @@ members = [
     "providers/access/*",
     "providers/access/*/plugin",
     "crates/coqui-roles/plugin",
+    "crates/coqui-access-signin/plugin",
 ]
 
 [workspace.package]
@@ -24,6 +25,7 @@ coqui-net-acl = { git = "https://github.com/Boriken-Dev/coqui-net-acl", rev = "8
 coqui-peer = { git = "https://github.com/Boriken-Dev/coqui-peer", rev = "984db3d54b73de10c7892b06fe269a259de2d1c5" }
 coqui-peer-tls = { git = "https://github.com/Boriken-Dev/coqui-peer-tls", rev = "7cbd7ee208595c055d74eed79a4dafcd0175883d" }
 coqui-roles = { path = "crates/coqui-roles" }
+coqui-access-signin = { path = "crates/coqui-access-signin" }
 # Settings types: described field by field, read through guatiao-builder's `Described`.
 coqui-builder = { git = "https://github.com/Boriken-Dev/coqui-builder", rev = "c1875f8276bd6366c38e9133fdb1181a0ffbaaad", features = ["derive"] }
 
