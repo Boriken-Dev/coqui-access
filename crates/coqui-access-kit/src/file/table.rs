@@ -19,6 +19,9 @@ use crate::table::{Keyed, Revision, Snapshot, SourceError, Table, Update};
 /// The most a table file may hold unless [`FileTable::max_bytes`] says otherwise: 1 MiB.
 pub const DEFAULT_MAX_BYTES: usize = 1024 * 1024;
 
+/// How many times a file that changes under a read is read again.
+const READS: usize = 8;
+
 /// A format refused a document. It carries nothing of the document, which may hold secrets.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[non_exhaustive]
@@ -223,22 +226,29 @@ impl<T: Walk + FromWalk, C: Codec> FileTable<T, C> {
     }
 
     /// Reads the file and notes a new revision when it is not the one last seen.
+    ///
+    /// A file replaced while it is being read is read again, a few times: the replacement is
+    /// whole, so the next read is a consistent newer version, and only a file that keeps
+    /// changing is an error.
     fn read(&self, state: &mut State) -> Result<Vec<T>, SourceError> {
-        let before = stamp(&self.path).map_err(SourceError::unavailable)?;
-        let records =
-            match read_bounded(&self.path, self.max_bytes).map_err(SourceError::unavailable)? {
-                None => Vec::new(),
-                Some(text) => self.decode(&text)?,
-            };
-        let after = stamp(&self.path).map_err(SourceError::unavailable)?;
-        if before != after {
-            return Err(SourceError::unavailable("file changed while it was read"));
+        for _ in 0..READS {
+            let before = stamp(&self.path).map_err(SourceError::unavailable)?;
+            let records =
+                match read_bounded(&self.path, self.max_bytes).map_err(SourceError::unavailable)? {
+                    None => Vec::new(),
+                    Some(text) => self.decode(&text)?,
+                };
+            let after = stamp(&self.path).map_err(SourceError::unavailable)?;
+            if before != after {
+                continue;
+            }
+            if after != state.stamp {
+                state.stamp = after;
+                state.revision += 1;
+            }
+            return Ok(records);
         }
-        if after != state.stamp {
-            state.stamp = after;
-            state.revision += 1;
-        }
-        Ok(records)
+        Err(SourceError::unavailable("file changed while it was read"))
     }
 
     fn write(&self, state: &mut State, records: &[T]) -> Result<(), SourceError> {
