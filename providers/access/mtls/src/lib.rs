@@ -11,6 +11,7 @@
 #![warn(missing_debug_implementations)]
 #![warn(missing_docs)]
 
+mod claims;
 mod pin;
 mod trust;
 
@@ -593,6 +594,9 @@ impl Authenticator for MtlsAccounts {
                     return Ok(Verdict::Valid(Lookup {
                         by: "id".to_owned(),
                         value: id,
+                        claims: chain
+                            .first()
+                            .and_then(|leaf| claims::of_certificate(leaf.as_ref())),
                     }));
                 }
                 None => {}
@@ -799,6 +803,47 @@ fn source_of(peer: Option<&str>) -> Option<SocketAddr> {
         .or_else(|| peer.parse().ok().map(|address| SocketAddr::new(address, 0)))
 }
 
+/// The records as a source of pins for a matcher: an enabled record named like the person
+/// holds the fingerprint or the public key the certificate presented.
+impl coqui_access_kit::pins::PinSource for MtlsAccounts {
+    fn check(
+        &self,
+        person: &Person,
+        pins: &coqui_access_kit::pins::PinSet,
+    ) -> Result<coqui_access_kit::pins::PinCheck, ProviderError> {
+        use coqui_access_kit::pins::PinCheck;
+        let wanted: Vec<Normal> = pins
+            .fingerprint
+            .as_deref()
+            .and_then(|text| text.parse::<PeerId>().ok())
+            .map(|id| Normal::of_fingerprint(&id))
+            .into_iter()
+            .chain(pins.key.as_ref().and_then(|value| {
+                Pin {
+                    kind: Pin::KEY.to_owned(),
+                    value: value.clone(),
+                }
+                .normal()
+            }))
+            .collect();
+        let held = self
+            .peers
+            .read(|records| {
+                records.iter().any(|peer| {
+                    peer.name == person.name
+                        && !peer.disabled
+                        && wanted.iter().any(|pin| peer.holds(pin))
+                })
+            })
+            .map_err(|reason| reason.reading("peer table"))?;
+        Ok(if held {
+            PinCheck::Holds
+        } else {
+            PinCheck::Absent
+        })
+    }
+}
+
 /// What a `secret` asks of a peer's pins.
 enum Change {
     Add(Pin),
@@ -950,7 +995,8 @@ mod tests {
             peers
                 .lookup(Lookup {
                     by: "id".to_owned(),
-                    value: "service-1".to_owned()
+                    value: "service-1".to_owned(),
+                    ..Lookup::default()
                 })
                 .unwrap()
                 .is_none()

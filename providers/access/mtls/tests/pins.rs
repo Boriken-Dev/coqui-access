@@ -45,10 +45,22 @@ fn put(name: &str, secret: &str) -> AccountPut {
     }
 }
 
+/// The verdict without the claims that ride along: these tests are about which account.
+fn bare(verdict: Verdict) -> Verdict {
+    match verdict {
+        Verdict::Valid(lookup) => Verdict::Valid(Lookup {
+            claims: None,
+            ..lookup
+        }),
+        other => other,
+    }
+}
+
 fn valid(id: &str) -> Verdict {
     Verdict::Valid(Lookup {
         by: "id".to_owned(),
         value: id.to_owned(),
+        ..Lookup::default()
     })
 }
 
@@ -72,9 +84,12 @@ fn a_renewed_certificate_with_the_same_key_signs_in_under_a_key_pin_and_not_a_fi
     let by_key = MtlsAccounts::builder().build().unwrap();
     by_key.put(put("alice", &key_pin_text(&first))).unwrap();
     let id = id_of(&by_key, "alice");
-    assert_eq!(by_key.authenticate(presented(&first)).unwrap(), valid(&id));
     assert_eq!(
-        by_key.authenticate(presented(&renewed)).unwrap(),
+        bare(by_key.authenticate(presented(&first)).unwrap()),
+        valid(&id)
+    );
+    assert_eq!(
+        bare(by_key.authenticate(presented(&renewed)).unwrap()),
         valid(&id)
     );
 
@@ -84,11 +99,11 @@ fn a_renewed_certificate_with_the_same_key_signs_in_under_a_key_pin_and_not_a_fi
         .unwrap();
     let id = id_of(&by_fingerprint, "alice");
     assert_eq!(
-        by_fingerprint.authenticate(presented(&first)).unwrap(),
+        bare(by_fingerprint.authenticate(presented(&first)).unwrap()),
         valid(&id)
     );
     assert_eq!(
-        by_fingerprint.authenticate(presented(&renewed)).unwrap(),
+        bare(by_fingerprint.authenticate(presented(&renewed)).unwrap()),
         Verdict::Unknown
     );
 }
@@ -146,12 +161,15 @@ fn a_second_pin_on_the_same_account_is_added_up_to_the_bound() {
     assert_eq!(accounts.accounts().unwrap().len(), 1, "one account");
     let id = id_of(&accounts, "alice");
     for der in &ders[..3] {
-        assert_eq!(accounts.authenticate(presented(der)).unwrap(), valid(&id));
+        assert_eq!(
+            bare(accounts.authenticate(presented(der)).unwrap()),
+            valid(&id)
+        );
     }
     // Past the bound, and the account keeps what it had.
     assert!(accounts.put(put("alice", &key_pin_text(&ders[3]))).is_err());
     assert_eq!(
-        accounts.authenticate(presented(&ders[3])).unwrap(),
+        bare(accounts.authenticate(presented(&ders[3])).unwrap()),
         Verdict::Unknown
     );
     // Saying a pin the account holds again is not another pin.
@@ -188,11 +206,11 @@ fn a_pin_is_removed_alone() {
         .put(put("alice", &format!("remove:{}", key_pin_text(&ders[0]))))
         .unwrap();
     assert_eq!(
-        accounts.authenticate(presented(&ders[0])).unwrap(),
+        bare(accounts.authenticate(presented(&ders[0])).unwrap()),
         Verdict::Unknown
     );
     assert_eq!(
-        accounts.authenticate(presented(&ders[1])).unwrap(),
+        bare(accounts.authenticate(presented(&ders[1])).unwrap()),
         valid(&id)
     );
     // The last pin stays: an account that nothing could sign in to is removed instead.
@@ -229,11 +247,11 @@ fn a_fingerprint_pin_is_removed_alone_whether_it_is_the_first_or_a_later_one() {
         ))
         .unwrap();
     assert_eq!(
-        accounts.authenticate(presented(&ders[0])).unwrap(),
+        bare(accounts.authenticate(presented(&ders[0])).unwrap()),
         Verdict::Unknown
     );
     assert_eq!(
-        accounts.authenticate(presented(&ders[1])).unwrap(),
+        bare(accounts.authenticate(presented(&ders[1])).unwrap()),
         valid(&id)
     );
 }
@@ -251,7 +269,7 @@ fn a_disabled_account_refuses_its_key_pin() {
         })
         .unwrap();
     assert_eq!(
-        accounts.authenticate(presented(&der)).unwrap(),
+        bare(accounts.authenticate(presented(&der)).unwrap()),
         Verdict::Invalid
     );
 }
@@ -278,7 +296,10 @@ fn a_record_names_its_kind_of_pin_and_a_fingerprint_only_record_still_reads() {
         .table(Arc::new(MemoryTable::from_records([read])))
         .build()
         .unwrap();
-    assert_eq!(accounts.authenticate(presented(&der)).unwrap(), valid("1"));
+    assert_eq!(
+        bare(accounts.authenticate(presented(&der)).unwrap()),
+        valid("1")
+    );
 }
 
 #[test]
@@ -317,14 +338,60 @@ fn a_waiting_fingerprint_is_accepted_as_one_more_pin_and_waits_no_more() {
     let accounts = MtlsAccounts::builder().build().unwrap();
     accounts.put(put("alice", &key_pin_text(&first))).unwrap();
     assert_eq!(
-        accounts.authenticate(presented(&other)).unwrap(),
+        bare(accounts.authenticate(presented(&other)).unwrap()),
         Verdict::Unknown
     );
     let shown = accounts.waiting().unwrap()[0].shown.clone();
     accounts.put(put("alice", &shown)).unwrap();
     assert!(accounts.waiting().unwrap().is_empty());
     assert_eq!(
-        accounts.authenticate(presented(&other)).unwrap(),
+        bare(accounts.authenticate(presented(&other)).unwrap()),
         valid(&id_of(&accounts, "alice"))
+    );
+}
+
+#[test]
+fn the_records_are_a_pin_source_for_the_account_a_rule_named() {
+    use coqui_access::Person;
+    use coqui_access_kit::pins::{PinCheck, PinSet, PinSource};
+
+    let key = KeyPair::generate().unwrap();
+    let der = certificate(&key, "a");
+    let other = certificate(&KeyPair::generate().unwrap(), "b");
+    let accounts = MtlsAccounts::builder().build().unwrap();
+    accounts.put(put("alice", &key_pin_text(&der))).unwrap();
+    accounts
+        .put(put("bob", &fingerprint_of(&other).canonical()))
+        .unwrap();
+    let person = |name: &str| Person {
+        name: name.to_owned(),
+        ..Person::default()
+    };
+    let mut renewed = PinSet::default();
+    renewed.fingerprint = Some(fingerprint_of(&certificate(&key, "renewed")).canonical());
+    renewed.key = Some(Pin::key_of_certificate(&der).unwrap().value);
+    assert_eq!(
+        accounts.check(&person("alice"), &renewed).unwrap(),
+        PinCheck::Holds
+    );
+    // The same pins held by somebody else's record do not count for bob.
+    assert_eq!(
+        accounts.check(&person("bob"), &renewed).unwrap(),
+        PinCheck::Absent
+    );
+    assert_eq!(
+        accounts.check(&person("nobody"), &renewed).unwrap(),
+        PinCheck::Absent
+    );
+    accounts
+        .put(AccountPut {
+            name: "alice".to_owned(),
+            disabled: Some(true),
+            ..AccountPut::default()
+        })
+        .unwrap();
+    assert_eq!(
+        accounts.check(&person("alice"), &renewed).unwrap(),
+        PinCheck::Absent
     );
 }

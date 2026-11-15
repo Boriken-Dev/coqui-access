@@ -87,10 +87,22 @@ fn trusting(directory: &Path, authority: &Authority, account: Vec<Pick>) -> Mtls
         .unwrap()
 }
 
+/// The verdict without the claims that ride along, for tests of which account it names.
+fn bare(verdict: Verdict) -> Verdict {
+    match verdict {
+        Verdict::Valid(lookup) => Verdict::Valid(Lookup {
+            claims: None,
+            ..lookup
+        }),
+        other => other,
+    }
+}
+
 fn found(by: &str, value: &str) -> Verdict {
     Verdict::Valid(Lookup {
         by: by.to_owned(),
         value: value.to_owned(),
+        ..Lookup::default()
     })
 }
 
@@ -101,7 +113,7 @@ fn an_email_san_under_a_ca_names_the_account_by_email() {
     let provider = trusting(directory.path(), &ca, vec![Pick::new("san.email", "email")]);
     let der = leaf(&ca, vec![email("one@example.org")]);
     assert_eq!(
-        provider.authenticate(attempt(&[&der], true)).unwrap(),
+        bare(provider.authenticate(attempt(&[&der], true)).unwrap()),
         found("email", "one@example.org")
     );
 }
@@ -117,7 +129,7 @@ fn a_upn_with_its_domain_names_the_account_by_name() {
     );
     let der = leaf(&ca, vec![upn("alice@CORP.example")]);
     assert_eq!(
-        provider.authenticate(attempt(&[&der], true)).unwrap(),
+        bare(provider.authenticate(attempt(&[&der], true)).unwrap()),
         found("name", "alice")
     );
 }
@@ -159,7 +171,7 @@ fn another_ca_or_an_insecure_attempt_is_unknown() {
 }
 
 #[test]
-fn the_default_account_is_the_certificate_fingerprint() {
+fn the_default_account_is_the_claims_the_matcher_reads() {
     let directory = tempfile::tempdir().unwrap();
     let ca = authority("Root");
     let provider = MtlsAccounts::builder()
@@ -169,8 +181,8 @@ fn the_default_account_is_the_certificate_fingerprint() {
         .unwrap();
     let der = leaf(&ca, vec![email("one@example.org")]);
     assert_eq!(
-        provider.authenticate(attempt(&[&der], true)).unwrap(),
-        found("certificate", &PeerId::of(&der).canonical())
+        bare(provider.authenticate(attempt(&[&der], true)).unwrap()),
+        found("claims", &PeerId::of(&der).canonical())
     );
 }
 
@@ -187,7 +199,7 @@ fn an_ip_written_as_an_ip_or_a_dns_name_or_both_names_one_address() {
     ] {
         let der = leaf(&ca, names.clone());
         assert_eq!(
-            provider.authenticate(attempt(&[&der], true)).unwrap(),
+            bare(provider.authenticate(attempt(&[&der], true)).unwrap()),
             found("address", "10.0.0.9"),
             "{names:?}"
         );
@@ -219,7 +231,7 @@ fn a_san_glob_for_an_ip_matches_it_written_either_way() {
     for names in [vec![dns("10.0.0.9")], vec![ip("10.0.0.9")]] {
         let der = leaf(&ca, names);
         assert_eq!(
-            provider.authenticate(attempt(&[&der], true)).unwrap(),
+            bare(provider.authenticate(attempt(&[&der], true)).unwrap()),
             found("name", "Client One")
         );
     }
@@ -247,12 +259,12 @@ fn pinned_or_ca_takes_a_pinned_certificate_from_an_unknown_ca() {
         .build()
         .unwrap();
     assert_eq!(
-        provider.authenticate(attempt(&[&pinned], true)).unwrap(),
+        bare(provider.authenticate(attempt(&[&pinned], true)).unwrap()),
         found("id", "peer-1")
     );
     let by_ca = leaf(&ca, vec![email("one@example.org")]);
     assert_eq!(
-        provider.authenticate(attempt(&[&by_ca], true)).unwrap(),
+        bare(provider.authenticate(attempt(&[&by_ca], true)).unwrap()),
         found("email", "one@example.org")
     );
 }

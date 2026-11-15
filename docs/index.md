@@ -37,6 +37,9 @@ whose `source` object says where the records live.
 
 [Sign-in policy](sign-in.md) is the contract a consumer follows to decide which methods a
 sign-in may use from where it is made, and when to ask for a second step.
+[Claims and the matcher](identity.md) tie what an authenticator obtained (a certificate's
+names, in full) to an account in a directory, by templates and LDAP filters with every value
+escaped, and by pins kept in a per-user file or a table.
 
 [`coqui-access-acl`](acl.md) decides requests against access control lists kept on items,
 and answers `coqui_authorizer` over the consumer's store.

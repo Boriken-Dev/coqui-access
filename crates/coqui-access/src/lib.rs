@@ -36,9 +36,9 @@ pub use kind::{
 };
 pub use limit::Limit;
 pub use model::{
-    AccountInfo, AccountPut, Attempt, AuthorizationDecision, AuthorizationRequest, Description,
-    Factor, Lookup, Offer, Person, PutOutcome, SignInContext, SignInDecision, Verdict, Waiting,
-    clients, purposes, takes,
+    AccountInfo, AccountPut, Attempt, AuthorizationDecision, AuthorizationRequest, Claims,
+    Description, Factor, Lookup, Offer, Person, PutOutcome, SignInContext, SignInDecision, Verdict,
+    Waiting, clients, purposes, takes,
 };
 pub use subject::{Subject, SubjectError};
 

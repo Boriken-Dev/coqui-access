@@ -92,14 +92,54 @@ impl fmt::Debug for Attempt {
     }
 }
 
+/// The identity an authenticator obtained, in full, for a matcher to tie to a directory
+/// account. A claim is what the credential says, not who the person is: the directory
+/// decides the account and its groups.
+///
+/// The names an authenticator that reads a certificate uses: `subject.dn`, `subject.cn` (and
+/// the other `subject.<attribute>`), `issuer.dn`, `serial.hex`, `serial.reversed` (the same
+/// bytes last first), `san.upn`, `san.email`, `san.dns`, `san.uri`, `san.ip`, `fingerprint`
+/// and `spki` (both `sha256:<hex>`), and the leaf in [`certificate`](Claims::certificate).
+/// A name an authenticator has nothing for is absent. `Debug` shows counts only.
+#[derive(Clone, Default, PartialEq, Eq, ToValue, FromValue, Schema)]
+#[map(crate = ::guatiao)]
+pub struct Claims {
+    /// Each claim and its values, in the order the credential gave them.
+    #[map(default, skip_serializing_if = BTreeMap::is_empty)]
+    pub values: BTreeMap<String, Vec<String>>,
+    /// The credential itself, when it has a form of its own: the leaf certificate as DER.
+    pub certificate: Option<guatiao::Bytes>,
+}
+
+impl Claims {
+    /// The values of `name`; empty when the credential did not give it.
+    pub fn get(&self, name: &str) -> &[String] {
+        self.values.get(name).map_or(&[], Vec::as_slice)
+    }
+}
+
+impl fmt::Debug for Claims {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("Claims")
+            .field("values", &self.values.len())
+            .field("certificate", &self.certificate.as_ref().map(|_| "…"))
+            .finish()
+    }
+}
+
 /// An identity lookup key returned after an authenticator accepts credentials.
 #[derive(Clone, Default, PartialEq, Eq, ToValue, FromValue, Schema)]
 #[map(crate = ::guatiao)]
 pub struct Lookup {
-    /// Directory attribute to match, such as `id`, `name` or `email`.
+    /// Directory attribute to match, such as `id`, `name` or `email`; `claims` when the
+    /// authenticator names no account itself and the consumer's matcher decides from
+    /// [`claims`](Lookup::claims).
     pub by: String,
-    /// Value to resolve in a configured directory.
+    /// Value to resolve in a configured directory; a label for a log when `by` is `claims`.
     pub value: String,
+    /// What the credential said, in full, when the authenticator has more than a name.
+    pub claims: Option<Claims>,
 }
 
 impl fmt::Debug for Lookup {
@@ -108,6 +148,7 @@ impl fmt::Debug for Lookup {
             .debug_struct("Lookup")
             .field("by", &self.by)
             .field("value", &"…")
+            .field("claims", &self.claims)
             .finish()
     }
 }

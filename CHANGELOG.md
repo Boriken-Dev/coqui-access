@@ -17,6 +17,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   client network, kind of client, service and subject, whose chains of methods say what a sign-in may use and when it
   asks for a further step. `SignInRules::single_factor` is the policy of a deployment with none. Its `test-support`
   feature carries the shared vectors (`policy.json`, `flows.json`); `docs/sign-in.md` is the contract a consumer follows.
+- **Claims and a matcher.** `Lookup` carries optional `Claims` (what an authenticator obtained, in full) and
+  `by: "claims"` means the authenticator names no account itself. `coqui-access-mtls` answers a certificate with its
+  subject and issuer names, serial, UPN, email, DNS, URI and IP SANs, fingerprint, public key hash and the DER.
+  `coqui_access_kit::matcher` ties claims to a directory account by ordered templates (`{san.upn|local}`) and LDAP
+  filters whose substituted values are escaped per RFC 4515; the first rule that finds exactly one account wins, more
+  than one is refused, a directory error is an error. `coqui_access::error::ambiguous` is how a directory says one
+  lookup found several. `coqui_access_ldap` answers `by: "filter"` lookups, ANDed with a new `object_filter`.
+- **Pin sources.** `coqui_access_kit::pins::PinSource` is where a rule's account is checked for a pinned certificate
+  (fingerprint or public key), asked only about the one account the rule named. `AuthorizedFile` reads a per-user file
+  (`{home}/.myapp/authorized_certificates` style, one `sha256:<hex>` or `spki-sha256:<hex>` per line, comments allowed)
+  through a `PinFileReader` the consumer may supply; the default reader checks the owner, group/other-writable files
+  and parents up to the home, symlinks and escapes from the home as sshd does, and a file that fails counts as no pins
+  with a reason. `TablePins` keeps pins in any table; `MtlsAccounts` is a source over its own records;
+  `coqui_access_system` puts `uid` and `home` among a Unix person's attributes.
 - **`coqui-access-mtls` pins by public key as well as by fingerprint, and an account holds several pins.** `Pin`
   (`kind` `fingerprint` or `key`, SHA-256 of the whole certificate or of its SubjectPublicKeyInfo) names what a record
   pins; `PeerRecord::pins` lists them beside the existing `certificate`, `PeerRecord::keyed` makes a record from one,
@@ -35,6 +49,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   which ends an ordered authenticator list, so a password provider listed before another (the operating system's, say)
   locked every other name out. A name it holds with a wrong password, and a disabled account, are still `Invalid`; the
   dummy hash still runs for an unknown name.
+- **Breaking for struct literals:** `Lookup` has a new field `claims`; code that builds one without
+  `..Default::default()` stops compiling. Reading is unchanged.
+- **Breaking: `coqui_access_mtls::default_account()` is empty.** A CA-trusted certificate with no `account` picks is
+  answered `Valid(Lookup { by: "claims", .. })` instead of by its fingerprint under `certificate`; a consumer sends
+  it to a `Matcher`. Picks that are given answer as before and carry the claims too.
+- `coqui_access_ldap::search::escaped` also escapes control characters and every byte of a non-ASCII character
+  (`\xx`), as the matcher does; `LdapAccountsConfig` gains `object_filter` (default `(objectClass=user)`).
 - **Breaking: `PeerRecord::certificate` is `Option<PeerId>`, and `put` with a pin for an existing mtls account adds
   it.** A record pinned only by key has none. A pin given for a name that exists used to move the account to that
   certificate and now adds one more pin up to `max_pins`; `remove:<pin>` takes the old one away. Files written before

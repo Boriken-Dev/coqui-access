@@ -30,6 +30,7 @@ nav:
   - Home: index.md
   - Access control lists: acl.md
   - Sign-in policy: sign-in.md
+  - Credential to account: identity.md
   - Rust API: https://boriken-dev.github.io/coqui-access/rust/index.html
 
 markdown_extensions:

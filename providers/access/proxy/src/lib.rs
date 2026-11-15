@@ -161,6 +161,7 @@ impl Authenticator for ProxyWord {
             return Ok(Verdict::Valid(Lookup {
                 by: "name".to_owned(),
                 value: name.to_owned(),
+                ..Lookup::default()
             }));
         }
         if let Some(name) = self.certificate_header.as_deref() {
@@ -202,7 +203,11 @@ impl ProxyWord {
     /// The verdict the account picks give over `fields`; `None` when they find nothing.
     fn picked(&self, fields: &std::collections::BTreeMap<String, Vec<String>>) -> Option<Verdict> {
         match pick(fields, &self.account) {
-            Picked::Found { by, value } => Some(Verdict::Valid(Lookup { by, value })),
+            Picked::Found { by, value } => Some(Verdict::Valid(Lookup {
+                by,
+                value,
+                ..Lookup::default()
+            })),
             Picked::Ambiguous => Some(Verdict::Invalid),
             _ => None,
         }
@@ -286,7 +291,8 @@ mod tests {
                 .unwrap(),
             Verdict::Valid(Lookup {
                 by: "name".to_owned(),
-                value: "agent".to_owned()
+                value: "agent".to_owned(),
+                ..Lookup::default()
             })
         );
         assert_eq!(
@@ -335,7 +341,8 @@ mod tests {
                 .unwrap(),
             Verdict::Valid(Lookup {
                 by: "name".to_owned(),
-                value: "Doe, Jane".to_owned()
+                value: "Doe, Jane".to_owned(),
+                ..Lookup::default()
             })
         );
         assert_eq!(

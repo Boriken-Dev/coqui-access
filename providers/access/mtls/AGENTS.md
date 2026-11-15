@@ -19,7 +19,7 @@ pub const DEFAULT_MAX_RECORDS: usize = 10_000;
 pub const DEFAULT_MAX_PINS: usize = 4;      // fingerprints and keys together, per account
 pub const DEFAULT_MAX_CHAIN: Limit = Limit::at(8);
 pub enum TrustMode { Pinned /* default */, Ca, PinnedOrCa }    // coqui_builder::Leaf: "pinned" | "ca" | "pinned-or-ca"
-pub fn default_account() -> Vec<Pick>;                        // [fingerprint by certificate]
+pub fn default_account() -> Vec<Pick>;                        // empty: a CA-trusted certificate is answered by its claims
 pub fn default_waiting_limits() -> coqui_peer::WaitingLimits;   // per_source 1, total 16, rerecord 60 s
 pub const DEFAULT_WAITING_PER_SOURCE: usize = 1;  pub const DEFAULT_WAITING_TOTAL: usize = 16;  pub const DEFAULT_WAITING_RERECORD: Duration = 60 s;
 pub struct PeerRecord { pub id, pub name, pub certificate: Option<PeerId>, pub pins: Vec<Pin>,
@@ -118,9 +118,17 @@ impl Accounts for MtlsAccounts { /* accounts, put, remove, waiting */ }
   issued on that key; pin a key only where the key, not the certificate, is what is trusted (a
   smartcard's).
 - The directory's `certificate` lookup resolves fingerprint pins only.
-- The default `account` answers `Lookup { by: "certificate", value: "sha256:<hex>" }`, which
-  this provider's own directory resolves only for pinned records: with `Ca`, configure picks
-  for the directory the host asks.
+- `account` defaults to no picks (`default_account()` is empty). A CA-trusted certificate is then
+  answered `Valid(Lookup { by: "claims", value: "sha256:<fingerprint>", claims })`, for the consumer's
+  matcher (`coqui_access_kit::matcher`) to tie to a directory account; this provider's own directory
+  does not resolve it. With picks the answer is as picked. Every `Valid` for a certificate carries
+  `claims` when the chain was presented (a fingerprint alone has none): `subject.dn`, `subject.cn` and
+  the other subject attributes, `issuer.dn` and its attributes, `serial.hex`, `serial.reversed`,
+  `san.upn`, `san.email`, `san.dns`, `san.uri`, `san.ip`, `fingerprint`, `spki`, `not_before`,
+  `not_after`, and the leaf as DER in `Claims::certificate`. The directory, not the certificate, decides
+  the account and its groups.
+- `MtlsAccounts` is a `coqui_access_kit::pins::PinSource`: `check(person, pins)` holds when an enabled
+  record named `person.name` holds the fingerprint or the key in `pins` (the global table of pins).
 
 ## Errors
 

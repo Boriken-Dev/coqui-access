@@ -75,6 +75,7 @@ fn authenticates_accounts_and_resolves_directory_groups() {
         .lookup(Lookup {
             by: lookup.by,
             value: lookup.value,
+            ..Lookup::default()
         })
         .expect("the directory should answer the account lookup")
         .expect("the authenticated account should resolve");
