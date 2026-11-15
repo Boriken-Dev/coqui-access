@@ -409,9 +409,12 @@ dependencies = [
  "coqui-access-kit",
  "coqui-access-totp",
  "coqui-builder",
+ "data-encoding",
  "guatiao-builder",
+ "hmac",
  "serde",
  "serde_json",
+ "sha1",
  "tempfile",
  "toml",
 ]

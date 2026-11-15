@@ -209,7 +209,8 @@ fn with_no_skew_only_the_present_step_passes() {
 
 #[test]
 fn a_wrong_code_a_malformed_one_and_an_unknown_account() {
-    let setup = setup();
+    // Five wrong tries would delay the account: this test is about the answers, not the delay.
+    let setup = with_lockout(coqui_access_totp::Lockout::OFF);
     let (key, _) = setup.enrol("id-alice");
     setup.at(START + 30);
     let good = code(&key, START + 30);
@@ -604,4 +605,138 @@ fn eight_digit_sha512_secrets_enrol_and_sign_in() {
         .secret
         .unwrap();
     assert!(link.contains("algorithm=SHA512") && link.contains("digits=8"));
+}
+
+fn with_lockout(lockout: coqui_access_totp::Lockout) -> Setup {
+    let clock = Arc::new(AtomicI64::new(START));
+    let reader = clock.clone();
+    let totp = TotpAccounts::builder()
+        .lockout(lockout)
+        .clock(move || reader.load(Ordering::SeqCst))
+        .build()
+        .unwrap();
+    Setup { clock, totp }
+}
+
+fn wrong_for(key: &[u8], unix: i64) -> String {
+    let good = code(key, unix);
+    if good == "000000" { "000001" } else { "000000" }.to_owned()
+}
+
+#[test]
+fn wrong_codes_in_a_row_delay_the_account_and_the_delay_doubles() {
+    let setup = with_lockout(coqui_access_totp::Lockout::new(3, 30, 100));
+    let (key, _) = setup.enrol("id-alice");
+    setup.at(START + 30);
+    let at = START + 30;
+    for _ in 0..3 {
+        assert_eq!(
+            setup.present("id-alice", &wrong_for(&key, at)),
+            Verdict::Invalid
+        );
+    }
+    // Locked for 30 s: even the right code is refused, and the refusal is not counted.
+    assert_eq!(setup.present("id-alice", &code(&key, at)), Verdict::Invalid);
+    setup.at(at + 29);
+    assert_eq!(
+        setup.present("id-alice", &code(&key, at + 29)),
+        Verdict::Invalid
+    );
+    setup.at(at + 30);
+    // The delay is over: one more wrong code and it is 60 s.
+    assert_eq!(
+        setup.present("id-alice", &wrong_for(&key, at + 30)),
+        Verdict::Invalid
+    );
+    setup.at(at + 30 + 59);
+    assert_eq!(
+        setup.present("id-alice", &code(&key, at + 30 + 59)),
+        Verdict::Invalid
+    );
+    setup.at(at + 30 + 60);
+    assert_eq!(
+        setup.present("id-alice", &code(&key, at + 30 + 60)),
+        valid("id-alice")
+    );
+    // A right code ended it: three more wrong ones are needed to lock again.
+    setup.at(at + 200);
+    for _ in 0..2 {
+        assert_eq!(
+            setup.present("id-alice", &wrong_for(&key, at + 200)),
+            Verdict::Invalid
+        );
+    }
+    assert_eq!(
+        setup.present("id-alice", &code(&key, at + 200)),
+        valid("id-alice")
+    );
+}
+
+#[test]
+fn the_delay_is_capped_and_a_recovery_code_counts_like_a_code() {
+    let setup = with_lockout(coqui_access_totp::Lockout::new(1, 40, 100));
+    let (_, codes) = setup.enrol("id-alice");
+    for round in 0..6 {
+        setup.at(START + 1000 * (round + 1));
+        assert_eq!(setup.recover("id-alice", "AAAAA-AAAAA"), Verdict::Invalid);
+    }
+    // 40, 80, then 100 every time: a round later (1000 s) is always free, but 99 s is not.
+    setup.at(START + 6000 + 99);
+    assert_eq!(setup.recover("id-alice", &codes[0]), Verdict::Invalid);
+    setup.at(START + 6000 + 100);
+    assert_eq!(setup.recover("id-alice", &codes[0]), valid("id-alice"));
+}
+
+#[test]
+fn a_lifted_lockout_never_delays_and_an_administrator_unlocks() {
+    let off = with_lockout(coqui_access_totp::Lockout::OFF);
+    let (key, _) = off.enrol("id-alice");
+    off.at(START + 30);
+    for _ in 0..20 {
+        assert_eq!(
+            off.present("id-alice", &wrong_for(&key, START + 30)),
+            Verdict::Invalid
+        );
+    }
+    assert_eq!(
+        off.present("id-alice", &code(&key, START + 30)),
+        valid("id-alice")
+    );
+
+    let setup = with_lockout(coqui_access_totp::Lockout::new(2, 600, 600));
+    let (key, _) = setup.enrol("id-bob");
+    setup.at(START + 30);
+    for _ in 0..2 {
+        setup.present("id-bob", &wrong_for(&key, START + 30));
+    }
+    assert_eq!(
+        setup.present("id-bob", &code(&key, START + 30)),
+        Verdict::Invalid
+    );
+    setup
+        .totp
+        .put(AccountPut {
+            name: "id-bob".to_owned(),
+            disabled: Some(false),
+            ..AccountPut::default()
+        })
+        .unwrap();
+    assert_eq!(
+        setup.present("id-bob", &code(&key, START + 30)),
+        valid("id-bob")
+    );
+}
+
+#[test]
+fn a_record_written_before_lockout_existed_still_reads() {
+    use coqui_access::guatiao::{FromValue, Map, ToValue};
+    let mut map = Map::new();
+    map.set("name", "id-alice");
+    map.set("secret", "GEZDGNBVGY3TQOJQ");
+    map.set("algorithm", "sha1");
+    map.set("digits", 6u32);
+    map.set("period", 30u32);
+    let read = TotpRecord::from_value(&map.into()).expect("an old record reads");
+    assert!(format!("{read:?}").contains("failures: 0"));
+    assert!(read.to_value().is_ok());
 }

@@ -88,6 +88,16 @@ pub struct TotpRecord {
     pub disabled: bool,
     /// When it was enrolled, in seconds since the Unix epoch.
     pub made_unix: Option<i64>,
+    /// Wrong codes since the last right one; not written while zero.
+    #[map(default, skip_serializing_if = is_zero)]
+    pub failures: u32,
+    /// Until when the account takes no code, in seconds since the Unix epoch, after too many
+    /// wrong ones ([`Lockout`]).
+    pub locked_until_unix: Option<i64>,
+}
+
+fn is_zero(count: &u32) -> bool {
+    *count == 0
 }
 
 impl Keyed for TotpRecord {
@@ -107,7 +117,70 @@ impl fmt::Debug for TotpRecord {
             .field("period", &self.period)
             .field("codes", &self.codes.len())
             .field("disabled", &self.disabled)
+            .field("failures", &self.failures)
             .finish()
+    }
+}
+
+/// How an account that is given wrong codes slows down: after `after` wrong ones in a row it
+/// takes no code for `first_seconds`, and for twice as long with each further wrong one, up to
+/// `longest_seconds`. A right code ends it; an administrator's `disabled` toggle resets it.
+///
+/// This bounds guessing per account whatever address the guesses come from. It also lets
+/// anyone who can name an account keep that account's owner out for up to `longest_seconds` at
+/// a time; the consumer's own throttle per address and account is what limits that.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct Lockout {
+    /// Wrong codes in a row before the first delay; 0 never delays.
+    pub after: u32,
+    /// The first delay, in seconds.
+    pub first_seconds: u32,
+    /// The longest delay, in seconds.
+    pub longest_seconds: u32,
+}
+
+impl Lockout {
+    /// Five wrong codes, then 30 s, doubling to an hour: the default.
+    pub const DEFAULT: Self = Self {
+        after: 5,
+        first_seconds: 30,
+        longest_seconds: 3_600,
+    };
+    /// Never delays. A weakening the caller chooses; the consumer must then count and limit
+    /// second-factor failures itself.
+    pub const OFF: Self = Self {
+        after: 0,
+        first_seconds: 0,
+        longest_seconds: 0,
+    };
+
+    /// A lockout after `after` wrong codes in a row, delaying `first_seconds` and doubling up
+    /// to `longest_seconds`. `after` 0 never delays.
+    pub const fn new(after: u32, first_seconds: u32, longest_seconds: u32) -> Self {
+        Self {
+            after,
+            first_seconds,
+            longest_seconds,
+        }
+    }
+
+    /// The delay once `failures` wrong codes have come in a row.
+    fn delay(self, failures: u32) -> Option<i64> {
+        if self.after == 0 || failures < self.after {
+            return None;
+        }
+        let doublings = (failures - self.after).min(32);
+        let seconds = u64::from(self.first_seconds)
+            .saturating_mul(1u64 << doublings)
+            .min(u64::from(self.longest_seconds));
+        Some(i64::try_from(seconds).unwrap_or(i64::MAX))
+    }
+}
+
+impl Default for Lockout {
+    fn default() -> Self {
+        Self::DEFAULT
     }
 }
 
@@ -158,6 +231,12 @@ impl fmt::Debug for PendingTotp {
 
 type Clock = Arc<dyn Fn() -> i64 + Send + Sync>;
 
+/// What presenting a code came to, and the record it leaves.
+struct Judged {
+    taken: bool,
+    next: Option<TotpRecord>,
+}
+
 /// Options for [`TotpAccounts`]; every one has a default.
 pub struct TotpBuilder {
     table: Option<Arc<dyn Table<TotpRecord>>>,
@@ -171,6 +250,7 @@ pub struct TotpBuilder {
     enrol_seconds: u32,
     max_records: usize,
     limits: RecordLimits,
+    lockout: Lockout,
     clock: Clock,
 }
 
@@ -266,6 +346,14 @@ impl TotpBuilder {
         self
     }
 
+    /// How an account slows down under wrong codes. Default [`Lockout::DEFAULT`];
+    /// [`Lockout::OFF`] lifts it.
+    #[must_use]
+    pub fn lockout(mut self, lockout: Lockout) -> Self {
+        self.lockout = lockout;
+        self
+    }
+
     /// The clock, in seconds since the Unix epoch. Default the system's; a test supplies its
     /// own.
     #[must_use]
@@ -316,6 +404,7 @@ impl TotpBuilder {
             skew: self.skew,
             recovery_codes: self.recovery_codes,
             enrol_seconds: self.enrol_seconds,
+            lockout: self.lockout,
             clock: self.clock,
         })
     }
@@ -354,6 +443,7 @@ pub struct TotpAccounts {
     skew: u32,
     recovery_codes: u32,
     enrol_seconds: u32,
+    lockout: Lockout,
     clock: Clock,
 }
 
@@ -385,6 +475,7 @@ impl TotpAccounts {
             enrol_seconds: DEFAULT_ENROL_SECONDS,
             max_records: DEFAULT_MAX_RECORDS,
             limits: RecordLimits::DEFAULT,
+            lockout: Lockout::DEFAULT,
             clock: Arc::new(unix_now),
         }
     }
@@ -402,68 +493,108 @@ impl TotpAccounts {
         })
     }
 
-    /// Takes a time-based code for `record`, writing the step it was for before answering.
-    fn take_code(&self, record: &TotpRecord, presented: &str) -> Result<Verdict, ProviderError> {
+    /// Decides what presenting `presented` to `record` comes to, and the record it leaves:
+    /// `None` when nothing is to be written.
+    fn judge(&self, record: &TotpRecord, presented: &str, recovery: bool, now: i64) -> Judged {
+        if record.disabled || record.locked_until_unix.is_some_and(|until| now < until) {
+            return Judged {
+                taken: false,
+                next: None,
+            };
+        }
+        let mut next = record.clone();
+        let taken = if recovery {
+            self.use_recovery(&mut next, presented)
+        } else {
+            self.use_code(&mut next, presented, now)
+        };
+        if taken {
+            next.failures = 0;
+            next.locked_until_unix = None;
+        } else if self.lockout.after > 0 {
+            next.failures = next.failures.saturating_add(1);
+            next.locked_until_unix = self
+                .lockout
+                .delay(next.failures)
+                .map(|delay| now.saturating_add(delay));
+        } else {
+            return Judged {
+                taken: false,
+                next: None,
+            };
+        }
+        Judged {
+            taken,
+            next: Some(next),
+        }
+    }
+
+    /// Checks a time-based code and, if right, notes the step it was for in `record`.
+    fn use_code(&self, record: &mut TotpRecord, presented: &str, now: i64) -> bool {
         let (Some(check), Some(key)) = (
             self.check_of(&record.algorithm, record.digits, record.period),
             unbase32(&record.secret),
         ) else {
-            return Err(error::internal("an account's secret cannot be read"));
+            return false;
         };
-        let Some(step) = verify(check, &key, presented, self.now(), record.last_step) else {
-            return Ok(Verdict::Invalid);
-        };
-        let name = record.name.clone();
-        let taken = self
-            .records
-            .put_with(|records| {
-                let Some(current) = records.iter().find(|own| own.name == name) else {
-                    return Err(SourceError::invalid("the account is gone"));
-                };
-                // Another request may have used this step since the check.
-                if current.disabled || current.last_step.is_some_and(|used| used >= step) {
-                    return Ok((current.clone(), false));
-                }
-                let mut next = current.clone();
-                next.last_step = Some(step);
-                Ok((next, true))
-            })
-            .map_err(|reason| reason.writing("one-time code table"))?;
-        Ok(verdict(taken, &record.name))
+        match verify(check, &key, presented, now, record.last_step) {
+            Some(step) => {
+                record.last_step = Some(step);
+                true
+            }
+            None => false,
+        }
     }
 
-    /// Takes a recovery code for `record`, removing it before answering.
-    fn take_recovery(
-        &self,
-        record: &TotpRecord,
-        presented: &str,
-    ) -> Result<Verdict, ProviderError> {
+    /// Checks a recovery code and, if right, removes it from `record`. Every code is
+    /// compared, none stopping the others.
+    fn use_recovery(&self, record: &mut TotpRecord, presented: &str) -> bool {
         let Some(normal) = normal_recovery(presented) else {
-            return Ok(Verdict::Invalid);
+            return false;
         };
         let digest = secret::hash(&normal, Some(RECOVERY_DOMAIN));
-        // Every code is compared, none stopping the others.
         let mut held = false;
         for code in &record.codes {
             held |= secret::same(code, &digest);
         }
-        if !held {
+        if held {
+            record.codes.retain(|code| !secret::same(code, &digest));
+        }
+        held
+    }
+
+    /// Presents a code to the account `name`, written down before the answer.
+    ///
+    /// The judgement is made against the record read under the table's lock, so two requests
+    /// with one code (here or in another process) cannot both succeed, and a wrong code is
+    /// counted. A write that fails is an error, never a success that could be replayed.
+    fn present(
+        &self,
+        record: &TotpRecord,
+        presented: &str,
+        recovery: bool,
+    ) -> Result<Verdict, ProviderError> {
+        let now = self.now();
+        // Nothing to write (a disabled or delayed account, a lifted lockout): no write.
+        if self.judge(record, presented, recovery, now).next.is_none() {
             return Ok(Verdict::Invalid);
         }
         let name = record.name.clone();
-        let taken = self
-            .records
-            .put_with(|records| {
-                let Some(current) = records.iter().find(|own| own.name == name) else {
-                    return Err(SourceError::invalid("the account is gone"));
-                };
-                let mut next = current.clone();
-                let before = next.codes.len();
-                next.codes.retain(|code| !secret::same(code, &digest));
-                Ok((next.clone(), !current.disabled && next.codes.len() < before))
-            })
-            .map_err(|reason| reason.writing("one-time code table"))?;
-        Ok(verdict(taken, &record.name))
+        let mut gone = false;
+        let result = self.records.put_with(|records| {
+            let Some(current) = records.iter().find(|own| own.name == name) else {
+                gone = true;
+                return Err(SourceError::invalid("the account is gone"));
+            };
+            let judged = self.judge(current, presented, recovery, now);
+            let taken = judged.taken;
+            Ok((judged.next.unwrap_or_else(|| current.clone()), taken))
+        });
+        match result {
+            Ok(taken) => Ok(verdict(taken, &record.name)),
+            Err(_) if gone => Ok(Verdict::Unknown),
+            Err(reason) => Err(reason.writing("one-time code table")),
+        }
     }
 
     fn begin(&self, account: &AccountPut) -> Result<PutOutcome, ProviderError> {
@@ -539,6 +670,8 @@ impl TotpAccounts {
             codes: entry.codes.clone(),
             disabled: false,
             made_unix: Some(now),
+            failures: 0,
+            locked_until_unix: None,
         };
         self.records
             .put_with(|_| Ok((record, ())))
@@ -644,14 +777,7 @@ impl Authenticator for TotpAccounts {
         else {
             return Ok(Verdict::Unknown);
         };
-        if record.disabled {
-            return Ok(Verdict::Invalid);
-        }
-        if recovery {
-            self.take_recovery(&record, &presented)
-        } else {
-            self.take_code(&record, &presented)
-        }
+        self.present(&record, &presented, recovery)
     }
 
     fn describe(&self) -> Result<Description, ProviderError> {
@@ -720,6 +846,8 @@ impl Accounts for TotpAccounts {
                             .cloned()
                             .ok_or_else(|| SourceError::invalid("the account is gone"))?;
                         next.disabled = disabled;
+                        next.failures = 0;
+                        next.locked_until_unix = None;
                         Ok((next, ()))
                     })
                     .map_err(|reason| reason.writing("one-time code table"))?;
