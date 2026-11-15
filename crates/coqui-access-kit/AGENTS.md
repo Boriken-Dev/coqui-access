@@ -115,7 +115,8 @@ pub const MAX_FILE_BYTES: u64 = 64 * 1024;  pub const MAX_PIN_LINES: usize = 102
 pub enum FileRead { Text(String), Missing }               // non_exhaustive
 pub struct ReadFailure;                                    // new(reason), reason(); Error
 pub trait PinFileReader: Send + Sync { fn read(&self, account: &Person, path: &Path) -> Result<FileRead, ReadFailure>; }
-pub struct DirectReader;                                   // the default reader
+pub struct DirectReader;                                   // the default reader; Clone, Default; DirectReader::new(), .timeout(Duration) (default READ_TIMEOUT 2 s), .max_waiting(usize) (default MOST_WAITING 8)
+pub const READ_TIMEOUT: Duration = 2 s;  pub const MOST_WAITING: usize = 8;
 pub struct AuthorizedFile;   // AuthorizedFile::new(path_template) -> Result<Self, TemplateError>; .reader(Arc<dyn PinFileReader>); PinSource
 ```
 
@@ -137,11 +138,16 @@ pub struct AuthorizedFile;   // AuthorizedFile::new(path_template) -> Result<Sel
   consumer whose process cannot read homes (it reads through a helper running as root) supplies its
   own reader and makes the checks below wherever it has access.
 - **`DirectReader`** (Unix; elsewhere it refuses everything): needs the account's `uid` and `home`
-  attributes; the real path of the file must be inside the real home; the file must not be a symlink and
-  must be a regular file of at most `MAX_FILE_BYTES`; the file and every directory from its parent up to
-  and including the home must be owned by the account's uid or by root and not writable by group or
-  others. The checks are made on the opened file. A parent that is a symlink staying inside the home is
-  followed; one that leaves it is refused.
+  attributes and a path under the home. It walks from the real home down one component at a time with
+  `symlink_metadata`: no component (the file included) may be a symlink or on another device than the
+  home, directories must be directories, and the home, each directory and the file must be owned by the
+  uid or root and not writable by group or others. It then opens the file with `O_NOFOLLOW |
+  O_NONBLOCK` (the `libc` constants, Unix only), and checks the opened file again: a regular file, the
+  same device and inode the walk saw, at most `MAX_FILE_BYTES`. The whole walk and read runs on a thread
+  the reader waits for at most its `timeout` (a file system that never answers is a refusal "timed out");
+  the thread stays stuck until the file system answers, and at most `max_waiting` of them wait per
+  reader before further reads are refused unseen. A directory above the file swapped by its owner
+  between the walk and the open is the gap no portable call closes.
 - `MtlsAccounts` implements `PinSource` over its own records (`coqui-access-mtls`).
 
 ## Record limits (`coqui_access_kit::record`; `RecordLimits` re-exported at the root)

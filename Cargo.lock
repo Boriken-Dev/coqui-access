@@ -242,6 +242,7 @@ dependencies = [
  "data-encoding",
  "getrandom 0.4.3",
  "guatiao-serde",
+ "libc",
  "moka",
  "serde",
  "serde_json",

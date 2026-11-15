@@ -152,12 +152,25 @@ access.
 **The default reader** opens the file itself and makes the checks sshd makes of `authorized_keys`
 (Unix only; on other platforms it refuses):
 
-- the account has a `uid` and a `home`;
-- the file's real path is inside the real home, and the file is not itself a symlink (a symlinked
-  directory that stays inside the home is followed; one that leaves it is refused);
-- the file is a regular file, at most 64 KiB;
-- the file, and every directory from its parent up to and including the home, is **owned by the
-  account's uid or by root**, and is **not writable by group or others**.
+- the account has a `uid` and a `home`, and the path lies under the home;
+- the path is walked from the real home down one component at a time, and **neither the file nor
+  any directory on the way is a symlink** (a link, even one that stays inside the home, is refused),
+  or on another file system than the home;
+- the file is opened with `O_NOFOLLOW` and `O_NONBLOCK`, and what was opened is checked again: a
+  regular file (a pipe put in its place is refused, not waited on), the one the walk saw, at most
+  64 KiB;
+- the home, every directory below it on the path, and the file are **owned by the account's uid or by
+  root**, and are **not writable by group or others**;
+- the whole walk and read is bounded in time (2 s by default, `DirectReader::timeout`): a file
+  system that never answers (a network or FUSE mount) costs the caller that long and a refusal. The
+  stuck thread stays stuck until the file system answers, so a reader lets at most 8 wait at once
+  (`DirectReader::max_waiting`) and refuses further reads until some finish.
 
 A file that fails any check counts as no pins, and the reason is reported. A file that is not there is
 simply no pins.
+
+*What this does not close:* there is no portable way to open a path one directory at a time
+without following links, so a directory above the file could be swapped between the walk and the
+open. Only someone who owns that directory (the account, or root) can do it, and the checks make
+the account's own writable paths the only ones to abuse. The opened file is verified against the one
+the walk saw (device and inode), so a swap of the file itself is caught.

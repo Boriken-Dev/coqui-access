@@ -17,6 +17,8 @@
 use std::fmt;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
+use std::time::Duration;
 
 use coqui_access::Person;
 use coqui_access::guatiao::FromValue;
@@ -156,7 +158,7 @@ impl AuthorizedFile {
         Ok(Self {
             template,
             parts,
-            reader: Arc::new(DirectReader),
+            reader: Arc::new(DirectReader::new()),
         })
     }
 
@@ -266,34 +268,100 @@ fn scan(text: &str, pins: &PinSet) -> PinCheck {
     }
 }
 
+/// The longest a [`DirectReader`] waits for the file system by default.
+pub const READ_TIMEOUT: Duration = Duration::from_secs(2);
+/// The most reads one [`DirectReader`] lets wait on the file system at once by default.
+pub const MOST_WAITING: usize = 8;
+
 /// Opens the file itself and makes the checks sshd makes of `authorized_keys`.
 ///
-/// On Unix: the file is not a symlink and is a regular file of at most [`MAX_FILE_BYTES`];
-/// its real path is inside the account's real home; the file and every directory from its
-/// parent up to and including the home are owned by the account's uid (its `uid` attribute)
-/// or by root, and are not writable by group or others. Anything else is a refusal with the
-/// reason. Elsewhere it refuses everything, as those checks have no meaning there.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct DirectReader;
+/// On Unix, from the account's real home down, one component at a time:
+///
+/// - the path must lie under the account's `home`; no directory on the way and not the file
+///   may be a symlink, or on another file system than the home;
+/// - the home, every directory below it on the path, and the file must be owned by the
+///   account's uid (its `uid` attribute) or by root and must not be writable by group or
+///   others;
+/// - the file is opened without following a link and without blocking (`O_NOFOLLOW`,
+///   `O_NONBLOCK`), and what is read is the opened file, checked again: a regular file, the
+///   one the walk saw, of at most [`MAX_FILE_BYTES`].
+///
+/// The walk and the read run on a thread the reader waits on for [`timeout`]
+/// (`READ_TIMEOUT` unless set), so a file system that never answers (a network or FUSE mount,
+/// a pipe put where the file should be) costs the caller that long and a refusal. The
+/// thread itself stays stuck until the file system answers; a reader lets at most
+/// [`max_waiting`](DirectReader::max_waiting) of them wait at once and refuses further reads
+/// until some finish.
+///
+/// There is a gap no portable call closes: a directory above the file may be swapped between
+/// the walk and the open by someone who owns it (only the account, or root) and who is not
+/// the person being signed in. The checks make the account's own writable paths the only
+/// ones that can be abused. Elsewhere than Unix it refuses everything, as those checks have
+/// no meaning there.
+///
+/// [`timeout`]: DirectReader::timeout
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    not(unix),
+    allow(dead_code, reason = "only the Unix reader waits on the file system")
+)]
+pub struct DirectReader {
+    timeout: Duration,
+    most_waiting: usize,
+    waiting: Arc<AtomicUsize>,
+}
+
+impl Default for DirectReader {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl DirectReader {
+    /// A reader with the default [`READ_TIMEOUT`] and [`MOST_WAITING`].
+    pub fn new() -> Self {
+        Self {
+            timeout: READ_TIMEOUT,
+            most_waiting: MOST_WAITING,
+            waiting: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+    /// How long one read waits on the file system before it is refused.
+    #[must_use]
+    pub fn timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
+        self
+    }
+
+    /// How many reads may be stuck on the file system at once before further ones are
+    /// refused without being tried.
+    #[must_use]
+    pub fn max_waiting(mut self, most: usize) -> Self {
+        self.most_waiting = most;
+        self
+    }
+}
 
 impl PinFileReader for DirectReader {
     fn read(&self, account: &Person, path: &Path) -> Result<FileRead, ReadFailure> {
-        direct(account, path)
+        direct(self, account, path)
     }
 }
 
 #[cfg(not(unix))]
-fn direct(_account: &Person, _path: &Path) -> Result<FileRead, ReadFailure> {
+fn direct(
+    _reader: &DirectReader,
+    _account: &Person,
+    _path: &Path,
+) -> Result<FileRead, ReadFailure> {
     Err(ReadFailure::new(
         "per-user pin files are not supported on this platform",
     ))
 }
 
 #[cfg(unix)]
-fn direct(account: &Person, path: &Path) -> Result<FileRead, ReadFailure> {
-    use std::io::Read as _;
-    use std::os::unix::fs::MetadataExt;
-
+fn direct(reader: &DirectReader, account: &Person, path: &Path) -> Result<FileRead, ReadFailure> {
     let uid: u32 = text_attribute(account, "uid")
         .and_then(|uid| uid.parse().ok())
         .ok_or_else(|| {
@@ -301,29 +369,48 @@ fn direct(account: &Person, path: &Path) -> Result<FileRead, ReadFailure> {
         })?;
     let home = text_attribute(account, "home")
         .ok_or_else(|| ReadFailure::new("the account has no home directory"))?;
-    let home = std::fs::canonicalize(&home)
-        .map_err(|_| ReadFailure::new("the account's home cannot be resolved"))?;
+    let path = path.to_path_buf();
+    bounded(reader, move || walk_and_read(uid, &home, &path))
+}
 
-    let link = match std::fs::symlink_metadata(path) {
-        Ok(link) => link,
-        Err(failure) if failure.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(FileRead::Missing);
-        }
-        Err(_) => return Err(ReadFailure::new("the pin file cannot be examined")),
-    };
-    if link.file_type().is_symlink() {
-        return Err(ReadFailure::new("the pin file is a symlink"));
-    }
-    if !link.is_file() {
-        return Err(ReadFailure::new("the pin file is not a regular file"));
-    }
-    let real = std::fs::canonicalize(path)
-        .map_err(|_| ReadFailure::new("the pin file's real path cannot be resolved"))?;
-    if !real.starts_with(&home) {
+/// Runs `work` on a thread and waits for it no longer than the reader's timeout.
+#[cfg(unix)]
+fn bounded<T: Send + 'static>(
+    reader: &DirectReader,
+    work: impl FnOnce() -> Result<T, ReadFailure> + Send + 'static,
+) -> Result<T, ReadFailure> {
+    use std::sync::atomic::Ordering;
+
+    if reader.waiting.fetch_add(1, Ordering::SeqCst) >= reader.most_waiting {
+        reader.waiting.fetch_sub(1, Ordering::SeqCst);
         return Err(ReadFailure::new(
-            "the pin file is outside the account's home",
+            "too many pin file reads are stuck on the file system",
         ));
     }
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let waiting = Arc::clone(&reader.waiting);
+    let started = std::thread::Builder::new()
+        .name("pin-file-read".to_owned())
+        .spawn(move || {
+            let result = work();
+            waiting.fetch_sub(1, Ordering::SeqCst);
+            // The caller may have given up; nobody is left to tell.
+            let _ = sender.send(result);
+        });
+    if started.is_err() {
+        reader.waiting.fetch_sub(1, Ordering::SeqCst);
+        return Err(ReadFailure::new("a pin file read could not be started"));
+    }
+    receiver
+        .recv_timeout(reader.timeout)
+        .unwrap_or_else(|_| Err(ReadFailure::new("reading the pin file timed out")))
+}
+
+/// The walk from the home down to the file, and the read of what was opened.
+#[cfg(unix)]
+fn walk_and_read(uid: u32, home: &str, path: &Path) -> Result<FileRead, ReadFailure> {
+    use std::io::Read as _;
+    use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 
     let trusted = |meta: &std::fs::Metadata, what: &str| -> Result<(), ReadFailure> {
         if meta.uid() != uid && meta.uid() != 0 {
@@ -339,27 +426,82 @@ fn direct(account: &Person, path: &Path) -> Result<FileRead, ReadFailure> {
         Ok(())
     };
 
-    // The opened file is checked, not the name that was: what is read is what was checked.
-    let file = std::fs::File::open(&real)
+    let real_home = std::fs::canonicalize(home)
+        .map_err(|_| ReadFailure::new("the account's home cannot be resolved"))?;
+    let home_meta = std::fs::metadata(&real_home)
+        .map_err(|_| ReadFailure::new("the account's home cannot be examined"))?;
+    let relative = path
+        .strip_prefix(home)
+        .map_err(|_| ReadFailure::new("the pin file is outside the account's home"))?;
+    trusted(&home_meta, "directories")?;
+
+    let names: Vec<_> = relative.components().collect();
+    if names.is_empty() {
+        return Err(ReadFailure::new("the pin file is the account's home"));
+    }
+    let mut current = real_home;
+    let mut seen = None;
+    for (index, part) in names.iter().enumerate() {
+        let Component::Normal(name) = part else {
+            return Err(ReadFailure::new("the pin file's path is not plain names"));
+        };
+        current.push(name);
+        let meta = match std::fs::symlink_metadata(&current) {
+            Ok(meta) => meta,
+            Err(failure) if failure.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(FileRead::Missing);
+            }
+            Err(_) => return Err(ReadFailure::new("the pin file cannot be examined")),
+        };
+        if meta.file_type().is_symlink() {
+            return Err(ReadFailure::new(
+                "the pin file or a directory above it is a symlink",
+            ));
+        }
+        if meta.dev() != home_meta.dev() {
+            return Err(ReadFailure::new(
+                "the pin file is on another file system than the home",
+            ));
+        }
+        if index + 1 == names.len() {
+            if !meta.is_file() {
+                return Err(ReadFailure::new("the pin file is not a regular file"));
+            }
+            seen = Some(meta);
+        } else {
+            if !meta.is_dir() {
+                return Err(ReadFailure::new(
+                    "a directory above the pin file is not one",
+                ));
+            }
+            trusted(&meta, "directories")?;
+        }
+    }
+    let seen = seen.ok_or_else(|| ReadFailure::new("the pin file cannot be examined"))?;
+
+    // Without following a link and without waiting on a writer, so a pipe put in place after
+    // the walk opens at once and is refused below.
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(&current)
         .map_err(|_| ReadFailure::new("the pin file cannot be opened"))?;
+    // What was opened, not the name that was walked.
     let meta = file
         .metadata()
         .map_err(|_| ReadFailure::new("the pin file cannot be examined"))?;
     if !meta.is_file() {
         return Err(ReadFailure::new("the pin file is not a regular file"));
     }
+    if meta.dev() != home_meta.dev() || (meta.dev(), meta.ino()) != (seen.dev(), seen.ino()) {
+        return Err(ReadFailure::new(
+            "the pin file changed while it was checked",
+        ));
+    }
     if meta.len() > MAX_FILE_BYTES {
         return Err(ReadFailure::new("the pin file is too large"));
     }
     trusted(&meta, "file")?;
-    for directory in real.ancestors().skip(1) {
-        let meta = std::fs::metadata(directory)
-            .map_err(|_| ReadFailure::new("a directory above the pin file cannot be examined"))?;
-        trusted(&meta, "directories")?;
-        if directory == home {
-            break;
-        }
-    }
 
     let mut text = String::new();
     file.take(MAX_FILE_BYTES + 1)
@@ -369,4 +511,44 @@ fn direct(account: &Person, path: &Path) -> Result<FileRead, ReadFailure> {
         return Err(ReadFailure::new("the pin file is too large"));
     }
     Ok(FileRead::Text(text))
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_read_that_never_answers_is_refused_after_the_timeout_and_counted_until_it_does() {
+        let reader = DirectReader::new()
+            .timeout(Duration::from_millis(50))
+            .max_waiting(1);
+        let (release, held) = std::sync::mpsc::channel::<()>();
+        let started = std::time::Instant::now();
+        let stuck = bounded(&reader, move || {
+            let _ = held.recv();
+            Ok(())
+        });
+        assert!(started.elapsed() < Duration::from_secs(5));
+        assert!(stuck.unwrap_err().reason().contains("timed out"));
+        // The stuck read still counts, so a second is refused without being tried.
+        let refused = bounded(&reader, || Ok(()));
+        assert!(refused.unwrap_err().reason().contains("stuck"));
+        // Once it finishes, reads go on.
+        release.send(()).unwrap();
+        for _ in 0..200 {
+            if bounded(&reader, || Ok(())).is_ok() {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        panic!("the stuck read never freed its place");
+    }
+
+    #[test]
+    fn a_read_that_answers_in_time_gives_its_result() {
+        let reader = DirectReader::new();
+        assert_eq!(bounded(&reader, || Ok(7)).unwrap(), 7);
+        let refusal = bounded::<()>(&reader, || Err(ReadFailure::new("no")));
+        assert_eq!(refusal.unwrap_err().reason(), "no");
+    }
 }

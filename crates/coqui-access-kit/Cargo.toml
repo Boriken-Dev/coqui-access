@@ -22,6 +22,10 @@ serde = { workspace = true, optional = true }
 sha2.workspace = true
 subtle.workspace = true
 
+# The flags a pin file is opened with: no link followed, no waiting on a writer.
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+
 [features]
 default = []
 # Records kept in one private file, in any serde format the caller supplies: paths, change

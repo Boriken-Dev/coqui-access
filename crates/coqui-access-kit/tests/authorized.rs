@@ -403,18 +403,49 @@ mod direct {
         std::fs::remove_dir_all(home.home.join(".k")).unwrap();
         symlink(outside.path().join("k"), home.home.join(".k")).unwrap();
         let reason = refused(home.check());
-        assert!(
-            reason.contains("outside") || reason.contains("home"),
-            "{reason}"
-        );
+        assert!(reason.contains("symlink"), "{reason}");
     }
 
     #[test]
-    fn a_symlinked_parent_that_stays_inside_the_home_is_still_read() {
+    fn a_symlinked_parent_is_refused_even_when_it_stays_inside_the_home() {
         let home = Home::new("alice", &pin());
         std::fs::rename(home.home.join(".k"), home.home.join("real_k")).unwrap();
         symlink(home.home.join("real_k"), home.home.join(".k")).unwrap();
-        assert_eq!(home.check(), PinCheck::Holds);
+        assert!(refused(home.check()).contains("symlink"));
+    }
+
+    #[test]
+    fn a_pipe_put_where_the_file_should_be_is_refused_at_once() {
+        let home = Home::new("alice", &pin());
+        std::fs::remove_file(home.home.join(".k/p")).unwrap();
+        let made = std::process::Command::new("mkfifo")
+            .arg(home.home.join(".k/p"))
+            .status()
+            .expect("mkfifo runs");
+        assert!(made.success());
+        home.mode(&home.home.join(".k/p"), 0o600);
+        // A blocking open of a pipe with no writer waits forever; the check must not.
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let asking = std::thread::spawn(move || {
+            let _ = sender.send(refused(home.check()));
+        });
+        let reason = receiver
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("the check came back");
+        asking.join().unwrap();
+        assert!(reason.contains("regular"), "{reason}");
+    }
+
+    #[test]
+    fn the_file_is_opened_without_following_a_link_swapped_in_after_the_walk() {
+        // The walk sees a regular file; a link replaces it before the open. Simulated by the
+        // reader being asked about a path whose last component is a link: it is refused as one.
+        let home = Home::new("alice", &pin());
+        std::fs::write(home.home.join("other"), pin()).unwrap();
+        home.mode(&home.home.join("other"), 0o600);
+        std::fs::remove_file(home.home.join(".k/p")).unwrap();
+        symlink(home.home.join("other"), home.home.join(".k/p")).unwrap();
+        assert!(refused(home.check()).contains("symlink"));
     }
 
     #[test]
