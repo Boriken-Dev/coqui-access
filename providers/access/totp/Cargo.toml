@@ -1,0 +1,23 @@
+[package]
+name = "coqui-access-totp"
+description = "One-time codes (TOTP, RFC 6238) as a second factor, with enrolment, recovery codes and reset through the Accounts kind"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+exclude = [".*", "*.local.*"]
+
+[dependencies]
+coqui-access.workspace = true
+coqui-access-kit.workspace = true
+coqui-builder.workspace = true
+data-encoding.workspace = true
+getrandom.workspace = true
+hmac.workspace = true
+percent-encoding.workspace = true
+sha1.workspace = true
+sha2.workspace = true
+subtle.workspace = true
