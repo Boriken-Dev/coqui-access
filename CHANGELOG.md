@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **File tables lock their file.** `FileTable` holds an exclusive operating-system lock on `<path>.lock` from the read
+  to the write of every `put`, `remove` and `update`, so processes sharing a file lose no update. `Table::update(&mut
+  Update<T>)` (default: load, decide, put) lets a change be computed from the records a table read for it, and
+  `Reloading::put_with` uses it: the providers that keep a file table (password, key, mtls, totp) now have atomic
+  read-modify-write across processes. `FileSource::max_bytes` (and `Source::max_bytes`, `max_bytes_unless_set`) bounds
+  a file; absent, the bound is the provider's default.
+- **`coqui-access-totp` delays an account under wrong codes.** `Lockout` (default: after five wrong codes in a row, 30 s,
+  doubling to an hour; `Lockout::OFF` lifts it) with `TotpRecord::failures` and `locked_until_unix` (old files read).
+  The plugin takes `lockout_after`, `lockout_seconds` and `lockout_longest_seconds`, and sizes its file bound from
+  `max_records` (2 KiB each, at least 1 MiB); it used to stop at about 1 200 accounts.
+- **`Factor::person`.** The `Person::id` a step named; the rules provider refuses a sign-in whose steps name different
+  people. The contract requires counting second-factor failures per person, the person to be looked up again at resume,
+  and per-address-and-account throttling before anyone is named. The shared flows gain the cases for each.
 - **`coqui-access-totp`**, the `coqui_access_totp` provider: one-time codes (RFC 6238, checked against its Appendix B
   values for SHA-1, SHA-256 and SHA-512) as a second factor, with replay protection, skew, ten recovery codes made at
   enrolment and presented as the method `recovery_code`, and enrolment, rotation and reset through the `Accounts` kind.

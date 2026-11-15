@@ -54,6 +54,10 @@ impl From<SignInRulesError> for ProviderError;     // GUATIAO_ERR_BAD_VALUE
 
 ## Evaluation
 
+- **Steps that name different people are refused first.** If the `person` of two `done` factors
+  differ, or one differs from the context's `person.id`, the answer is an empty offer and
+  `complete` false whatever the rules say. A factor with no `person` is not held against it.
+
 - A rule is **false** when its `purposes` (default `sign_in` and `resume`) lack the context's
   purpose, or `networks` do not contain its `address`, or `clients` or `services` are set and the
   context's is absent or not listed. Otherwise it is **unknown** while `subjects` is set and

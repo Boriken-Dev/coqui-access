@@ -26,9 +26,9 @@ The consumer builds a `SignInContext` and calls `decide`:
 | Field | Meaning |
 | --- | --- |
 | `purpose` | One of the purposes above. |
-| `done` | The steps already passed, each `{ method, provider }`, the provider being the id that accepted it. Empty before the first. |
+| `done` | The steps already passed, each `{ method, provider, person }`: the provider is the id that accepted it and the person the `Person::id` it named. Empty before the first. |
 | `address` | The client's IP address as the consumer determined it, text, no port. **`None` when it could not be determined, never `0.0.0.0` or another placeholder.** |
-| `client`, `service` | The kind of client, and the consumer's own word for what is signed in to (`portal`, `pages`). |
+| `client`, `service` | The kind of client, and the consumer's own word for what is signed in to (`portal`, `pages`). `client` comes from how the consumer serves the request (the endpoint or listener it arrived on), never from anything the client says about itself. |
 | `time_unix` | When it is asked. |
 | `person` | Who the passed steps named, once one did. |
 | `attributes` | Anything else the consumer says; a policy reads what it knows. |
@@ -62,12 +62,29 @@ every client look like it is inside it.
    kept on the server, short-lived, bound to the browser that began it, with a cap on tries
    of its own. No methods and not complete is refused exactly as a wrong password is (counted
    by the same throttle, the same answer, so nothing tells a wrong password from a policy
-   refusal).
+   refusal). **Wrong codes of a second factor are counted per `Person::id`**, whatever the
+   address and whichever pending sign-in they were given to, and the count outlives the pending
+   sign-in: a consumer that counts only per address, or only per pending sign-in, lets a guesser
+   start over. After a few, further second-factor attempts for that person are refused without
+   asking the authenticator. (`coqui_access_totp` also delays an account under wrong codes by
+   itself; that is a second line, not a replacement.)
 5. **The next factor must name the same person** (`Person::id`). A one-time code is presented
-   with `name` set to that id. A factor that names someone else fails.
+   with `name` set to that id. A factor that names someone else fails. The consumer records the
+   person in each `Factor`, and a policy refuses steps that name different people.
 6. **A session is decided again when it resumes**, with `purpose = resume` and the steps it was
    opened with, wherever the consumer re-checks it (a token renewal, a page load, a new channel
-   on an open session). A session that is no longer `complete` ends, and the page asks again.
+   on an open session). The person is looked up again at resume, so an account that has been
+   removed, disabled or moved to other groups is decided as it is now, not as it was at
+   sign-in. A session that is no longer `complete` ends, and the page asks again.
+
+### Throttling before anyone is named
+
+When `password` (or any method that names the person only when it succeeds) is offered before
+anyone is named, nothing yet says whose account a guess is against. The consumer therefore
+throttles those attempts **per client address and per account name together** (and per address
+alone), not per address only, so that one address cannot try every name and many addresses
+cannot all try one name without the account's own count rising. The policy cannot do this: it
+sees the context, not the attempts.
 
 The answer to the page is `{"methods": [...]}`, and `{"step": "next", "methods": [...]}` while a
 sign-in is pending.
@@ -136,11 +153,19 @@ an authenticator app, which works in a browser, a desktop app and a command line
   as `method = recovery_code`. The policy must name the method (`["password", "recovery_code"]`
   in a rule of its own, say), so a deployment can keep recovery inside its network. An
   administrator resets a person with `remove`, after which the person enrols again.
-- **Guessing.** A code is one in a million, and the provider does not throttle: the consumer counts
-  every wrong code in its throttle and caps the tries of a pending sign-in. A code is accepted
-  once; a step used, and earlier ones, are refused.
+- **Guessing.** A code is one in a million. The consumer counts every wrong code per person (see
+  the contract) and caps the tries of a pending sign-in. The provider adds its own delay per
+  account: after five wrong codes in a row (a recovery code counts too) the account takes no code
+  for 30 s, twice as long with each further wrong one, up to an hour; a right code ends it and an
+  administrator's `disabled` toggle resets it. The delay is a default a deployment can lift
+  (`Lockout::OFF`, `lockout_after = 0`), and it lets anyone who can name an account keep its owner
+  out for up to the longest delay at a time, which the consumer's per-address throttle limits. A
+  code is accepted once; a step used, and earlier ones, are refused, also by another process
+  sharing the file.
 - **Storage.** The secret is kept readable in the table (a time-based code needs it); a file
-  source writes it with the owner's permissions only.
+  source writes it with the owner's permissions only, and holds an operating-system lock on
+  `<path>.lock` around every read-modify-write, so processes sharing the file do not lose each
+  other's updates.
 
 ## The shared vectors
 

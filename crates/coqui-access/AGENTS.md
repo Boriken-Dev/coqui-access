@@ -82,7 +82,7 @@ fields. Unknown keys are skipped when reading.
 | `AccountPut` | `name`, `secret?`, `groups?`, `disabled?`, `expires_unix?`, `display_name?` (the label an enrolment shows; providers keeping none ignore it) |
 | `PutOutcome` | `secret?`, `codes?: Vec<String>` (one-time recovery codes, said once) |
 | `Waiting` | `shown`, `peer?`, `seen_unix?` |
-| `Factor` | `method`, `provider?` (the id that accepted the step) |
+| `Factor` | `method`, `provider?` (the id that accepted the step), `person?` (the `Person::id` it named; `Debug` hides it) |
 | `SignInContext` | `purpose`, `done: Vec<Factor>`, `address?` (the client's IP as text, no port; `None` when unknown), `client?`, `service?`, `time_unix?`, `person?`, `attributes` (empty is not written) |
 | `Offer` | `method`, `providers: Vec<String>` (empty is any provider taking the method; empty is not written) |
 | `SignInDecision` | `complete`, `methods: Vec<Offer>`, `rule?`, `limits` (empty is not written) |
