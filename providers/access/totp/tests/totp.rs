@@ -113,6 +113,7 @@ fn valid(name: &str) -> Verdict {
     Verdict::Valid(Lookup {
         by: "id".to_owned(),
         value: name.to_owned(),
+        claims: None,
     })
 }
 
