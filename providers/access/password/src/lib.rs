@@ -271,7 +271,8 @@ impl Authenticator for PasswordAccounts {
                 by: "id".to_owned(),
                 value: account.id,
             }),
-            _ => Verdict::Invalid,
+            Some(_) => Verdict::Invalid,
+            None => Verdict::Unknown,
         })
     }
 
@@ -494,12 +495,16 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
-        for name in ["a", "missing"] {
-            assert_eq!(
-                accounts.authenticate(attempt(name, "password")).unwrap(),
-                Verdict::Invalid
-            );
-        }
+        // A name it holds is refused (even disabled); one it does not hold is not its to
+        // refuse, so a later authenticator is asked.
+        assert_eq!(
+            accounts.authenticate(attempt("a", "password")).unwrap(),
+            Verdict::Invalid
+        );
+        assert_eq!(
+            accounts.authenticate(attempt("missing", "password")).unwrap(),
+            Verdict::Unknown
+        );
         assert_eq!(
             accounts.authenticate(Attempt::default()).unwrap(),
             Verdict::Unknown
@@ -514,6 +519,19 @@ mod tests {
             accounts
                 .authenticate(attempt("nobody", "anything"))
                 .unwrap(),
+            Verdict::Unknown
+        );
+    }
+
+    #[test]
+    fn a_name_it_holds_with_the_wrong_password_is_invalid() {
+        let (_, accounts) = with_accounts([AccountRecord::new(
+            "person-a",
+            "alice",
+            hash_of("right").unwrap(),
+        )]);
+        assert_eq!(
+            accounts.authenticate(attempt("alice", "wrong")).unwrap(),
             Verdict::Invalid
         );
     }

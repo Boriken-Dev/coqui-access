@@ -27,6 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Behaviour: `coqui_access_password` answers `Unknown` for a name it does not hold.** It used to answer `Invalid`,
+  which ends an ordered authenticator list, so a password provider listed before another (the operating system's, say)
+  locked every other name out. A name it holds with a wrong password, and a disabled account, are still `Invalid`; the
+  dummy hash still runs for an unknown name.
 - **Breaking: `PeerRecord::certificate` is `Option<PeerId>`, and `put` with a pin for an existing mtls account adds
   it.** A record pinned only by key has none. A pin given for a name that exists used to move the account to that
   certificate and now adds one more pin up to `max_pins`; `remove:<pin>` takes the old one away. Files written before
