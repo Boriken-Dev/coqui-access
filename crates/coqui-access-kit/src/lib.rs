@@ -27,7 +27,9 @@ pub mod cache;
 #[cfg_attr(docsrs, doc(cfg(feature = "file")))]
 pub mod file;
 pub mod hash;
+pub mod matcher;
 pub mod pick;
+pub mod pins;
 pub mod record;
 pub mod secret;
 pub mod table;
