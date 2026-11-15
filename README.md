@@ -15,9 +15,10 @@ wants; none of them knows the host. See the [documentation](https://boriken-dev.
 
 ## Features
 
-- **Four small kinds** — `coqui_authenticator` (credentials to a lookup), `coqui_directory`
+- **Five small kinds** — `coqui_authenticator` (credentials to a lookup), `coqui_directory`
   (lookup to a person), `coqui_authorizer` (person, action, resource to a decision) and the
-  optional `coqui_accounts` (list, put, remove, waiting).
+  optional `coqui_accounts` (list, put, remove, waiting), and `coqui_sign_in_policy` (which methods
+  a sign-in may use, and what it still needs).
 - **Code first** — every provider is built with a builder over a typed `Table` of records
   (memory by default; a file, a SQL database or an HTTP API are tables you supply). The
   libraries name no format: records derive guatiao's value traits, settings derive

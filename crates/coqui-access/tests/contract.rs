@@ -19,8 +19,8 @@ use coqui_access::guatiao::library::kind::kind_document;
 use coqui_access::guatiao::{FromValue, Map, ToValue, Value};
 use coqui_access::{
     AccountInfo, AccountPut, Accounts, Attempt, Authenticator, AuthorizationDecision,
-    AuthorizationRequest, Authorizer, Description, Directory, Lookup, Person, PutOutcome, Verdict,
-    Waiting,
+    AuthorizationRequest, Authorizer, Description, Directory, Factor, Lookup, Offer, Person,
+    PutOutcome, SignInContext, SignInDecision, SignInPolicy, Verdict, Waiting,
 };
 use guatiao_serde::Presentation;
 use guatiao_serde::text::json;
@@ -37,12 +37,14 @@ fn every_kind_has_the_table_built_providers_were_built_against() {
             table::<dyn Directory>(),
             table::<dyn Authorizer>(),
             table::<dyn Accounts>(),
+            table::<dyn SignInPolicy>(),
         ],
         [
             ("coqui_authenticator", false, PINNED_AUTHENTICATOR),
             ("coqui_directory", false, PINNED_DIRECTORY),
             ("coqui_authorizer", false, PINNED_AUTHORIZER),
             ("coqui_accounts", false, PINNED_ACCOUNTS),
+            ("coqui_sign_in_policy", false, PINNED_SIGN_IN_POLICY),
         ],
         "a required method of a kind changed, or a type one of them names was renamed: \
          every provider library built before this change is now refused at load. \
@@ -113,6 +115,114 @@ fn every_model_requires_the_keys_it_always_did_and_skips_ones_it_does_not_know()
         reads_past_what_it_does_not_know::<Waiting>(),
         keys(&["shown"])
     );
+    assert_eq!(
+        reads_past_what_it_does_not_know::<SignInContext>(),
+        keys(&["done", "purpose"])
+    );
+    assert_eq!(
+        reads_past_what_it_does_not_know::<SignInDecision>(),
+        keys(&["complete", "methods"])
+    );
+    assert_eq!(
+        reads_past_what_it_does_not_know::<Factor>(),
+        keys(&["method"])
+    );
+    assert_eq!(
+        reads_past_what_it_does_not_know::<Offer>(),
+        keys(&["method"])
+    );
+}
+
+/// A request written before `method` existed still reads, and says no method.
+#[test]
+fn an_attempt_written_before_method_existed_still_reads() {
+    let mut map = Map::new();
+    map.set("headers", Vec::<String>::new().to_value().unwrap());
+    map.set("name", "alice");
+    let read = Attempt::from_value(&Value::from(map)).expect("an old attempt reads");
+    assert_eq!(read.method, None);
+    assert_eq!(read.name.as_deref(), Some("alice"));
+}
+
+#[test]
+fn each_sign_in_model_round_trips_with_every_field_set() {
+    let context = SignInContext {
+        purpose: "sign_in".to_owned(),
+        done: vec![Factor {
+            method: "password".to_owned(),
+            provider: Some("coqui_access_password".to_owned()),
+        }],
+        address: Some("192.0.2.7".to_owned()),
+        client: Some("browser".to_owned()),
+        service: Some("portal".to_owned()),
+        time_unix: Some(1_700_000_000),
+        person: Some(Person {
+            id: "p1".to_owned(),
+            name: "alice".to_owned(),
+            ..Person::default()
+        }),
+        attributes: [("tab".to_owned(), "x".to_value().unwrap())].into(),
+    };
+    let decision = SignInDecision {
+        complete: false,
+        methods: vec![Offer {
+            method: "totp".to_owned(),
+            providers: vec!["coqui_access_totp".to_owned()],
+        }],
+        rule: Some("outside".to_owned()),
+        limits: [("session_seconds".to_owned(), 60u32.to_value().unwrap())].into(),
+    };
+    let value = context.to_value().unwrap();
+    assert_eq!(SignInContext::from_value(&value).unwrap(), context);
+    let value = decision.to_value().unwrap();
+    assert_eq!(SignInDecision::from_value(&value).unwrap(), decision);
+    let outcome = PutOutcome {
+        secret: Some("s".to_owned()),
+        codes: Some(vec!["a".to_owned(), "b".to_owned()]),
+    };
+    let value = outcome.to_value().unwrap();
+    assert_eq!(PutOutcome::from_value(&value).unwrap(), outcome);
+    let put = AccountPut {
+        name: "alice".to_owned(),
+        display_name: Some("Alice".to_owned()),
+        ..AccountPut::default()
+    };
+    let value = put.to_value().unwrap();
+    assert_eq!(AccountPut::from_value(&value).unwrap(), put);
+}
+
+/// A debug line is read in logs: it holds words and counts, never an identity or a code.
+#[test]
+fn a_debug_line_of_a_sign_in_model_holds_no_identity_address_or_code() {
+    let context = SignInContext {
+        purpose: "sign_in".to_owned(),
+        address: Some("192.0.2.77".to_owned()),
+        person: Some(Person {
+            id: "identity-7".to_owned(),
+            name: "alice-secret-name".to_owned(),
+            ..Person::default()
+        }),
+        ..SignInContext::default()
+    };
+    let shown = format!("{context:?}");
+    for leaked in ["192.0.2.77", "identity-7", "alice-secret-name"] {
+        assert!(!shown.contains(leaked), "{shown}");
+    }
+    assert!(shown.contains("sign_in"));
+    let outcome = PutOutcome {
+        secret: Some("hunter2-secret".to_owned()),
+        codes: Some(vec!["CODE-AAAA".to_owned()]),
+    };
+    let shown = format!("{outcome:?}");
+    assert!(
+        !shown.contains("hunter2") && !shown.contains("CODE-AAAA"),
+        "{shown}"
+    );
+    let attempt = Attempt {
+        method: Some("totp".to_owned()),
+        ..Attempt::default()
+    };
+    assert!(format!("{attempt:?}").contains("totp"));
 }
 
 #[test]
@@ -134,6 +244,7 @@ fn rendered() -> String {
         <dyn Directory as Kind>::describe,
         <dyn Authorizer as Kind>::describe,
         <dyn Accounts as Kind>::describe,
+        <dyn SignInPolicy as Kind>::describe,
     ]);
     let value = json::from_str(
         &document,
@@ -165,3 +276,4 @@ const PINNED_AUTHENTICATOR: u32 = 3_375_864_644;
 const PINNED_DIRECTORY: u32 = 2_407_154_769;
 const PINNED_AUTHORIZER: u32 = 2_693_612_885;
 const PINNED_ACCOUNTS: u32 = 610_858_279;
+const PINNED_SIGN_IN_POLICY: u32 = 3_582_266_584;

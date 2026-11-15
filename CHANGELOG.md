@@ -7,7 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **`coqui_sign_in_policy`**, a kind (`SignInPolicy::decide`) that decides which methods a sign-in may use and what
+  it still needs, with the models `SignInContext`, `SignInDecision`, `Factor` and `Offer`, and the word modules
+  `methods`, `purposes` and `clients`. `takes::OTP` names an authenticator that takes a one-time code.
+- `Attempt::method`, `PutOutcome::codes` and `AccountPut::display_name`, all optional: a provider serving two methods
+  tells them apart, an enrolment answers with recovery codes once, and an enrolment carries a label.
+
 ### Changed
+
+- **Breaking for struct literals:** `Attempt`, `PutOutcome` and `AccountPut` have a new field each, so code that builds
+  one without `..Default::default()` stops compiling. Reading and the kinds' hashes are unchanged.
 
 - **Breaking: a weakening is a non-default setting.** `coqui-access-acl`'s `Weakening` enum is `NonDefault` (variants
   unchanged) and `Options::weakened` and `ItemAcl::weakened` are `non_defaults`; `coqui-access-system`'s `Weakening` is

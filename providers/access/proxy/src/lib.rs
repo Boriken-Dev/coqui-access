@@ -260,6 +260,7 @@ mod tests {
             secure: Some(true),
             certificate: None,
             certificates: None,
+            method: None,
         }
     }
 

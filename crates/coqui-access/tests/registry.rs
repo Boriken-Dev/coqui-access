@@ -76,6 +76,7 @@ impl Accounts for Mock {
     fn put(&self, account: AccountPut) -> Result<PutOutcome, ProviderError> {
         Ok(PutOutcome {
             secret: account.secret.map(|_| "made".to_owned()),
+            ..PutOutcome::default()
         })
     }
 

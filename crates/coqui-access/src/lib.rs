@@ -11,6 +11,7 @@
 //! | [`Directory`] | `coqui_directory` | Who is the [`Person`] behind a [`Lookup`]? |
 //! | [`Authorizer`] | `coqui_authorizer` | May this [`Person`] do this action on this resource? |
 //! | [`Accounts`] | `coqui_accounts` | Optional: list, put and remove accounts, list unaccepted peers. |
+//! | [`SignInPolicy`] | `coqui_sign_in_policy` | Which methods may this sign-in use, and what does it still need? |
 //!
 //! Every method is synchronous; a host calls a provider from a blocking thread. Kind names
 //! and the hashes of their required methods are an ABI, pinned by this crate's contract
@@ -25,17 +26,19 @@ pub use guatiao;
 pub mod error;
 mod kind;
 mod limit;
+pub mod methods;
 mod model;
 mod subject;
 
 pub use kind::{
     Accounts, AccountsVtable, Authenticator, AuthenticatorVtable, Authorizer, AuthorizerVtable,
-    Directory, DirectoryVtable,
+    Directory, DirectoryVtable, SignInPolicy, SignInPolicyVtable,
 };
 pub use limit::Limit;
 pub use model::{
     AccountInfo, AccountPut, Attempt, AuthorizationDecision, AuthorizationRequest, Description,
-    Lookup, Person, PutOutcome, Verdict, Waiting, takes,
+    Factor, Lookup, Offer, Person, PutOutcome, SignInContext, SignInDecision, Verdict, Waiting,
+    clients, purposes, takes,
 };
 pub use subject::{Subject, SubjectError};
 

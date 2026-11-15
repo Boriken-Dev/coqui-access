@@ -11,6 +11,7 @@ with [Guatiao](https://github.com/Boriken-Dev/guatiao).
 | `coqui_directory` | Who is the person behind a lookup, and in which groups? |
 | `coqui_authorizer` | May this person do this action on this resource? |
 | `coqui_accounts` | Optional: list, put and remove accounts, and list unaccepted peers. |
+| `coqui_sign_in_policy` | Which methods may this sign-in use, and what does it still need? |
 
 A host asks authenticators in order until one knows the credentials, resolves the lookup
 through a directory, and asks an authorizer. Kind names and the hashes of their required

@@ -382,7 +382,13 @@ impl Accounts for Keys {
                 if let Some(expires) = account.expires_unix {
                     record.expires_unix = Some(expires);
                 }
-                Ok((record, PutOutcome { secret: made }))
+                Ok((
+                    record,
+                    PutOutcome {
+                        secret: made,
+                        ..PutOutcome::default()
+                    },
+                ))
             })
             .map_err(|reason| reason.writing("key table"))
     }
