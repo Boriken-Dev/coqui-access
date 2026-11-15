@@ -62,7 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `DirectReader` is no longer a unit struct (`DirectReader::new()`, `timeout`, `max_waiting`; it is `Clone`, not `Copy`):
   it walks from the home one component at a time and refuses a symlink anywhere on the path (one staying inside the
   home too), a component on another device, and a file that is not the regular file it saw; opens with
-  `O_NOFOLLOW | O_NONBLOCK`; and bounds the walk and read to 2 seconds, refusing further reads when 8 are stuck.
+  `O_NOFOLLOW | O_NONBLOCK`; and bounds the walk and read to 2 seconds, refusing a read while one for the same account is stuck, and any when 8 are.
   `coqui-access-kit` depends on `libc` on Unix for the open flags.
 - **Breaking: the matcher and the directory take no raw filter.** `Matcher::resolve` answers `NotFound` to a lookup
   `by: "filter"` handed to it, `Pick::check` (and the `account` of `coqui_access_mtls` and `coqui_access_proxy`,

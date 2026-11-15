@@ -150,8 +150,8 @@ pub struct AuthorizedFile;   // AuthorizedFile::new(path_template) -> Result<Sel
   O_NONBLOCK` (the `libc` constants, Unix only), and checks the opened file again: a regular file, the
   same device and inode the walk saw, at most `MAX_FILE_BYTES`. The whole walk and read runs on a thread
   the reader waits for at most its `timeout` (a file system that never answers is a refusal "timed out");
-  the thread stays stuck until the file system answers, and at most `max_waiting` of them wait per
-  reader before further reads are refused unseen. A directory above the file swapped by its owner
+  the thread stays stuck until the file system answers; one read waits per account (a hung home stops that account only), at most `max_waiting` (8) in all per
+  reader, before further reads are refused unseen; the place is given back by a drop guard, even on a panic. A directory above the file swapped by its owner
   between the walk and the open is the gap no portable call closes.
 - `MtlsAccounts` implements `PinSource` over its own records (`coqui-access-mtls`).
 

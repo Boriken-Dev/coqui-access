@@ -17,7 +17,6 @@
 use std::fmt;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::AtomicUsize;
 use std::time::Duration;
 
 use coqui_access::Person;
@@ -270,7 +269,8 @@ fn scan(text: &str, pins: &PinSet) -> PinCheck {
 
 /// The longest a [`DirectReader`] waits for the file system by default.
 pub const READ_TIMEOUT: Duration = Duration::from_secs(2);
-/// The most reads one [`DirectReader`] lets wait on the file system at once by default.
+/// The most reads one [`DirectReader`] lets wait on the file system at once by default, over
+/// every account; one account never has more than one waiting.
 pub const MOST_WAITING: usize = 8;
 
 /// Opens the file itself and makes the checks sshd makes of `authorized_keys`.
@@ -289,9 +289,10 @@ pub const MOST_WAITING: usize = 8;
 /// The walk and the read run on a thread the reader waits on for [`timeout`]
 /// (`READ_TIMEOUT` unless set), so a file system that never answers (a network or FUSE mount,
 /// a pipe put where the file should be) costs the caller that long and a refusal. The
-/// thread itself stays stuck until the file system answers; a reader lets at most
-/// [`max_waiting`](DirectReader::max_waiting) of them wait at once and refuses further reads
-/// until some finish.
+/// thread itself stays stuck until the file system answers. A reader lets one read wait per
+/// account (a hung mount in one person's home stops that person, not the others) and at most
+/// [`max_waiting`](DirectReader::max_waiting) in all, and refuses further reads until some
+/// finish.
 ///
 /// There is a gap no portable call closes: a directory above the file may be swapped between
 /// the walk and the open by someone who owns it (only the account, or root) and who is not
@@ -308,7 +309,38 @@ pub const MOST_WAITING: usize = 8;
 pub struct DirectReader {
     timeout: Duration,
     most_waiting: usize,
-    waiting: Arc<AtomicUsize>,
+    waiting: Arc<Waiting>,
+}
+
+/// The accounts that have a read stuck on the file system.
+#[derive(Debug, Default)]
+#[cfg_attr(
+    not(unix),
+    allow(dead_code, reason = "only the Unix reader waits on the file system")
+)]
+struct Waiting {
+    uids: std::sync::Mutex<std::collections::BTreeSet<u32>>,
+}
+
+/// A place among the waiting reads, given back when it is dropped, whether the read
+/// finished, was never started or panicked.
+#[cfg_attr(
+    not(unix),
+    allow(dead_code, reason = "only the Unix reader waits on the file system")
+)]
+struct Place {
+    waiting: Arc<Waiting>,
+    uid: u32,
+}
+
+impl Drop for Place {
+    fn drop(&mut self) {
+        self.waiting
+            .uids
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&self.uid);
+    }
 }
 
 impl Default for DirectReader {
@@ -323,7 +355,7 @@ impl DirectReader {
         Self {
             timeout: READ_TIMEOUT,
             most_waiting: MOST_WAITING,
-            waiting: Arc::new(AtomicUsize::new(0)),
+            waiting: Arc::new(Waiting::default()),
         }
     }
 
@@ -370,35 +402,50 @@ fn direct(reader: &DirectReader, account: &Person, path: &Path) -> Result<FileRe
     let home = text_attribute(account, "home")
         .ok_or_else(|| ReadFailure::new("the account has no home directory"))?;
     let path = path.to_path_buf();
-    bounded(reader, move || walk_and_read(uid, &home, &path))
+    bounded(reader, uid, move || walk_and_read(uid, &home, &path))
 }
 
-/// Runs `work` on a thread and waits for it no longer than the reader's timeout.
+/// Runs `work` on a thread and waits for it no longer than the reader's timeout. Only one read
+/// per `uid` waits at a time, and no more than the reader's `max_waiting` in all.
 #[cfg(unix)]
 fn bounded<T: Send + 'static>(
     reader: &DirectReader,
+    uid: u32,
     work: impl FnOnce() -> Result<T, ReadFailure> + Send + 'static,
 ) -> Result<T, ReadFailure> {
-    use std::sync::atomic::Ordering;
-
-    if reader.waiting.fetch_add(1, Ordering::SeqCst) >= reader.most_waiting {
-        reader.waiting.fetch_sub(1, Ordering::SeqCst);
-        return Err(ReadFailure::new(
-            "too many pin file reads are stuck on the file system",
-        ));
-    }
+    let place = {
+        let mut uids = reader
+            .waiting
+            .uids
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if uids.contains(&uid) {
+            return Err(ReadFailure::new(
+                "a pin file read for this account is stuck on the file system",
+            ));
+        }
+        if uids.len() >= reader.most_waiting {
+            return Err(ReadFailure::new(
+                "too many pin file reads are stuck on the file system",
+            ));
+        }
+        uids.insert(uid);
+        Place {
+            waiting: Arc::clone(&reader.waiting),
+            uid,
+        }
+    };
     let (sender, receiver) = std::sync::mpsc::channel();
-    let waiting = Arc::clone(&reader.waiting);
     let started = std::thread::Builder::new()
         .name("pin-file-read".to_owned())
         .spawn(move || {
+            // Dropped when the thread ends, by finishing or by unwinding.
+            let _place = place;
             let result = work();
-            waiting.fetch_sub(1, Ordering::SeqCst);
             // The caller may have given up; nobody is left to tell.
             let _ = sender.send(result);
         });
     if started.is_err() {
-        reader.waiting.fetch_sub(1, Ordering::SeqCst);
         return Err(ReadFailure::new("a pin file read could not be started"));
     }
     receiver
@@ -517,38 +564,73 @@ fn walk_and_read(uid: u32, home: &str, path: &Path) -> Result<FileRead, ReadFail
 mod tests {
     use super::*;
 
-    #[test]
-    fn a_read_that_never_answers_is_refused_after_the_timeout_and_counted_until_it_does() {
-        let reader = DirectReader::new()
-            .timeout(Duration::from_millis(50))
-            .max_waiting(1);
+    fn stuck(reader: &DirectReader, uid: u32) -> std::sync::mpsc::Sender<()> {
         let (release, held) = std::sync::mpsc::channel::<()>();
-        let started = std::time::Instant::now();
-        let stuck = bounded(&reader, move || {
+        let result = bounded(reader, uid, move || {
             let _ = held.recv();
             Ok(())
         });
-        assert!(started.elapsed() < Duration::from_secs(5));
-        assert!(stuck.unwrap_err().reason().contains("timed out"));
-        // The stuck read still counts, so a second is refused without being tried.
-        let refused = bounded(&reader, || Ok(()));
-        assert!(refused.unwrap_err().reason().contains("stuck"));
-        // Once it finishes, reads go on.
-        release.send(()).unwrap();
+        assert!(result.unwrap_err().reason().contains("timed out"));
+        release
+    }
+
+    fn quick() -> DirectReader {
+        DirectReader::new().timeout(Duration::from_millis(50))
+    }
+
+    fn eventually_reads(reader: &DirectReader, uid: u32) {
         for _ in 0..200 {
-            if bounded(&reader, || Ok(())).is_ok() {
+            if bounded(reader, uid, || Ok(())).is_ok() {
                 return;
             }
             std::thread::sleep(Duration::from_millis(10));
         }
-        panic!("the stuck read never freed its place");
+        panic!("the place was never given back");
+    }
+
+    #[test]
+    fn a_read_that_never_answers_is_refused_after_the_timeout_and_holds_its_account() {
+        let reader = quick();
+        let started = std::time::Instant::now();
+        let release = stuck(&reader, 1000);
+        assert!(started.elapsed() < Duration::from_secs(5));
+        // The stuck read still counts, so a second for that account is refused untried.
+        let refused = bounded(&reader, 1000, || Ok(()));
+        assert!(refused.unwrap_err().reason().contains("stuck"));
+        // Once it finishes, reads go on.
+        release.send(()).unwrap();
+        eventually_reads(&reader, 1000);
+    }
+
+    #[test]
+    fn one_accounts_stuck_read_does_not_stop_another_account() {
+        let reader = quick();
+        let _release = stuck(&reader, 1000);
+        assert_eq!(bounded(&reader, 1001, || Ok(7)).unwrap(), 7);
+    }
+
+    #[test]
+    fn the_overall_cap_is_a_backstop_over_many_accounts() {
+        let reader = quick().max_waiting(2);
+        let _first = stuck(&reader, 1);
+        let _second = stuck(&reader, 2);
+        let refused = bounded(&reader, 3, || Ok(()));
+        assert!(refused.unwrap_err().reason().contains("too many"));
+    }
+
+    #[test]
+    fn a_read_that_panics_gives_its_place_back() {
+        let reader = quick();
+        let result = bounded::<()>(&reader, 1000, || panic!("the worker fails"));
+        assert!(result.is_err());
+        eventually_reads(&reader, 1000);
     }
 
     #[test]
     fn a_read_that_answers_in_time_gives_its_result() {
         let reader = DirectReader::new();
-        assert_eq!(bounded(&reader, || Ok(7)).unwrap(), 7);
-        let refusal = bounded::<()>(&reader, || Err(ReadFailure::new("no")));
+        assert_eq!(bounded(&reader, 1, || Ok(7)).unwrap(), 7);
+        let refusal = bounded::<()>(&reader, 1, || Err(ReadFailure::new("no")));
         assert_eq!(refusal.unwrap_err().reason(), "no");
     }
 }

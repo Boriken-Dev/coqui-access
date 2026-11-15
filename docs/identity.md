@@ -163,8 +163,8 @@ access.
   root**, and are **not writable by group or others**;
 - the whole walk and read is bounded in time (2 s by default, `DirectReader::timeout`): a file
   system that never answers (a network or FUSE mount) costs the caller that long and a refusal. The
-  stuck thread stays stuck until the file system answers, so a reader lets at most 8 wait at once
-  (`DirectReader::max_waiting`) and refuses further reads until some finish.
+  stuck thread stays stuck until the file system answers, so a reader lets one read wait per account
+  (a hung home stops that account, not the others) and at most 8 in all (`DirectReader::max_waiting`), refusing further reads until some finish.
 
 A file that fails any check counts as no pins, and the reason is reported. A file that is not there is
 simply no pins.
