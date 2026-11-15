@@ -58,6 +58,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Breaking: `coqui_access_proxy::default_account()` is empty.** A forwarded certificate is then answered
+  `by: "claims"` for the consumer's matcher, as `coqui_access_mtls` does; it used to be `subject.cn` by `name`. A
+  subject header, which has no certificate, still names its common name, by `name`. Set `account` picks to keep the old
+  answer. The proxy documentation now warns that the front proxy must verify the client certificate (nginx
+  `optional_no_ca` and HAProxy `ca-ignore-err` forward certificates anyone can mint) unless the consumer pins.
+- `coqui-access-claims` takes `x509-parser` from the workspace dependency.
 - **Breaking: the per-user pin file reader walks the path without following links and cannot be hung.**
   `DirectReader` is no longer a unit struct (`DirectReader::new()`, `timeout`, `max_waiting`; it is `Clone`, not `Copy`):
   it walks from the home one component at a time and refuses a symlink anywhere on the path (one staying inside the

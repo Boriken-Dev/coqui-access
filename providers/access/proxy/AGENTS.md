@@ -17,7 +17,7 @@ pub struct ProxyWordConfig {               // coqui_builder::Describe; the provi
     pub certificate_header: Option<String>,          // the client certificate the proxy verified
     pub certificate_encoding: CertificateEncoding,   // default PemUrl
     pub subject_header: Option<String>,  // client-certificate subject header
-    pub account: Vec<Pick>,              // default default_account(): subject.cn by name
+    pub account: Vec<Pick>,              // default default_account(): none, so a forwarded certificate answers by claims
     pub max_certificate_bytes: Limit,    // default 16 384; a count or `none`
 }                                        // non_exhaustive; Default = an empty configuration
 pub enum CertificateEncoding { PemUrl /* default */, DerBase64, Xfcc }   // coqui_builder::Leaf: "pem-url" | "der-base64" | "xfcc"
@@ -51,6 +51,18 @@ pub fn field_of(subject: &str, field: &str) -> Option<String>;
   claims })`, for the consumer's matcher to tie to a directory account. The certificate is what the proxy
   vouches for (it checked the key; this provider checks no CA). An unreadable certificate is `Invalid`. A
   subject header carries no claims.
+- **The front proxy must verify the client certificate.** This provider trusts what a trusted
+  proxy forwards and checks no CA and no key proof. A proxy set to accept certificates it did not
+  verify (nginx `ssl_verify_client optional_no_ca`, HAProxy `verify optional` with
+  `ca-ignore-err all` or `crt-ignore-err all`, Envoy without a validation context) forwards a
+  certificate anyone can mint, and a name read from it names whoever the sender chose. Configure
+  the proxy to verify against the CA and to refuse or drop the header otherwise, or have the
+  consumer pin the certificate afterwards (`coqui-access-mtls` pins, or an `AuthorizedFile` pin
+  source asked after the match), so that the forwarded certificate alone is never enough.
+- The default `account` is empty: a forwarded certificate answers `by: "claims"` and the consumer's matcher
+  (default: the UPN, then the email address) ties it to an account. A subject header, which has no
+  certificate to make claims of, then names its common name, by `name`. Set `account` picks to name the
+  account in the provider as before.
 - A pick whose `by` is `filter` or `claims` is refused when the provider is built (`ProxyWord::new`
   returns `Err`): a pick names a directory attribute; only a matcher rule makes a filter.
 - A subject header becomes the fields `subject` (the whole text) and `subject.<attribute>` in

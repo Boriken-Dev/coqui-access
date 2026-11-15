@@ -21,10 +21,11 @@ pub use certificate::CertificateEncoding;
 /// The most bytes a certificate header may hold unless configured otherwise.
 pub const DEFAULT_MAX_CERTIFICATE_BYTES: Limit = Limit::at(16_384);
 
-/// The account a certificate or subject names by default: its subject's common name, by
-/// `name`.
+/// The account picks by default: none. A forwarded certificate is then answered as its claims
+/// (`by: "claims"`), for the consumer's matcher to tie to a directory account; a subject
+/// header, which carries no certificate, still names its common name, by `name`.
 pub fn default_account() -> Vec<Pick> {
-    vec![Pick::new("subject.cn", "name")]
+    Vec::new()
 }
 
 /// Reverse-proxy trust and identity-header configuration.
@@ -45,7 +46,8 @@ pub struct ProxyWordConfig {
     /// Header holding a client certificate's subject, such as `CN=Doe,O=Ops`.
     pub subject_header: Option<String>,
     /// How a certificate or subject names the account: picks tried in order over its fields
-    /// (`subject.cn`, `san.email`, `san.upn`, ...). Default its subject's CN, by `name`.
+    /// (`subject.cn`, `san.email`, `san.upn`, ...). Default none: a forwarded certificate is
+    /// answered as its claims, and a subject header names its CN, by `name`.
     #[map(default = default_account())]
     pub account: Vec<Pick>,
     /// The most bytes `certificate_header` may hold; `none` for no bound.
@@ -232,7 +234,13 @@ impl ProxyWord {
         fields: &std::collections::BTreeMap<String, Vec<String>>,
         claims: Option<coqui_access::Claims>,
     ) -> Option<Verdict> {
-        match pick(fields, &self.account) {
+        let subject_only = [Pick::new("subject.cn", "name")];
+        let picks = if self.account.is_empty() {
+            &subject_only[..]
+        } else {
+            &self.account
+        };
+        match pick(fields, picks) {
             Picked::Found { by, value } => Some(Verdict::Valid(Lookup { by, value, claims })),
             Picked::Ambiguous => Some(Verdict::Invalid),
             _ => None,

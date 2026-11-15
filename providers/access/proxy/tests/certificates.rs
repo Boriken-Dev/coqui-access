@@ -96,22 +96,26 @@ fn every_proxy_encoding_names_the_same_account() {
 }
 
 #[test]
-fn the_default_account_is_the_subject_cn_and_an_ip_in_a_dns_name_counts() {
+fn the_default_account_answers_the_claims_and_an_ip_in_a_dns_name_counts() {
     let one = client(vec![SanType::DnsName("10.0.0.9".try_into().unwrap())]);
+    assert!(coqui_access_proxy::default_account().is_empty());
     let verdict = proxy(
         CertificateEncoding::PemUrl,
         coqui_access_proxy::default_account(),
     )
     .authenticate(from_proxy(&[("x-client-cert", url(&one.pem))]))
     .unwrap();
+    let claims = claims_of(&one.der);
     assert_eq!(
         verdict,
         Verdict::Valid(Lookup {
-            by: "name".to_owned(),
-            value: "Client One".to_owned(),
-            claims: Some(claims_of(&one.der))
+            by: "claims".to_owned(),
+            value: claims.get("fingerprint")[0].clone(),
+            claims: Some(claims),
         })
     );
+    // A configuration that says nothing of the account reads as the same default.
+    assert!(ProxyWordConfig::default().account.is_empty());
     let by_ip = proxy(
         CertificateEncoding::PemUrl,
         vec![Pick::new("san.ip", "address")],
@@ -271,4 +275,21 @@ fn a_pick_that_names_no_directory_attribute_is_refused_when_the_provider_is_buil
         config.account = vec![Pick::new("subject.cn", by)];
         assert!(ProxyWord::new(config).is_err(), "{by}");
     }
+}
+
+#[test]
+fn a_subject_header_with_the_default_account_names_its_common_name() {
+    let mut config = ProxyWordConfig::default();
+    config.trusted = vec!["10.0.0.0/24".to_owned()];
+    config.subject_header = Some("x-client-subject".to_owned());
+    let proxy = ProxyWord::new(config).unwrap();
+    let headers = [("x-client-subject", "CN=Doe,O=Ops".to_owned())];
+    assert_eq!(
+        proxy.authenticate(from_proxy(&headers)).unwrap(),
+        Verdict::Valid(Lookup {
+            by: "name".to_owned(),
+            value: "Doe".to_owned(),
+            ..Lookup::default()
+        })
+    );
 }

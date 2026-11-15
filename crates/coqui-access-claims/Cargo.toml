@@ -17,7 +17,7 @@ coqui-peer-tls = { workspace = true, features = ["fields"] }
 data-encoding.workspace = true
 sha2.workspace = true
 # The public key of a certificate.
-x509-parser = { version = "0.18", default-features = false }
+x509-parser.workspace = true
 
 [dev-dependencies]
 rcgen.workspace = true
