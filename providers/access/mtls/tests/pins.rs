@@ -349,3 +349,49 @@ fn a_waiting_fingerprint_is_accepted_as_one_more_pin_and_waits_no_more() {
         valid(&id_of(&accounts, "alice"))
     );
 }
+
+#[test]
+fn the_records_are_a_pin_source_for_the_account_a_rule_named() {
+    use coqui_access::Person;
+    use coqui_access_kit::pins::{PinCheck, PinSet, PinSource};
+
+    let key = KeyPair::generate().unwrap();
+    let der = certificate(&key, "a");
+    let other = certificate(&KeyPair::generate().unwrap(), "b");
+    let accounts = MtlsAccounts::builder().build().unwrap();
+    accounts.put(put("alice", &key_pin_text(&der))).unwrap();
+    accounts
+        .put(put("bob", &fingerprint_of(&other).canonical()))
+        .unwrap();
+    let person = |name: &str| Person {
+        name: name.to_owned(),
+        ..Person::default()
+    };
+    let mut renewed = PinSet::default();
+    renewed.fingerprint = Some(fingerprint_of(&certificate(&key, "renewed")).canonical());
+    renewed.key = Some(Pin::key_of_certificate(&der).unwrap().value);
+    assert_eq!(
+        accounts.check(&person("alice"), &renewed).unwrap(),
+        PinCheck::Holds
+    );
+    // The same pins held by somebody else's record do not count for bob.
+    assert_eq!(
+        accounts.check(&person("bob"), &renewed).unwrap(),
+        PinCheck::Absent
+    );
+    assert_eq!(
+        accounts.check(&person("nobody"), &renewed).unwrap(),
+        PinCheck::Absent
+    );
+    accounts
+        .put(AccountPut {
+            name: "alice".to_owned(),
+            disabled: Some(true),
+            ..AccountPut::default()
+        })
+        .unwrap();
+    assert_eq!(
+        accounts.check(&person("alice"), &renewed).unwrap(),
+        PinCheck::Absent
+    );
+}

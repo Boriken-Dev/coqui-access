@@ -5,8 +5,20 @@
 //! *fingerprint*) or of its public key (a *key*). The library never decides where pins live;
 //! a consumer gives the [`Matcher`](crate::matcher::Matcher) a [`PinSource`] by name.
 
+use std::borrow::Cow;
+use std::fmt;
+use std::sync::Arc;
+
 use coqui_access::guatiao::library::ProviderError;
+use coqui_access::guatiao::{FromValue, Schema, ToValue};
 use coqui_access::{Claims, Person};
+
+use crate::table::{Keyed, Reloading, SourceError, Table};
+
+pub mod authorized;
+pub use authorized::{
+    AuthorizedFile, DirectReader, FileRead, PinFileReader, ReadFailure, TemplateError,
+};
 
 /// The pins of the certificate a person presented: what a [`PinSource`] looks for. Each is
 /// `sha256:<hex>`, lowercase.
@@ -63,4 +75,114 @@ pub enum PinCheck {
 pub trait PinSource: Send + Sync {
     /// Whether `person` holds one of `pins`.
     fn check(&self, person: &Person, pins: &PinSet) -> Result<PinCheck, ProviderError>;
+}
+
+/// Whether `text` is a pin, and if so whether it is one of `wanted`.
+///
+/// A pin is `sha256:<64 hex>` (a fingerprint) or `spki-sha256:<64 hex>` (a public key), in
+/// any case. `None` is text that is not a pin.
+pub fn pin_matches(text: &str, wanted: &PinSet) -> Option<bool> {
+    let valid = |hex: &str| hex.len() == 64 && hex.bytes().all(|byte| byte.is_ascii_hexdigit());
+    if let Some(hex) = text.strip_prefix("sha256:") {
+        return valid(hex).then(|| {
+            wanted.fingerprint.as_deref() == Some(&format!("sha256:{}", hex.to_ascii_lowercase()))
+        });
+    }
+    let hex = text.strip_prefix("spki-sha256:")?;
+    valid(hex)
+        .then(|| wanted.key.as_deref() == Some(&format!("sha256:{}", hex.to_ascii_lowercase())))
+}
+
+/// One pin an account holds, as a [`Table`] keeps it: the global source of pins.
+#[derive(Clone, PartialEq, Eq, FromValue, Schema, ToValue)]
+#[map(crate = ::coqui_access::guatiao, deny_unknown_fields)]
+#[non_exhaustive]
+pub struct AccountPin {
+    /// The account's name, as its directory gives it ([`Person::name`]).
+    pub name: String,
+    /// The pin, as a line of a pin file has it: `sha256:<hex>` or `spki-sha256:<hex>`.
+    pub pin: String,
+}
+
+impl AccountPin {
+    /// `name` holds `pin`.
+    pub fn new(name: impl Into<String>, pin: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            pin: pin.into(),
+        }
+    }
+}
+
+impl Keyed for AccountPin {
+    fn key(&self) -> Cow<'_, str> {
+        Cow::Owned(format!(
+            "{}
+{}",
+            self.name,
+            self.pin.to_ascii_lowercase()
+        ))
+    }
+}
+
+impl fmt::Debug for AccountPin {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("AccountPin")
+            .field("name", &"[REDACTED]")
+            .field("pin", &"[REDACTED]")
+            .finish()
+    }
+}
+
+/// Pins kept in any [`Table`] of [`AccountPin`]s: the global source, for a consumer whose
+/// pins live in one place.
+pub struct TablePins {
+    pins: Reloading<AccountPin>,
+}
+
+impl fmt::Debug for TablePins {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.debug_struct("TablePins").finish_non_exhaustive()
+    }
+}
+
+impl TablePins {
+    /// A source over `table`.
+    ///
+    /// # Errors
+    ///
+    /// When the table cannot be read, or holds a line that is not a pin.
+    pub fn new(table: Arc<dyn Table<AccountPin>>) -> Result<Self, SourceError> {
+        let wanted = PinSet::default();
+        Ok(Self {
+            pins: Reloading::new(table, move |records| {
+                if records
+                    .iter()
+                    .any(|record| pin_matches(&record.pin, &wanted).is_none())
+                {
+                    return Err(SourceError::invalid("a pin in the table is not a pin"));
+                }
+                Ok(())
+            })?,
+        })
+    }
+}
+
+impl PinSource for TablePins {
+    fn check(&self, person: &Person, pins: &PinSet) -> Result<PinCheck, ProviderError> {
+        let held = self
+            .pins
+            .read(|records| {
+                records.iter().any(|record| {
+                    record.name == person.name && pin_matches(&record.pin, pins) == Some(true)
+                })
+            })
+            .map_err(|reason| reason.reading("pin table"))?;
+        Ok(if held {
+            PinCheck::Holds
+        } else {
+            PinCheck::Absent
+        })
+    }
 }
