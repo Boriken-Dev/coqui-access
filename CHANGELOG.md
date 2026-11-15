@@ -45,6 +45,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Breaking: the matcher and the directory take no raw filter.** `Matcher::resolve` answers `NotFound` to a lookup
+  `by: "filter"` handed to it, `Pick::check` (and the `account` of `coqui_access_mtls` and `coqui_access_proxy`,
+  which refuse it when built) rejects `filter` and `claims` as a pick's `by`, and `coqui_access_ldap` answers
+  `by: "filter"` only with the new setting `allow_filter_lookups` (default false; a lookup otherwise is
+  `GUATIAO_ERR_UNSUPPORTED`).
+- **Breaking: `object_filter` of `coqui_access_ldap` defaults to `(&(objectCategory=person)(objectClass=user))`**, people and
+  not Active Directory's computer accounts, and must carry every restriction an account needs to sign in.
+- **Breaking: a matcher rule using `local` names its realm or requires pins.** `MatchRule` gains `domain`; a rule with
+  `local` and neither is refused when the matcher is built. The default rules are the UPN and the email address, not
+  the common name.
+- `coqui-access-claims` holds the certificate claims `coqui_access_mtls` built alone (`of_certificate`,
+  `public_key_hash`). `coqui_access_proxy` answers a forwarded certificate with them: attached to the lookup an
+  `account` pick makes, and, when `account` is empty, as `Lookup { by: "claims", .. }`.
 - **Behaviour: `coqui_access_password` answers `Unknown` for a name it does not hold.** It used to answer `Invalid`,
   which ends an ordered authenticator list, so a password provider listed before another (the operating system's, say)
   locked every other name out. A name it holds with a wrong password, and a disabled account, are still `Invalid`; the

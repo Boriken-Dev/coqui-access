@@ -34,6 +34,7 @@ rendered text is in the directory:
 [[rule]]
 by = "name"                     # name, email, id, or filter
 template = "{san.upn|local}"    # claims and filters
+domain = "corp.example"         # the realm `local` strips; or `pins = "..."`
 ```
 
 - `{claim}` is a claim's value; `{claim|lower|local}` passes it through filters: `lower`, `upper`,
@@ -42,8 +43,13 @@ template = "{san.upn|local}"    # claims and filters
   refused when the matcher is built.
 - A claim that is missing, or empty, makes the rule not apply. A claim with several values renders
   one candidate per value (at most 16 in all).
-- **The default rules** are the UPN as a name (`{san.upn}`), the email address as an email
-  (`{san.email}`), and the subject's common name as a name (`{subject.cn}`).
+- **The default rules** are the UPN as a name (`{san.upn}`) and the email address as an email
+  (`{san.email}`). The subject's common name is not among them: it is whatever the issuer let the
+  holder type, so a deployment that trusts it writes a rule for it.
+- **Stripping a realm.** `local` throws away what ties a name to its realm (`alice@evil.example`
+  and `alice@corp.example` both become `alice`), so a rule that uses it must say which realm
+  (`domain = "corp.example"`, and only values ending `@corp.example` count) or require `pins`; the
+  matcher refuses to be built otherwise.
 
 ### An LDAP filter
 
@@ -65,7 +71,16 @@ other control character, and every byte of a non-ASCII character, become `\` and
 certificate can never end the assertion, start another, or become a wildcard. The text of the
 template itself is the filter's structure and is written as it stands. The filter must be one
 parenthesised group; the directory ANDs it with its own account filter (`object_filter`, by default
-`(objectClass=user)`), so it can only narrow what the provider is configured to read.
+`(&(objectCategory=person)(objectClass=user))`, people and not computer accounts), so it can only
+narrow what the provider is configured to read. **`object_filter` must carry every restriction an
+account must meet to sign in** (an organisational unit, a group): the provider's `user_filter` is built
+around a name and is not applied to a filter lookup.
+
+A lookup `by: "filter"` is answered only by a directory configured for it (`allow_filter_lookups =
+true` on `coqui_access_ldap`, off by default), and only the matcher's rules build one: the matcher
+refuses to pass a `filter` lookup through, and an account pick (`Pick`) cannot be looked up by `filter`
+or `claims`. Anything else that could make a filter lookup with its own text could search the
+directory.
 
 ### Which account wins
 
@@ -89,7 +104,7 @@ key keeps):
 ```toml
 [[rule]]
 by = "name"
-template = "{san.upn|local}"
+template = "{san.upn|local}"   # with pins, the realm need not be named
 pins = "files"          # the name of a pin source the consumer gave the matcher
 ```
 
