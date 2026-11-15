@@ -118,6 +118,9 @@ impl Accounts for MtlsAccounts { /* accounts, put, remove, waiting */ }
   issued on that key; pin a key only where the key, not the certificate, is what is trusted (a
   smartcard's).
 - The directory's `certificate` lookup resolves fingerprint pins only.
+- A pick whose `by` is `filter` or `claims` is refused by `build` (`SourceError::Invalid`): a pick names a
+  directory attribute; only a matcher rule makes a filter. The claims are built by
+  `coqui-access-claims`, which `coqui-access-proxy` uses too.
 - `account` defaults to no picks (`default_account()` is empty). A CA-trusted certificate is then
   answered `Valid(Lookup { by: "claims", value: "sha256:<fingerprint>", claims })`, for the consumer's
   matcher (`coqui_access_kit::matcher`) to tie to a directory account; this provider's own directory

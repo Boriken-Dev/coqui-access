@@ -6,7 +6,7 @@ ships inside the package and is self-contained. Development documentation lives 
 source at <https://github.com/Boriken-Dev/coqui-access>.
 
 MSRV Rust 1.89. No Cargo features. Depends on `coqui-access`, `coqui-builder`, `guatiao-builder`, `coqui-access-kit` (picks), `coqui-net-acl` (address lists),
-`coqui-peer-tls` (feature `fields`: certificate fields), `data-encoding`, `percent-encoding` and
+`coqui-access-claims` (the certificate's claims), `coqui-peer-tls` (feature `fields`: certificate fields), `data-encoding`, `percent-encoding` and
 `rustls-pki-types` (PEM). No `unsafe` code. The
 loadable library is the separate crate `coqui-access-proxy-plugin`.
 
@@ -45,6 +45,14 @@ pub fn field_of(subject: &str, field: &str) -> Option<String>;
 - `pem-url` is URL-encoded PEM (leaf first); `der-base64` comma-separated base64 DER; `xfcc`
   the `Cert` (URL-encoded PEM, quoted or not) of the last comma-separated element, the one
   the nearest proxy wrote.
+- **Claims.** A forwarded certificate's leaf is answered with the same claims `coqui-access-mtls`
+  gives (`coqui_access_claims::of_certificate`). With `account` picks the lookup is as picked and carries
+  `claims`; with `account` **empty** it is `Valid(Lookup { by: "claims", value: "sha256:<fingerprint>",
+  claims })`, for the consumer's matcher to tie to a directory account. The certificate is what the proxy
+  vouches for (it checked the key; this provider checks no CA). An unreadable certificate is `Invalid`. A
+  subject header carries no claims.
+- A pick whose `by` is `filter` or `claims` is refused when the provider is built (`ProxyWord::new`
+  returns `Err`): a pick names a directory attribute; only a matcher rule makes a filter.
 - A subject header becomes the fields `subject` (the whole text) and `subject.<attribute>` in
   lower case (`emailAddress` as `subject.email`), read by the same picks. No usable identity
   is `Unknown`.

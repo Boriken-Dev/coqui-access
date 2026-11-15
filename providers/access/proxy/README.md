@@ -51,7 +51,7 @@ Only configure headers the proxy overwrites.
 | `ProxyWord` | The provider: `new(config)` and the `Authenticator` kind. |
 | `ProxyWordConfig` | The Guatiao configuration. |
 | `CertificateEncoding` | How a forwarded certificate is written: `PemUrl`, `DerBase64`, `Xfcc`. |
-| `default_account`, `DEFAULT_MAX_CERTIFICATE_BYTES` | The defaults: `subject.cn` by `name`; 16 384 bytes. |
+| `default_account`, `DEFAULT_MAX_CERTIFICATE_BYTES` | The defaults: `subject.cn` by `name`; 16 384 bytes. An empty `account` answers a forwarded certificate by its claims (`by: "claims"`) for a matcher. |
 | `field_of` | Reads a field from a `CN=a,O=b` or `/O=b/CN=a` subject. |
 
 ## Development

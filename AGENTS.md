@@ -8,6 +8,7 @@ README; those headers describe the public API and ship with the crate.
 | `crates/coqui-access/AGENTS.md` | Kinds, models, error helpers, the pinned contract. |
 | `crates/coqui-access-kit/AGENTS.md` | Secrets, private files, reloading tables. |
 | `crates/coqui-roles/AGENTS.md` | Role authorizer. |
+| `crates/coqui-access-claims/AGENTS.md` | The claims a client certificate carries, shared by the mtls and proxy providers. |
 | `crates/coqui-access-signin/AGENTS.md` | Sign-in rules: which methods a sign-in may use, and what it still needs. |
 | `crates/coqui-access-acl/AGENTS.md` | Access control lists on items: rights, entries, evaluation modes, inheritance, `AclAuthorizer`. |
 | `providers/access/<name>/AGENTS.md` | One provider each: password, key, ldap, proxy, mtls, system, totp. |

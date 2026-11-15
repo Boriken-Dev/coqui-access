@@ -43,7 +43,8 @@ pub fn is_hash(value: &str) -> bool;
 pub const IP_FIELD: &str = "san.ip"; pub const DNS_IP_FIELD: &str = "san.dns.ip";
 pub struct Pick { pub field: String, pub by: String, pub domain: Option<String>, pub ip_in_dns: bool }
     // non_exhaustive; coqui_builder::Describe, ip_in_dns defaulting to true
-impl Pick { pub fn new(field, by) -> Self; pub fn domain(self, impl Into<String>) -> Self; pub fn ip_in_dns(self, bool) -> Self; }
+impl Pick { pub fn new(field, by) -> Self; pub fn domain(self, impl Into<String>) -> Self; pub fn ip_in_dns(self, bool) -> Self;
+            pub fn check(&self) -> Result<(), &'static str>; }   // Err for a `by` of "filter" or "claims"; pick() ignores such a pick
 pub enum Picked { Absent, Ambiguous, Found { by: String, value: String } }   // non_exhaustive
 pub fn pick(fields: &BTreeMap<String, Vec<String>>, order: &[Pick]) -> Picked;
 ```
@@ -61,9 +62,9 @@ pub fn pick(fields: &BTreeMap<String, Vec<String>>, order: &[Pick]) -> Picked;
 
 ```rust
 pub const MAX_CANDIDATES: usize = 16;
-pub struct MatchRule { pub by: String, pub template: String, pub pins: Option<String> }
-    // non_exhaustive; Describe, deny_unknown_fields; MatchRule::new(by, template), .pins(source_name)
-pub fn default_rules() -> Vec<MatchRule>;    // name {san.upn}; email {san.email}; name {subject.cn}
+pub struct MatchRule { pub by: String, pub template: String, pub pins: Option<String>, pub domain: Option<String> }
+    // non_exhaustive; Describe, deny_unknown_fields; MatchRule::new(by, template), .pins(source_name), .domain(realm)
+pub fn default_rules() -> Vec<MatchRule>;    // name {san.upn}; email {san.email}; not the common name
 pub struct MatcherConfig { pub rule: Vec<MatchRule> }   // non_exhaustive; Describe; Default = default_rules(); an empty list matches nobody
 pub struct MatcherError;                                 // Display, Error, From -> ProviderError (bad value); never quotes a template
 pub enum Match { Found(Person), NotFound, Ambiguous }    // non_exhaustive
@@ -78,12 +79,16 @@ impl Matcher {
 pub fn escape_filter_value(value: &str) -> String;
 ```
 
-- A `Lookup` with `by: "claims"` and claims is matched; with no claims, `NotFound`; any other
-  `by` is looked up as it is. Rules are tried in order. A rule renders its template once per
+- A `Lookup` with `by: "claims"` and claims is matched; with no claims, `NotFound`; `by: "filter"`
+  (raw text handed in) is `NotFound` and never reaches the directory; any other `by` is looked up as
+  it is. Rules are tried in order. A rule renders its template once per
   combination of the values of the claims it names (at most `MAX_CANDIDATES`, else an `Err`) and
   asks the directory for each: a claim that is missing, or whose value is empty, or whose `domain`
   has no `@`, makes no candidate. `by` is `name`, `email` or `id` (the lookup `{by, value}`) or
   `filter` (`{by: "filter", value: <filter>}`, a directory that supports it, such as ldap).
+- A rule using `local` must name `domain` (a realm: only claim values ending `@<domain>`, any case,
+  count for it) or `pins`; `Matcher::new` refuses it otherwise, as it does a `domain` without `local`,
+  or one that is empty or holds `@` or whitespace. Stripping the realm loses what ties a name to it.
 - Templates: `{claim}` and `{claim|filter|...}` (`lower`, `upper`, `local` = before the last `@`,
   `domain` = after), `{{` and `}}` for braces, claim names lowercase words with `.`, `_`, `-`. A
   template names at least one claim. A `filter` template is one balanced parenthesised group.
