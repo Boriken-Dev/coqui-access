@@ -75,13 +75,18 @@ struct Consumer {
     /// The steps the last session was opened with.
     session: Option<(Person, Vec<Factor>)>,
     failures: u32,
-    /// Failed second-factor attempts, per person id: the contract's counting.
-    second_failures: std::collections::BTreeMap<String, u32>,
+    /// Failed second-factor attempts, per person id, and when the last was: the contract's
+    /// counting, forgotten after a quiet period.
+    second_failures: std::collections::BTreeMap<String, (u32, i64)>,
+    /// The stand-in's clock, in seconds.
+    now: i64,
     recovery_used: bool,
 }
 
 /// Failed second-factor attempts the stand-in consumer allows a person.
 const MOST_SECOND_FACTOR_FAILURES: u32 = 3;
+/// How long a person's count of wrong codes is kept without another: the consumer sets it.
+const SECOND_FACTOR_WINDOW: i64 = 900;
 
 struct Step {
     result: &'static str,
@@ -168,7 +173,9 @@ impl Consumer {
         let who = self.pending.as_ref().map(|(person, _)| person.id.clone());
         if second
             && who.as_ref().is_some_and(|id| {
-                self.second_failures.get(id).copied().unwrap_or(0) >= MOST_SECOND_FACTOR_FAILURES
+                self.second_failures.get(id).is_some_and(|(count, last)| {
+                    *count >= MOST_SECOND_FACTOR_FAILURES && self.now - last < SECOND_FACTOR_WINDOW
+                })
             })
         {
             step.result = "failed";
@@ -204,7 +211,12 @@ impl Consumer {
         let Some((person, factor)) = named.filter(|found| !mismatch(found)) else {
             self.failures += 1;
             if let (true, Some(id)) = (second, who) {
-                *self.second_failures.entry(id).or_insert(0) += 1;
+                let now = self.now;
+                let kept = self.second_failures.entry(id).or_insert((0, now));
+                if now - kept.1 >= SECOND_FACTOR_WINDOW {
+                    kept.0 = 0;
+                }
+                *kept = (kept.0 + 1, now);
             }
             step.result = "failed";
             step.throttled = true;
@@ -290,9 +302,14 @@ fn every_flow_goes_as_the_stand_in_consumer_of_the_contract_does() {
             session: None,
             failures: 0,
             second_failures: std::collections::BTreeMap::new(),
+            now: 0,
             recovery_used: false,
         };
         for (index, step) in flow["steps"].as_array().unwrap().iter().enumerate() {
+            consumer.now += step
+                .get("after_seconds")
+                .and_then(Json::as_i64)
+                .unwrap_or(0);
             let address = step.get("address").and_then(Json::as_str);
             let text = |key: &str| step.get(key).and_then(Json::as_str).unwrap_or_default();
             let done = match step["action"].as_str().unwrap() {

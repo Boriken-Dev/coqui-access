@@ -66,8 +66,14 @@ every client look like it is inside it.
    address and whichever pending sign-in they were given to, and the count outlives the pending
    sign-in: a consumer that counts only per address, or only per pending sign-in, lets a guesser
    start over. After a few, further second-factor attempts for that person are refused without
-   asking the authenticator. (`coqui_access_totp` also delays an account under wrong codes by
-   itself; that is a second line, not a replacement.)
+   asking the authenticator. **The count decays**: it is forgotten after a quiet period the
+   consumer sets (the stand-in consumer of the vectors uses 15 minutes), so a refusal is never
+   forever and a person is not locked out for good by someone else's guesses. Reaching a code
+   needs the first factor, so this guards a person whose password is already known; a throttle
+   per address does not stop an attacker who spreads over many addresses, which is why the count
+   is per person. The price is that anyone with the password can hold that person's second step
+   shut for as long as they keep failing. (`coqui_access_totp` also delays an account under
+   wrong codes by itself, and that delay decays too; it is a second line, not a replacement.)
 5. **The next factor must name the same person** (`Person::id`). A one-time code is presented
    with `name` set to that id. A factor that names someone else fails. The consumer records the
    person in each `Factor`, and a policy refuses steps that name different people.
@@ -178,6 +184,6 @@ The `test-support` feature of `coqui-access-signin` exposes `vectors::POLICY` an
   (`password` valid for `alice` with `pw`, the stand-in provider `ldap` rejecting every password
   and `local` accepting; `certificate` naming `alice` or `bob`; `totp` accepting `123456` for the id of
   the person already named). Each step is `{ action: offer | present | resume, address, method?, name?,
-  secret?, expect: { result, methods?, authenticator_calls, throttled, asked? } }` where `result` is
+  secret?, after_seconds?, expect: { result, methods?, authenticator_calls, throttled, asked? } }` where `result` is
   `methods`, `refused_unasked`, `failed`, `next` or `signed_in`. There is a flow for each of the six
   points of the contract; the crate's own tests run them against a small stand-in consumer.

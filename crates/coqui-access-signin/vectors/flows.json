@@ -1029,6 +1029,111 @@
      }
     }
    ]
+  },
+  {
+   "name": "a person's count of wrong codes is forgotten after a quiet period",
+   "point": 4,
+   "config": {
+    "rule": [
+     {
+      "subjects": [
+       "group:admins"
+      ],
+      "allow": [
+       [
+        "password",
+        "totp"
+       ]
+      ]
+     },
+     {
+      "allow": [
+       [
+        "password"
+       ]
+      ]
+     }
+    ]
+   },
+   "steps": [
+    {
+     "action": "present",
+     "address": "10.1.2.3",
+     "method": "password",
+     "name": "alice",
+     "secret": "pw",
+     "expect": {
+      "result": "next",
+      "methods": [
+       "totp"
+      ],
+      "authenticator_calls": 1,
+      "throttled": false
+     }
+    },
+    {
+     "action": "present",
+     "address": "10.1.2.3",
+     "method": "totp",
+     "name": "id-alice",
+     "secret": "000000",
+     "expect": {
+      "result": "failed",
+      "authenticator_calls": 1,
+      "throttled": true
+     }
+    },
+    {
+     "action": "present",
+     "address": "10.1.2.3",
+     "method": "totp",
+     "name": "id-alice",
+     "secret": "000000",
+     "expect": {
+      "result": "failed",
+      "authenticator_calls": 1,
+      "throttled": true
+     }
+    },
+    {
+     "action": "present",
+     "address": "10.1.2.3",
+     "method": "totp",
+     "name": "id-alice",
+     "secret": "000000",
+     "expect": {
+      "result": "failed",
+      "authenticator_calls": 1,
+      "throttled": true
+     }
+    },
+    {
+     "action": "present",
+     "address": "10.1.2.3",
+     "method": "totp",
+     "name": "id-alice",
+     "secret": "123456",
+     "expect": {
+      "result": "failed",
+      "authenticator_calls": 0,
+      "throttled": true
+     },
+     "after_seconds": 60
+    },
+    {
+     "action": "present",
+     "address": "10.1.2.3",
+     "method": "totp",
+     "name": "id-alice",
+     "secret": "123456",
+     "expect": {
+      "result": "signed_in",
+      "authenticator_calls": 1,
+      "throttled": false
+     },
+     "after_seconds": 901
+    }
+   ]
   }
  ]
 }
