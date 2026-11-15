@@ -502,7 +502,9 @@ mod tests {
             Verdict::Invalid
         );
         assert_eq!(
-            accounts.authenticate(attempt("missing", "password")).unwrap(),
+            accounts
+                .authenticate(attempt("missing", "password"))
+                .unwrap(),
             Verdict::Unknown
         );
         assert_eq!(

@@ -10,7 +10,7 @@ README; those headers describe the public API and ship with the crate.
 | `crates/coqui-roles/AGENTS.md` | Role authorizer. |
 | `crates/coqui-access-signin/AGENTS.md` | Sign-in rules: which methods a sign-in may use, and what it still needs. |
 | `crates/coqui-access-acl/AGENTS.md` | Access control lists on items: rights, entries, evaluation modes, inheritance, `AclAuthorizer`. |
-| `providers/access/<name>/AGENTS.md` | One provider each: password, key, ldap, proxy, mtls, system. |
+| `providers/access/<name>/AGENTS.md` | One provider each: password, key, ldap, proxy, mtls, system, totp. |
 
 ## Layout
 
@@ -18,7 +18,7 @@ README; those headers describe the public API and ship with the crate.
 | --- | --- |
 | `crates/` | Library crates: kinds, kit, roles, sign-in rules, item ACLs. The TLS peer crate and the network address list crate (`coqui-net-acl`) live in their own repositories and come from crates.io. |
 | `providers/access/<name>/` | A provider as an ordinary library. |
-| `providers/access/<name>/plugin/`, `crates/coqui-roles/plugin/`, `crates/coqui-access-signin/plugin/` | The same provider as a `cdylib`: its Guatiao config, the `providers!` line, and (password, key, mtls) the storage formats it offers (`toml`, `json`) as a kit `Codec`. |
+| `providers/access/<name>/plugin/`, `crates/coqui-roles/plugin/`, `crates/coqui-access-signin/plugin/` | The same provider as a `cdylib`: its Guatiao config, the `providers!` line, and (password, key, mtls, totp) the storage formats it offers (`toml`, `json`) as a kit `Codec`. |
 | `docs/`, `mkdocs.yml` | Narrative site; Rust API docs are published under `/rust/`. |
 
 ## Commands

@@ -26,6 +26,7 @@ methods are a pinned contract; providers are built against the host's Guatiao re
 | `coqui_access_ldap` | nothing; asks LDAP or Active Directory | name and password |
 | `coqui_access_proxy` | nothing; trusts a reverse proxy | request headers |
 | `coqui_access_system` | nothing; asks the operating system (PAM and NSS, or Windows logon) | name and password |
+| `coqui_access_totp` | one-time code secrets and recovery code digests, in any table | a code from an authenticator app |
 | `coqui_access_mtls` | peer certificate fingerprints or public keys, in any table | a verified certificate |
 | `coqui_roles` | role rules (an authorizer) | person, action, resource |
 | `coqui_signin_rules` | ordered sign-in rules (a sign-in policy) | where and how a sign-in is made |

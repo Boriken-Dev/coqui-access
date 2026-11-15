@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`coqui-access-totp`**, the `coqui_access_totp` provider: one-time codes (RFC 6238, checked against its Appendix B
+  values for SHA-1, SHA-256 and SHA-512) as a second factor, with replay protection, skew, ten recovery codes made at
+  enrolment and presented as the method `recovery_code`, and enrolment, rotation and reset through the `Accounts` kind.
+  It does not throttle: the consumer's throttle bounds guessing.
 - **`coqui-access-signin`**, the `coqui_signin_rules` provider of the sign-in policy kind: ordered rules over purpose,
   client network, kind of client, service and subject, whose chains of methods say what a sign-in may use and when it
   asks for a further step. `SignInRules::single_factor` is the policy of a deployment with none. Its `test-support`

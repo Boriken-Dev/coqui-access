@@ -114,6 +114,34 @@ a rule with `purposes = ["enrol"]` says who may set up a second step.
 With no policy configured, a consumer uses `SignInRules::single_factor(methods)`: each
 configured method alone is enough, from anywhere, and enrolment is an administrator's only.
 
+## Enrolment and recovery
+
+`coqui_access_totp` (the crate `coqui-access-totp`) is the first second step: a one-time code from
+an authenticator app, which works in a browser, a desktop app and a command line alike. It is an
+`Authenticator` taking `takes::OTP` and an `Accounts` provider; the consumer manages it through the
+`Accounts` kind.
+
+- **Enrol.** `put` with a name (the `Person::id`) and no secret begins an enrolment and answers an
+  `otpauth://` link, to show as a QR code, and the recovery codes, said once. Nothing is a factor
+  yet. `put` again with `secret` set to a code from the app confirms it. A person who rotates
+  enrols again: the old secret keeps working until the new one is confirmed.
+- **Who may enrol.** The library does not decide; the consumer does. The recommended rule:
+  a person may enrol themselves only after a fresh sign-in decided under `purpose = enrol`, which
+  needs an `enrol` rule in the policy, so that a password accepted at the office cannot set up a
+  factor that a stricter rule outside would later accept. With no `enrol` rule only an
+  administrator enrols. An administrator can always enrol or reset anyone.
+- **Sign in.** The consumer presents the code with `method = totp` and `name` set to the id of the
+  person the first step named. A policy chain `["password", "totp"]` asks for it.
+- **Recover.** Ten recovery codes are made at enrolment, shown once, each good once, and presented
+  as `method = recovery_code`. The policy must name the method (`["password", "recovery_code"]`
+  in a rule of its own, say), so a deployment can keep recovery inside its network. An
+  administrator resets a person with `remove`, after which the person enrols again.
+- **Guessing.** A code is one in a million, and the provider does not throttle: the consumer counts
+  every wrong code in its throttle and caps the tries of a pending sign-in. A code is accepted
+  once; a step used, and earlier ones, are refused.
+- **Storage.** The secret is kept readable in the table (a time-based code needs it); a file
+  source writes it with the owner's permissions only.
+
 ## The shared vectors
 
 The `test-support` feature of `coqui-access-signin` exposes `vectors::POLICY` and `vectors::FLOWS`.
