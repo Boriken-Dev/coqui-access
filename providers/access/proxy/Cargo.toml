@@ -16,6 +16,8 @@ coqui-access-kit.workspace = true
 coqui-builder.workspace = true
 guatiao-builder.workspace = true
 coqui-net-acl.workspace = true
+# The claims of a forwarded certificate, as the TLS provider names them.
+coqui-access-claims.workspace = true
 # The fields of a forwarded certificate.
 coqui-peer-tls = { workspace = true, features = ["fields"] }
 data-encoding.workspace = true

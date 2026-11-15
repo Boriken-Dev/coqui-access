@@ -292,3 +292,30 @@ fn a_ca_trust_without_a_ca_file_is_refused_and_a_long_chain_is_unknown() {
         Verdict::Unknown
     );
 }
+
+#[test]
+fn a_pick_looked_up_by_filter_or_claims_is_refused_when_the_provider_is_built() {
+    let directory = tempfile::tempdir().unwrap();
+    let ca = authority("Root");
+    for by in ["filter", "claims"] {
+        let built = MtlsAccounts::builder()
+            .trust(TrustMode::Ca)
+            .ca(ca_file(directory.path(), &ca))
+            .account(vec![Pick::new("san.email", by)])
+            .build();
+        assert!(built.is_err(), "{by}");
+    }
+}
+
+#[test]
+fn a_ca_trusted_certificate_carries_the_claims_the_shared_crate_builds() {
+    let directory = tempfile::tempdir().unwrap();
+    let ca = authority("Root");
+    let provider = trusting(directory.path(), &ca, Vec::new());
+    let der = leaf(&ca, vec![email("one@example.org")]);
+    let Verdict::Valid(lookup) = provider.authenticate(attempt(&[&der], true)).unwrap() else {
+        panic!("the certificate is trusted");
+    };
+    assert_eq!(lookup.by, "claims");
+    assert_eq!(lookup.claims, coqui_access_claims::of_certificate(&der));
+}

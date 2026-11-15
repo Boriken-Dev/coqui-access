@@ -11,7 +11,6 @@
 #![warn(missing_debug_implementations)]
 #![warn(missing_docs)]
 
-mod claims;
 mod pin;
 mod trust;
 
@@ -401,6 +400,11 @@ impl MtlsAccountsBuilder {
     /// Returns an error when the table cannot be loaded or holds an invalid or duplicated
     /// peer, or the trust needs a CA and none is given.
     pub fn build(self) -> Result<MtlsAccounts, SourceError> {
+        if self.account.iter().any(|pick| pick.check().is_err()) {
+            return Err(SourceError::invalid(
+                "an account pick is looked up by an attribute, not by filter or claims",
+            ));
+        }
         let ca = match (self.trust.uses_ca(), self.ca) {
             (true, Some(ca)) => Some(Trust::Ca(ca)),
             (true, None) => {
@@ -596,7 +600,7 @@ impl Authenticator for MtlsAccounts {
                         value: id,
                         claims: chain
                             .first()
-                            .and_then(|leaf| claims::of_certificate(leaf.as_ref())),
+                            .and_then(|leaf| coqui_access_claims::of_certificate(leaf.as_ref())),
                     }));
                 }
                 None => {}

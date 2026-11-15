@@ -53,11 +53,15 @@ fn url(text: &str) -> String {
     utf8_percent_encode(text, NON_ALPHANUMERIC).to_string()
 }
 
-fn by_email(address: &str) -> Verdict {
+fn claims_of(der: &[u8]) -> coqui_access::Claims {
+    coqui_access_claims::of_certificate(der).expect("a generated certificate parses")
+}
+
+fn by_email(address: &str, der: &[u8]) -> Verdict {
     Verdict::Valid(Lookup {
         by: "email".to_owned(),
         value: address.to_owned(),
-        ..Lookup::default()
+        claims: Some(claims_of(der)),
     })
 }
 
@@ -83,7 +87,11 @@ fn every_proxy_encoding_names_the_same_account() {
         let verdict = proxy(encoding, account.clone())
             .authenticate(from_proxy(&[("X-Client-Cert", value)]))
             .unwrap();
-        assert_eq!(verdict, by_email("one@example.org"), "{encoding:?}");
+        assert_eq!(
+            verdict,
+            by_email("one@example.org", &one.der),
+            "{encoding:?}"
+        );
     }
 }
 
@@ -101,7 +109,7 @@ fn the_default_account_is_the_subject_cn_and_an_ip_in_a_dns_name_counts() {
         Verdict::Valid(Lookup {
             by: "name".to_owned(),
             value: "Client One".to_owned(),
-            ..Lookup::default()
+            claims: Some(claims_of(&one.der))
         })
     );
     let by_ip = proxy(
@@ -115,7 +123,7 @@ fn the_default_account_is_the_subject_cn_and_an_ip_in_a_dns_name_counts() {
         Verdict::Valid(Lookup {
             by: "address".to_owned(),
             value: "10.0.0.9".to_owned(),
-            ..Lookup::default()
+            claims: Some(claims_of(&one.der))
         })
     );
 }
@@ -179,7 +187,7 @@ fn a_user_header_comes_first_then_the_certificate_then_the_subject() {
     );
     assert_eq!(
         proxy.authenticate(from_proxy(&all[1..])).unwrap(),
-        by_email("one@example.org")
+        by_email("one@example.org", &one.der)
     );
     assert_eq!(
         proxy.authenticate(from_proxy(&all[2..])).unwrap(),
@@ -192,4 +200,75 @@ fn a_user_header_comes_first_then_the_certificate_then_the_subject() {
     let mut untrusted = from_proxy(&all[1..]);
     untrusted.peer = Some("192.0.2.1:443".to_owned());
     assert_eq!(proxy.authenticate(untrusted).unwrap(), Verdict::Unknown);
+}
+
+#[test]
+fn a_forwarded_certificate_answers_the_same_claims_the_tls_provider_does() {
+    let one = client(vec![email("one@example.org")]);
+    let other = client(vec![email("other@example.org")]);
+    let claims = claims_of(&one.der);
+    let expected = Verdict::Valid(Lookup {
+        by: "claims".to_owned(),
+        value: claims.get("fingerprint")[0].clone(),
+        claims: Some(claims),
+    });
+    for (encoding, value) in [
+        (CertificateEncoding::PemUrl, url(&one.pem)),
+        (CertificateEncoding::DerBase64, BASE64.encode(&one.der)),
+        // Only the leaf speaks.
+        (
+            CertificateEncoding::DerBase64,
+            format!("{},{}", BASE64.encode(&one.der), BASE64.encode(&other.der)),
+        ),
+    ] {
+        let verdict = proxy(encoding, Vec::new())
+            .authenticate(from_proxy(&[("x-client-cert", value)]))
+            .unwrap();
+        assert_eq!(verdict, expected, "{encoding:?}");
+    }
+}
+
+#[test]
+fn explicit_picks_still_name_the_account_and_carry_the_claims_too() {
+    let one = client(vec![email("one@example.org")]);
+    let verdict = proxy(
+        CertificateEncoding::PemUrl,
+        vec![Pick::new("san.email", "email")],
+    )
+    .authenticate(from_proxy(&[("x-client-cert", url(&one.pem))]))
+    .unwrap();
+    assert_eq!(
+        verdict,
+        Verdict::Valid(Lookup {
+            by: "email".to_owned(),
+            value: "one@example.org".to_owned(),
+            claims: Some(claims_of(&one.der)),
+        })
+    );
+}
+
+#[test]
+fn no_picks_and_no_certificate_names_nobody() {
+    let unreadable = proxy(CertificateEncoding::PemUrl, Vec::new())
+        .authenticate(from_proxy(&[(
+            "x-client-cert",
+            "not a certificate".to_owned(),
+        )]))
+        .unwrap();
+    assert_eq!(unreadable, Verdict::Invalid);
+    let absent = proxy(CertificateEncoding::PemUrl, Vec::new())
+        .authenticate(from_proxy(&[]))
+        .unwrap();
+    assert_eq!(absent, Verdict::Unknown);
+}
+
+#[test]
+fn a_pick_that_names_no_directory_attribute_is_refused_when_the_provider_is_built() {
+    for by in ["filter", "claims"] {
+        let mut config = ProxyWordConfig::default();
+        config.trusted = vec!["10.0.0.0/24".to_owned()];
+        config.certificate_header = Some("x-client-cert".to_owned());
+        config.account = vec![Pick::new("subject.cn", by)];
+        assert!(ProxyWord::new(config).is_err(), "{by}");
+    }
 }

@@ -1,0 +1,23 @@
+[package]
+name = "coqui-access-claims"
+description = "The claims a client certificate carries, for providers that read one and a matcher that reads them"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+exclude = [".*", "*.local.*"]
+
+[dependencies]
+coqui-access.workspace = true
+# The named fields of a certificate.
+coqui-peer-tls = { workspace = true, features = ["fields"] }
+data-encoding.workspace = true
+sha2.workspace = true
+# The public key of a certificate.
+x509-parser = { version = "0.18", default-features = false }
+
+[dev-dependencies]
+rcgen.workspace = true

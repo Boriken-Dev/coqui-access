@@ -197,6 +197,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "coqui-access-claims"
+version = "0.1.0"
+dependencies = [
+ "coqui-access",
+ "coqui-peer-tls",
+ "data-encoding",
+ "rcgen",
+ "sha2 0.11.1",
+ "x509-parser",
+]
+
+[[package]]
 name = "coqui-access-key"
 version = "0.1.0"
 dependencies = [
@@ -267,15 +279,13 @@ name = "coqui-access-mtls"
 version = "0.1.0"
 dependencies = [
  "coqui-access",
+ "coqui-access-claims",
  "coqui-access-kit",
  "coqui-builder",
  "coqui-peer",
  "coqui-peer-tls",
- "data-encoding",
  "rcgen",
- "sha2 0.11.1",
  "tempfile",
- "x509-parser",
 ]
 
 [[package]]
@@ -323,6 +333,7 @@ name = "coqui-access-proxy"
 version = "0.1.0"
 dependencies = [
  "coqui-access",
+ "coqui-access-claims",
  "coqui-access-kit",
  "coqui-builder",
  "coqui-net-acl",

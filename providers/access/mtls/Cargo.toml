@@ -16,10 +16,8 @@ coqui-access-kit.workspace = true
 coqui-builder.workspace = true
 coqui-peer.workspace = true
 coqui-peer-tls = { workspace = true, features = ["ca"] }
-data-encoding.workspace = true
-sha2.workspace = true
-# The public key of a certificate, to pin by it.
-x509-parser = { version = "0.18", default-features = false }
+# What a certificate says, and the hash of its public key.
+coqui-access-claims.workspace = true
 
 [dev-dependencies]
 coqui-peer-tls = { workspace = true, features = ["ca", "generate"] }

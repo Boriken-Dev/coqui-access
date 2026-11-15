@@ -93,6 +93,9 @@ impl ProxyWord {
                 Ok(network) => Ok(network),
             })
             .collect::<Result<Vec<_>, _>>()?;
+        if config.account.iter().any(|pick| pick.check().is_err()) {
+            return Err("an account pick is looked up by filter or claims".to_owned());
+        }
         let header = |value: Option<String>| {
             value
                 .map(|value| value.trim().to_ascii_lowercase())
@@ -121,7 +124,9 @@ impl TryFrom<ProxyWordConfig> for ProxyWord {
 
     fn try_from(config: ProxyWordConfig) -> Result<Self, Self::Error> {
         Self::new(config).map_err(|_| {
-            coqui_access::error::bad_value("trusted entries must be IP addresses or CIDR networks")
+            coqui_access::error::bad_value(
+                "trusted entries must be IP addresses or CIDR networks, and account picks must name a directory attribute",
+            )
         })
     }
 }
@@ -165,23 +170,43 @@ impl Authenticator for ProxyWord {
             }));
         }
         if let Some(name) = self.certificate_header.as_deref() {
-            let fields = match header(name) {
+            let forwarded = match header(name) {
                 Err(()) => return Ok(Verdict::Invalid),
                 Ok(None) => None,
                 Ok(Some(value)) => {
                     if !self.max_certificate_bytes.allows(value.len()) {
                         return Ok(Verdict::Invalid);
                     }
-                    let Some(fields) = certificate::decode(value, self.certificate_encoding)
-                        .and_then(|chain| certificate::fields(&chain))
-                    else {
+                    let Some(chain) = certificate::decode(value, self.certificate_encoding) else {
                         return Ok(Verdict::Invalid);
                     };
-                    Some(fields)
+                    let (Some(fields), Some(claims)) = (
+                        certificate::fields(&chain),
+                        chain
+                            .first()
+                            .and_then(|leaf| coqui_access_claims::of_certificate(leaf)),
+                    ) else {
+                        return Ok(Verdict::Invalid);
+                    };
+                    Some((fields, claims))
                 }
             };
-            if let Some(verdict) = fields.and_then(|fields| self.picked(&fields)) {
-                return Ok(verdict);
+            if let Some((fields, claims)) = forwarded {
+                // No picks: the claims are the answer, for a matcher to tie to an account.
+                if self.account.is_empty() {
+                    return Ok(Verdict::Valid(Lookup {
+                        by: "claims".to_owned(),
+                        value: claims
+                            .get("fingerprint")
+                            .first()
+                            .cloned()
+                            .unwrap_or_default(),
+                        claims: Some(claims),
+                    }));
+                }
+                if let Some(verdict) = self.picked(&fields, Some(claims)) {
+                    return Ok(verdict);
+                }
             }
         }
         if let Some(name) = self.subject_header.as_deref() {
@@ -189,7 +214,8 @@ impl Authenticator for ProxyWord {
                 Err(()) => return Ok(Verdict::Invalid),
                 Ok(None) => {}
                 Ok(Some(subject)) => {
-                    if let Some(verdict) = self.picked(&certificate::subject_fields(subject)) {
+                    if let Some(verdict) = self.picked(&certificate::subject_fields(subject), None)
+                    {
                         return Ok(verdict);
                     }
                 }
@@ -201,13 +227,13 @@ impl Authenticator for ProxyWord {
 
 impl ProxyWord {
     /// The verdict the account picks give over `fields`; `None` when they find nothing.
-    fn picked(&self, fields: &std::collections::BTreeMap<String, Vec<String>>) -> Option<Verdict> {
+    fn picked(
+        &self,
+        fields: &std::collections::BTreeMap<String, Vec<String>>,
+        claims: Option<coqui_access::Claims>,
+    ) -> Option<Verdict> {
         match pick(fields, &self.account) {
-            Picked::Found { by, value } => Some(Verdict::Valid(Lookup {
-                by,
-                value,
-                ..Lookup::default()
-            })),
+            Picked::Found { by, value } => Some(Verdict::Valid(Lookup { by, value, claims })),
             Picked::Ambiguous => Some(Verdict::Invalid),
             _ => None,
         }

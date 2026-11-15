@@ -1,6 +1,5 @@
 //! Which client certificates are trusted, and which account a CA-trusted one names.
 
-use crate::claims;
 use coqui_access::guatiao::Bytes;
 use coqui_access::guatiao::library::ProviderError;
 use coqui_access::{Lookup, Verdict, error};
@@ -66,7 +65,7 @@ pub(crate) fn by_ca(
     let Ok(fields) = CertificateFields::parse(leaf.as_ref()) else {
         return Ok(None);
     };
-    let claims = claims::of_certificate(leaf.as_ref());
+    let claims = coqui_access_claims::of_certificate(leaf.as_ref());
     if account.is_empty() {
         return Ok(Some(Verdict::Valid(Lookup {
             by: "claims".to_owned(),

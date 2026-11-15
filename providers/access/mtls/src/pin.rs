@@ -4,8 +4,6 @@ use std::fmt;
 
 use coqui_access::guatiao::{FromValue, Schema, ToValue};
 use coqui_peer_tls::{Digest, PeerId};
-use data_encoding::HEXLOWER;
-use sha2::{Digest as _, Sha256};
 
 /// One thing an account pins, as a record names it: a `kind` and a canonical `value`.
 ///
@@ -56,17 +54,17 @@ impl Pin {
 
     /// The pin on the public key of a DER certificate; `None` when it does not parse.
     pub fn key_of_certificate(der: &[u8]) -> Option<Self> {
-        let (_, certificate) = x509_parser::parse_x509_certificate(der).ok()?;
-        Some(Self::key_of_public_key_info(
-            certificate.tbs_certificate.subject_pki.raw,
-        ))
+        coqui_access_claims::public_key_hash(der).map(|value| Self {
+            kind: Self::KEY.to_owned(),
+            value,
+        })
     }
 
     /// The pin on a DER `SubjectPublicKeyInfo`.
     pub fn key_of_public_key_info(info: &[u8]) -> Self {
         Self {
             kind: Self::KEY.to_owned(),
-            value: format!("sha256:{}", HEXLOWER.encode(&Sha256::digest(info))),
+            value: coqui_access_claims::public_key_info_hash(info),
         }
     }
 

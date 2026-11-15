@@ -26,6 +26,7 @@ coqui-peer = { git = "https://github.com/Boriken-Dev/coqui-peer", rev = "984db3d
 coqui-peer-tls = { git = "https://github.com/Boriken-Dev/coqui-peer-tls", rev = "7cbd7ee208595c055d74eed79a4dafcd0175883d" }
 coqui-roles = { path = "crates/coqui-roles" }
 coqui-access-signin = { path = "crates/coqui-access-signin" }
+coqui-access-claims = { path = "crates/coqui-access-claims" }
 # Settings types: described field by field, read through guatiao-builder's `Described`.
 coqui-builder = { git = "https://github.com/Boriken-Dev/coqui-builder", rev = "c1875f8276bd6366c38e9133fdb1181a0ffbaaad", features = ["derive"] }
 
