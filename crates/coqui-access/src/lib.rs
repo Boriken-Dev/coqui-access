@@ -14,8 +14,10 @@
 //! | [`SignInPolicy`] | `coqui_sign_in_policy` | Which methods may this sign-in use, and what does it still need? |
 //!
 //! Every method is synchronous; a host calls a provider from a blocking thread. Kind names
-//! and the hashes of their required methods are an ABI, pinned by this crate's contract
-//! test: a provider built against one hash is refused by a host built against another.
+//! and their floor hashes are an ABI, pinned by this crate's contract test: a provider built
+//! against one hash is refused by a host built against another. The hash covers every method
+//! of a kind, optional ones included, so a kind that exists is never appended to: it is
+//! extended by a new kind, and a model by an `Option` field.
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]

@@ -14,7 +14,7 @@ with [Guatiao](https://github.com/Boriken-Dev/guatiao).
 | `coqui_sign_in_policy` | Which methods may this sign-in use, and what does it still need? |
 
 A host asks authenticators in order until one knows the credentials, resolves the lookup
-through a directory, and asks an authorizer. Kind names and the hashes of their required
+through a directory, and asks an authorizer. Kind names and the floor hashes of their
 methods are a pinned contract; providers are built against the host's Guatiao revision.
 
 ## Providers

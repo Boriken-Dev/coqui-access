@@ -16,7 +16,10 @@ one-time recovery codes are made at enrolment and presented as the separate meth
 - **RFC 6238** - SHA-1 (every app reads it), SHA-256 or SHA-512, 6 to 8 digits, any period; checked
   against the RFC's Appendix B values.
 - **Replay protection** - the step a code was accepted for is written before the answer; that step
-  and earlier ones are refused, and a write that fails is an error.
+  and earlier ones are refused, and a write that fails is an error. A file table is locked around the
+  read and the write, so another process over the same file cannot use a code twice either.
+- **A delay under wrong codes** - five in a row (default) and the account takes no code for 30 s,
+  doubling to an hour; a caller lifts it with `Lockout::OFF`.
 - **Skew** - one step either side by default; every step in range is compared in constant time.
 - **Enrolment you prove** - a secret is not a factor until a code from the app confirms it;
   rotation keeps the old secret working until then.

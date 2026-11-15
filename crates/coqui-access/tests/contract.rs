@@ -3,8 +3,8 @@
 //! A provider library built against this crate keeps working with a newer host only while
 //! two things hold, and the compiler checks neither:
 //!
-//! - the **tables**: each kind's name and the hash Guatiao takes over its required methods'
-//!   names and their argument and return types as written;
+//! - the **tables**: each kind's name and the hash Guatiao takes over every method's name and
+//!   its argument and return types as written, optional (default-bodied) methods included;
 //! - the **required keys** of each model: a field that is not an `Option`.
 //!
 //! A failure here is not a test to update in passing: it means every provider library
@@ -46,9 +46,9 @@ fn every_kind_has_the_table_built_providers_were_built_against() {
             ("coqui_accounts", false, PINNED_ACCOUNTS),
             ("coqui_sign_in_policy", false, PINNED_SIGN_IN_POLICY),
         ],
-        "a required method of a kind changed, or a type one of them names was renamed: \
+        "a method of a kind was added or changed, or a type one of them names was renamed: \
          every provider library built before this change is now refused at load. \
-         Add a method with a default body after the required ones instead."
+         The hash covers optional methods too: extend with a new kind instead."
     );
 }
 
@@ -152,6 +152,7 @@ fn each_sign_in_model_round_trips_with_every_field_set() {
         done: vec![Factor {
             method: "password".to_owned(),
             provider: Some("coqui_access_password".to_owned()),
+            person: Some("p1".to_owned()),
         }],
         address: Some("192.0.2.7".to_owned()),
         client: Some("browser".to_owned()),
@@ -241,8 +242,19 @@ fn a_debug_line_of_a_sign_in_model_holds_no_identity_address_or_code() {
         }),
         ..SignInContext::default()
     };
-    let shown = format!("{context:?}");
-    for leaked in ["192.0.2.77", "identity-7", "alice-secret-name"] {
+    let mut context = context;
+    context.done.push(Factor {
+        method: "password".to_owned(),
+        provider: None,
+        person: Some("identity-9".to_owned()),
+    });
+    let shown = format!("{context:?} {:?}", context.done[0]);
+    for leaked in [
+        "192.0.2.77",
+        "identity-7",
+        "identity-9",
+        "alice-secret-name",
+    ] {
         assert!(!shown.contains(leaked), "{shown}");
     }
     assert!(shown.contains("sign_in"));

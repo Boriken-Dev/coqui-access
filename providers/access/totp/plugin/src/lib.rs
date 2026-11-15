@@ -8,8 +8,12 @@
 //! ```json
 //! { "source": { "file": { "path": "totp.toml", "format": "toml" } },
 //!   "issuer": "Example", "algorithm": "sha1", "digits": 6, "period": 30, "skew": 1,
-//!   "recovery_codes": 10, "enrol_seconds": 600, "max_records": 10000 }
+//!   "recovery_codes": 10, "enrol_seconds": 600, "max_records": 10000,
+//!   "lockout_after": 5, "lockout_seconds": 30, "lockout_longest_seconds": 3600 }
 //! ```
+//!
+//! A file source may name `max_bytes`; absent, the bound is sized from `max_records` (2 KiB
+//! a record, at least 1 MiB).
 //!
 //! Every key is optional. With no `source` the accounts live in memory. The file holds each
 //! account's secret readable, as a time-based code needs it: it is written with the owner's
@@ -29,7 +33,7 @@ use coqui_access_kit::file::Source;
 use coqui_access_kit::{Keyed, MemoryTable, RecordLimits, Table};
 use coqui_access_totp::{
     Algorithm, DEFAULT_DIGITS, DEFAULT_ENROL_SECONDS, DEFAULT_MAX_RECORDS, DEFAULT_PERIOD,
-    DEFAULT_RECOVERY_CODES, DEFAULT_SKEW, PendingTotp, TotpAccounts, TotpRecord,
+    DEFAULT_RECOVERY_CODES, DEFAULT_SKEW, Lockout, PendingTotp, TotpAccounts, TotpRecord,
 };
 
 use coqui_builder::{Describe, Partial};
@@ -68,6 +72,16 @@ pub struct TotpConfig {
     /// The most accounts, and the most enrolments waiting, the tables may hold.
     #[map(default = DEFAULT_MAX_RECORDS as u32)]
     pub max_records: u32,
+    /// Wrong codes in a row before an account takes no code for a while; 0 never delays,
+    /// which leaves counting wrong codes to the consumer alone.
+    #[map(default = Lockout::DEFAULT.after)]
+    pub lockout_after: u32,
+    /// The first delay, in seconds; it doubles with each further wrong code.
+    #[map(default = Lockout::DEFAULT.first_seconds)]
+    pub lockout_seconds: u32,
+    /// The longest delay, in seconds.
+    #[map(default = Lockout::DEFAULT.longest_seconds)]
+    pub lockout_longest_seconds: u32,
     /// How large a record's fields may be: `groups`, `field_bytes`, `email_bytes`,
     /// `display_name_bytes`, each a number or `none` for no bound.
     #[map(default)]
@@ -81,6 +95,18 @@ impl Default for TotpConfig {
             .build()
             .expect("an empty configuration reads, every key having a default")
     }
+}
+
+/// What one account's records take in a file, at most: a secret, its label and name, and the
+/// digests of ten recovery codes, in either format.
+const BYTES_PER_RECORD: u64 = 2048;
+
+/// The bound on a file holding `max_records` accounts: room for all of them, and never less
+/// than the kit's default.
+fn file_limit(max_records: u32) -> u32 {
+    let wanted = u64::from(max_records).saturating_mul(BYTES_PER_RECORD);
+    let least = coqui_access_kit::file::DEFAULT_MAX_BYTES as u64;
+    u32::try_from(wanted.max(least)).unwrap_or(u32::MAX)
 }
 
 /// The table `source` names, or one in memory.
@@ -115,14 +141,17 @@ impl TryFrom<TotpConfig> for TotpProvider {
     type Error = ProviderError;
 
     fn try_from(config: TotpConfig) -> Result<Self, Self::Error> {
-        let pending_source = config.pending.clone().or_else(|| {
+        let size = file_limit(config.max_records);
+        let sized = |source: &Source<Format>| source.clone().max_bytes_unless_set(size);
+        let pending_source = config.pending.as_ref().map(sized).or_else(|| {
             config
                 .source
                 .as_ref()
-                .map(|source| source.sibling("pending"))
+                .map(|source| sized(&source.sibling("pending")))
         });
+        let source = config.source.as_ref().map(sized);
         let mut builder = TotpAccounts::builder()
-            .table(open::<TotpRecord>(config.source.as_ref(), "accounts")?)
+            .table(open::<TotpRecord>(source.as_ref(), "accounts")?)
             .pending(open::<PendingTotp>(pending_source.as_ref(), "pending")?)
             .algorithm(config.algorithm)
             .digits(config.digits)
@@ -131,6 +160,11 @@ impl TryFrom<TotpConfig> for TotpProvider {
             .recovery_codes(config.recovery_codes)
             .enrol_seconds(config.enrol_seconds)
             .max_records(config.max_records as usize)
+            .lockout(Lockout::new(
+                config.lockout_after,
+                config.lockout_seconds,
+                config.lockout_longest_seconds,
+            ))
             .record_limits(config.record_limits);
         if let Some(issuer) = config.issuer {
             builder = builder.issuer(issuer);
@@ -241,6 +275,138 @@ mod tests {
             (defaults.digits, defaults.period, defaults.skew),
             (6, 30, 1)
         );
+    }
+
+    /// The code for the present step, written from RFC 4226 and independent of the crate.
+    fn present_code(link: &str) -> String {
+        use hmac::{Hmac, KeyInit, Mac};
+        let secret = link
+            .split(['?', '&'])
+            .find_map(|part| part.strip_prefix("secret="))
+            .unwrap();
+        let key = data_encoding::BASE32_NOPAD
+            .decode(secret.as_bytes())
+            .unwrap();
+        let now = coqui_access_kit::unix_now();
+        let mut mac = <Hmac<sha1::Sha1> as KeyInit>::new_from_slice(&key).unwrap();
+        mac.update(&((now / 30) as u64).to_be_bytes());
+        let digest = mac.finalize().into_bytes();
+        let offset = usize::from(digest[19] & 0x0f);
+        let number = u32::from_be_bytes([
+            digest[offset] & 0x7f,
+            digest[offset + 1],
+            digest[offset + 2],
+            digest[offset + 3],
+        ]);
+        format!("{:06}", number % 1_000_000)
+    }
+
+    fn enrolled(provider: &TotpProvider, name: &str) -> Vec<String> {
+        let begun = begin(provider, name);
+        provider
+            .put(AccountPut {
+                name: name.to_owned(),
+                secret: Some(present_code(&begun.secret.unwrap())),
+                ..AccountPut::default()
+            })
+            .unwrap();
+        begun.codes.unwrap()
+    }
+
+    fn recovery(name: &str, code: &str) -> Attempt {
+        Attempt {
+            name: Some(name.to_owned()),
+            secret: Some(code.to_owned()),
+            method: Some("recovery_code".to_owned()),
+            ..Attempt::default()
+        }
+    }
+
+    #[test]
+    fn a_code_used_in_one_process_is_refused_in_another_over_the_same_file() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("totp.toml");
+        let first = TotpProvider::try_from(config(&path)).unwrap();
+        let second = TotpProvider::try_from(config(&path)).unwrap();
+        let codes = enrolled(&first, "id-alice");
+        for code in codes.iter().take(5) {
+            let outcomes = std::thread::scope(|scope| {
+                let a = scope.spawn(|| first.authenticate(recovery("id-alice", code)).unwrap());
+                let b = scope.spawn(|| second.authenticate(recovery("id-alice", code)).unwrap());
+                [a.join().unwrap(), b.join().unwrap()]
+            });
+            let taken = outcomes
+                .iter()
+                .filter(|verdict| matches!(verdict, Verdict::Valid(_)))
+                .count();
+            assert_eq!(taken, 1, "one use of a one-time code");
+        }
+    }
+
+    #[test]
+    fn wrong_codes_are_counted_across_processes_over_the_same_file() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("totp.toml");
+        let delayed = |path: &std::path::Path| TotpConfig {
+            lockout_after: 2,
+            lockout_seconds: 600,
+            lockout_longest_seconds: 600,
+            ..config(path)
+        };
+        let first = TotpProvider::try_from(delayed(&path)).unwrap();
+        let second = TotpProvider::try_from(delayed(&path)).unwrap();
+        let codes = enrolled(&first, "id-alice");
+        first
+            .authenticate(recovery("id-alice", "AAAAA-AAAAA"))
+            .unwrap();
+        second
+            .authenticate(recovery("id-alice", "BBBBB-BBBBB"))
+            .unwrap();
+        // Two wrong ones, one in each: the account is delayed for both.
+        for provider in [&first, &second] {
+            assert_eq!(
+                provider
+                    .authenticate(recovery("id-alice", &codes[0]))
+                    .unwrap(),
+                Verdict::Invalid
+            );
+        }
+    }
+
+    #[test]
+    fn a_file_of_more_accounts_than_a_megabyte_holds_loads_under_the_default_bound() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("totp.toml");
+        let digest = "ab".repeat(32);
+        let mut text = String::new();
+        for number in 0..1_500 {
+            text.push_str(&format!(
+                "[[accounts]]
+name = 'id-{number:05}'
+secret = 'GEZDGNBVGY3TQOJQ'
+algorithm = 'sha1'
+digits = 6
+period = 30
+codes = [{}]
+",
+                (0..10)
+                    .map(|_| format!("'{digest}'"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+        assert!(text.len() > 1024 * 1024);
+        std::fs::write(&path, text).unwrap();
+        let provider = TotpProvider::try_from(config(&path)).unwrap();
+        assert_eq!(provider.accounts().unwrap().len(), 1_500);
+        // The source's own bound wins over the sized default.
+        let small = TotpConfig {
+            source: Some(Source::file(path.to_str().unwrap(), Format::Toml).max_bytes(4096)),
+            ..TotpConfig::default()
+        };
+        assert!(TotpProvider::try_from(small).is_err());
+        assert_eq!(file_limit(10_000), 10_000 * 2048);
+        assert_eq!(file_limit(10), 1024 * 1024);
     }
 
     #[test]

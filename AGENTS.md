@@ -36,7 +36,9 @@ Regenerate the kind description after a deliberate contract change:
 
 ## Rules
 
-- Kind names and the hashes of required methods are an ABI. A new method has a default body
+- Kind names and kind floor hashes are an ABI, and the hash covers every method of a kind,
+  optional (default-bodied) ones included: appending a method to a kind that exists changes its hash
+  and providers built before are refused. Extend a kind by a new kind, and a model by an `Option` field.
 - Providers depend on `coqui-access`, `coqui-access-kit`, `coqui-builder` and `guatiao-builder` (a settings
   type and its configuration) and at most `coqui-peer-tls`, `coqui-peer` and `coqui-net-acl`; never on a
   host or on each other. Code two providers share belongs in a crate under `crates/`.

@@ -228,9 +228,12 @@ impl<T, C> FileTable<T, C> {
 }
 impl<T: Keyed + Clone + Send + Walk + FromWalk, C: Codec> Table<T> for FileTable<T, C>;
 pub struct Source<F> { pub file: Option<FileSource<F>> }             // coqui_builder::Describe, F: Describe
-pub struct FileSource<F> { pub path: String, pub format: F }         // coqui_builder::Describe; format required
+pub struct FileSource<F> { pub path: String, pub format: F, pub max_bytes: Option<u32> }
+    // coqui_builder::Describe; format required; max_bytes absent is the provider's default (DEFAULT_MAX_BYTES unless it sizes one)
 impl<F> Source<F> {
     pub fn file(path: impl Into<String>, format: F) -> Self;
+    pub fn max_bytes(self, max: u32) -> Self;                        // the file's bound, in bytes
+    pub fn max_bytes_unless_set(self, max: u32) -> Self;             // a provider's sized default; the configuration wins
     pub fn sibling(&self, suffix: &str) -> Self where F: Clone;      // "<path>.<suffix>", same format
     pub fn open<T>(&self, section: &str) -> Result<Arc<dyn Table<T>>, SourceError>
         where F: Codec + Clone + 'static, T: Keyed + Clone + Send + Walk + FromWalk + 'static;
@@ -255,7 +258,12 @@ pub fn write_private(path: &Path, bytes: &[u8]) -> Result<(), String>;
   unknown top-level key, a refused record or a document the codec refuses is a `SourceError`
   in the kit's own words (`file has an unknown top-level key`, `a record in the file is
   invalid`, `file is not a valid <name> table`): a codec's error, which may quote the
-  document, is never shown. Atomic within one process; across processes the last writer wins.
+  document, is never shown. A read-modify-write (`put`, `remove`, `update`) holds an exclusive
+  operating-system lock (`File::lock`, Rust 1.89) on a file beside the table, `<path>.lock`, from the
+  read to the write, in this and every other process: no update is lost, and `update` computes its
+  change from the records it replaces. The lock file is created with the table's owner-only mode and
+  left in place. Reads take no lock (the file is replaced whole). On a filesystem whose locks are
+  advisory or unsupported (some network mounts) the guarantee is the filesystem's.
 - A codec reads with `seed.deserialize(..)` and should refuse trailing text (serde_json's
   `Deserializer::end`). Through a self-describing format's `deserialize_any` a byte string is
   only what the codec's `Presentation` spells; the providers' records hold no bytes.
@@ -278,7 +286,9 @@ pub trait Table<T>: Send + Sync {
     fn changes_since(&self, since: Revision) -> Result<Option<Snapshot<T>>, SourceError>;  // default: load + compare
     fn put(&self, record: T) -> Result<(), SourceError>;        // default Err(ReadOnly); same key replaces
     fn remove(&self, key: &str) -> Result<bool, SourceError>;   // default Err(ReadOnly); true when it was there
+    fn update(&self, make: &mut Update<'_, T>) -> Result<(), SourceError>;   // default: load, make, put
 }
+pub type Update<'a, T> = dyn FnMut(&[T]) -> Result<Option<T>, SourceError> + 'a;   // records read -> the record to put, or None
 pub struct MemoryTable<T>;              // Table<T> for T: Keyed + Clone + Send
 impl<T> MemoryTable<T> { pub fn new() -> Self; pub fn from_records(impl IntoIterator<Item = T>) -> Self; }
 pub struct Reloading<T>;                // Debug
@@ -286,6 +296,7 @@ impl<T: Keyed + Clone> Reloading<T> {
     pub fn new(table: Arc<dyn Table<T>>, validate: impl Fn(&[T]) -> Result<(), SourceError> + Send + Sync + 'static) -> Result<Self, SourceError>;
     pub fn read<R>(&self, read: impl FnOnce(&[T]) -> R) -> Result<R, SourceError>;
     pub fn put_with<R>(&self, make: impl FnOnce(&[T]) -> Result<(T, R), SourceError>) -> Result<R, SourceError>;
+        // `make` runs against the records the table read for this update (through `Table::update`)
     pub fn remove(&self, key: &str) -> Result<bool, SourceError>;
 }
 pub fn check_keys<T: Keyed>(records: &[T], max: usize) -> Result<(), SourceError>;
@@ -300,7 +311,10 @@ pub fn unix_now() -> i64;                                    // whole seconds si
 - `Reloading` calls `changes_since` on every use, so it must be cheap. Every snapshot is
   checked with `validate`; a table that has become unreadable or invalid is an error, never a
   stale answer. `put_with` validates the records as they would be with the new one before
-  putting it, so a refused change leaves the table alone. It is atomic within one process only.
+  putting it, so a refused change leaves the table alone. `make` is run through `Table::update`,
+  against the records the table read for that update: a `FileTable` reads them under its lock, so
+  `put_with` is atomic across processes sharing the file; `MemoryTable` and a table that does not
+  override `update` are atomic within the one `Reloading` only.
 - `check_keys` refuses more than `max` records or a repeated key; providers call it first.
 - A provider maps a table error with `reading` where it only reads (a table it cannot read
   means "could not find out", never "no") and with `writing` where it puts, removes or opens

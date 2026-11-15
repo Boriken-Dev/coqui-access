@@ -20,7 +20,11 @@ pub const DEFAULT_RECOVERY_CODES: u32 = 10;  pub const DEFAULT_ENROL_SECONDS: u3
 pub enum Algorithm { Sha1 /* default */, Sha256, Sha512 }   // coqui_builder::Leaf: "sha1" | "sha256" | "sha512"; as_str()
 pub struct TotpRecord { pub name, pub secret: String, pub label: Option<String>, pub algorithm: String,
     pub digits: u32, pub period: u32, pub last_step: Option<i64>, pub codes: Vec<String>,
-    pub disabled: bool, pub made_unix: Option<i64> }       // non_exhaustive; Keyed by name; Debug redacts
+    pub disabled: bool, pub made_unix: Option<i64>, pub failures: u32,
+    pub locked_until_unix: Option<i64> }                   // non_exhaustive; Keyed by name; Debug redacts
+                                                           // failures/locked_until_unix default, so old files read
+pub struct Lockout { pub after: u32, pub first_seconds: u32, pub longest_seconds: u32 }   // non_exhaustive, Copy
+impl Lockout { pub const DEFAULT: Self /* 5, 30, 3600 */; pub const OFF: Self; pub const fn new(after, first_seconds, longest_seconds) -> Self; }
 pub struct PendingTotp { pub name, pub secret: String, pub label: Option<String>, pub algorithm: String,
     pub digits: u32, pub period: u32, pub codes: Vec<String>, pub created_unix: i64 }   // as above
 pub struct TotpBuilder;                                      // Debug
@@ -36,6 +40,7 @@ impl TotpBuilder {
     pub fn enrol_seconds(self, seconds: u32) -> Self;           // >= 1, default 600
     pub fn max_records(self, usize) -> Self;                    // default 10 000, each table
     pub fn record_limits(self, RecordLimits) -> Self;
+    pub fn lockout(self, Lockout) -> Self;                      // default Lockout::DEFAULT; OFF lifts it
     pub fn clock(self, impl Fn() -> i64 + Send + Sync + 'static) -> Self;   // default the system's
     pub fn build(self) -> Result<TotpAccounts, SourceError>;
 }
@@ -55,8 +60,15 @@ impl Accounts for TotpAccounts { /* accounts, put, remove, waiting */ }
 - A time-based code is accepted for the present step and `skew` steps either side. The newest
   matching step later than `last_step` wins, and is written through the table **before** the answer;
   a write that fails is an error (`GUATIAO_ERR_INTERNAL`), never a success that could be replayed.
-  The step is checked again inside the write, so two requests with one code cannot both succeed in
-  one process. Across processes the table's last writer wins.
+  The code is judged against the record the table read under its lock (`Table::update`), so two
+  requests with one code cannot both succeed, in this process or another over the same file (a
+  `FileTable`; another kind of table is as atomic as it is).
+- **Lockout.** After `after` wrong codes in a row (a wrong recovery code, or a step already used,
+  counts) the account answers `Invalid` without checking until `first_seconds` have passed, doubling
+  with each further wrong code up to `longest_seconds`; a refusal during the delay is not counted; a
+  right code resets it; `put` with `disabled` (either value) resets it. `Lockout::OFF` (`after` 0)
+  keeps no count and writes nothing on a wrong code. The delay lets anyone who can name an account keep
+  its owner out for up to `longest_seconds` at a time: the consumer's per-address throttle limits that.
 - Every step in range is compared in constant time, and every recovery code is compared, none
   stopping the others.
 - A recovery code is `XXXXX-XXXXX` (letters and digits, no `I`, `O`, `0`, `1`), compared without the
