@@ -1,6 +1,7 @@
 //! The built library, mapped by a registry, serves `coqui_signin_rules` through the C ABI.
 
 use std::path::PathBuf;
+use std::process::Command;
 
 use coqui_access::guatiao::Alloc;
 use coqui_access::guatiao::library::{Kind, Registry};
@@ -8,11 +9,26 @@ use coqui_access::{SignInContext, SignInPolicy};
 use guatiao_serde::Presentation;
 use guatiao_serde::text::json;
 
-/// The cdylib this package builds, beside the test binary's own directory.
+/// The cdylib this package builds, in the profile directory beside the test binary's own.
+///
+/// Cargo does not link a cdylib-only library into its own tests, so it is not always built
+/// for them: build it here, which does nothing when it is current.
 fn library() -> PathBuf {
     let exe = std::env::current_exe().unwrap();
-    let directory = exe.parent().unwrap().parent().unwrap();
-    directory.join(format!(
+    let profile = exe.parent().unwrap().parent().unwrap();
+    let target = profile.parent().unwrap();
+    let mut build = Command::new(env!("CARGO"));
+    build
+        .arg("build")
+        .arg("--manifest-path")
+        .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"))
+        .arg("--target-dir")
+        .arg(target);
+    if profile.file_name().is_some_and(|name| name == "release") {
+        build.arg("--release");
+    }
+    assert!(build.status().unwrap().success(), "the plugin builds");
+    profile.join(format!(
         "{}coqui_access_signin_plugin{}",
         std::env::consts::DLL_PREFIX,
         std::env::consts::DLL_SUFFIX
