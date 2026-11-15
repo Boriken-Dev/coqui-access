@@ -25,6 +25,7 @@ impl Authenticator for Mock {
             Verdict::Valid(Lookup {
                 by: "name".to_owned(),
                 value: "alice".to_owned(),
+                ..Lookup::default()
             })
         } else {
             Verdict::Invalid

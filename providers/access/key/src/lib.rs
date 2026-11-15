@@ -282,6 +282,7 @@ impl Authenticator for Keys {
             Some(record) if record.taken() => Verdict::Valid(Lookup {
                 by: "id".to_owned(),
                 value: record.id,
+                ..Lookup::default()
             }),
             Some(_) => Verdict::Invalid,
         })
@@ -496,7 +497,8 @@ mod tests {
         assert!(
             keys.lookup(Lookup {
                 by: "name".to_owned(),
-                value: "relay".to_owned()
+                value: "relay".to_owned(),
+                ..Lookup::default()
             })
             .unwrap()
             .is_none()

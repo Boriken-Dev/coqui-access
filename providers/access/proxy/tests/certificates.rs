@@ -57,6 +57,7 @@ fn by_email(address: &str) -> Verdict {
     Verdict::Valid(Lookup {
         by: "email".to_owned(),
         value: address.to_owned(),
+        ..Lookup::default()
     })
 }
 
@@ -100,6 +101,7 @@ fn the_default_account_is_the_subject_cn_and_an_ip_in_a_dns_name_counts() {
         Verdict::Valid(Lookup {
             by: "name".to_owned(),
             value: "Client One".to_owned(),
+            ..Lookup::default()
         })
     );
     let by_ip = proxy(
@@ -113,6 +115,7 @@ fn the_default_account_is_the_subject_cn_and_an_ip_in_a_dns_name_counts() {
         Verdict::Valid(Lookup {
             by: "address".to_owned(),
             value: "10.0.0.9".to_owned(),
+            ..Lookup::default()
         })
     );
 }
@@ -171,6 +174,7 @@ fn a_user_header_comes_first_then_the_certificate_then_the_subject() {
         Verdict::Valid(Lookup {
             by: "name".to_owned(),
             value: "alice".to_owned(),
+            ..Lookup::default()
         })
     );
     assert_eq!(
@@ -182,6 +186,7 @@ fn a_user_header_comes_first_then_the_certificate_then_the_subject() {
         Verdict::Valid(Lookup {
             by: "group".to_owned(),
             value: "Ops".to_owned(),
+            ..Lookup::default()
         })
     );
     let mut untrusted = from_proxy(&all[1..]);

@@ -68,6 +68,7 @@ fn the_right_password_signs_in_and_names_the_account_by_id() {
         .lookup(Lookup {
             by: "name".to_owned(),
             value: account.user.clone(),
+            ..Lookup::default()
         })
         .unwrap()
         .unwrap();
@@ -103,6 +104,7 @@ fn an_unknown_account_is_unknown_and_not_found() {
     let lookup = Lookup {
         by: "name".to_owned(),
         value: nobody,
+        ..Lookup::default()
     };
     assert_eq!(account.accounts.lookup(lookup).unwrap(), None);
 }

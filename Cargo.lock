@@ -343,26 +343,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "coqui-access-signin"
-version = "0.1.0"
-dependencies = [
- "coqui-access",
- "coqui-builder",
- "coqui-net-acl",
- "guatiao-builder",
-]
-
-[[package]]
-name = "coqui-access-signin-plugin"
-version = "0.1.0"
-dependencies = [
- "coqui-access",
- "coqui-access-signin",
- "guatiao",
- "guatiao-serde",
-]
-
-[[package]]
 name = "coqui-access-system"
 version = "0.1.0"
 dependencies = [

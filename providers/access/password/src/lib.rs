@@ -270,6 +270,7 @@ impl Authenticator for PasswordAccounts {
             Some(account) if verified && !account.disabled => Verdict::Valid(Lookup {
                 by: "id".to_owned(),
                 value: account.id,
+                ..Lookup::default()
             }),
             _ => Verdict::Invalid,
         })
@@ -490,6 +491,7 @@ mod tests {
                 .lookup(Lookup {
                     by: "id".to_owned(),
                     value: "person-a".to_owned(),
+                    ..Lookup::default()
                 })
                 .unwrap()
                 .is_none()

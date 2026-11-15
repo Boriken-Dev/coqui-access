@@ -48,7 +48,7 @@ struct Always;
 
 impl Authenticator for Always {
     fn authenticate(&self, _: Attempt) -> Result<Verdict, ProviderError> {
-        Ok(Verdict::Valid(Lookup { by: "name".into(), value: "alice".into() }))
+        Ok(Verdict::Valid(Lookup { by: "name".into(), value: "alice".into(), ..Lookup::default() }))
     }
 }
 ```

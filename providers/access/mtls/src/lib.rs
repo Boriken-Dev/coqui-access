@@ -11,6 +11,7 @@
 #![warn(missing_debug_implementations)]
 #![warn(missing_docs)]
 
+mod claims;
 mod pin;
 mod trust;
 
@@ -593,6 +594,9 @@ impl Authenticator for MtlsAccounts {
                     return Ok(Verdict::Valid(Lookup {
                         by: "id".to_owned(),
                         value: id,
+                        claims: chain
+                            .first()
+                            .and_then(|leaf| claims::of_certificate(leaf.as_ref())),
                     }));
                 }
                 None => {}
@@ -950,7 +954,8 @@ mod tests {
             peers
                 .lookup(Lookup {
                     by: "id".to_owned(),
-                    value: "service-1".to_owned()
+                    value: "service-1".to_owned(),
+                    ..Lookup::default()
                 })
                 .unwrap()
                 .is_none()

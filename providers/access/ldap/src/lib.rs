@@ -352,6 +352,7 @@ impl Authenticator for Ldap {
             0 => Ok(Verdict::Valid(Lookup {
                 by: "name".to_owned(),
                 value: found.name.unwrap_or(name),
+                ..Lookup::default()
             })),
             INVALID_CREDENTIALS => Ok(Verdict::Invalid),
             _ => Err(coqui_access::error::internal(

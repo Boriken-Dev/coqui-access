@@ -141,12 +141,14 @@ fn an_attempt_without_a_name_and_password_is_unknown_and_an_unknown_name_too() {
         let lookup = Lookup {
             by: "name".to_owned(),
             value: value.to_owned(),
+            ..Lookup::default()
         };
         assert_eq!(accounts.lookup(lookup).unwrap(), None);
     }
     let other = Lookup {
         by: "email".to_owned(),
         value: "a@b".to_owned(),
+        ..Lookup::default()
     };
     assert_eq!(accounts.lookup(other).unwrap(), None);
 }

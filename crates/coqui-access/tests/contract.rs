@@ -19,8 +19,8 @@ use coqui_access::guatiao::library::kind::kind_document;
 use coqui_access::guatiao::{FromValue, Map, ToValue, Value};
 use coqui_access::{
     AccountInfo, AccountPut, Accounts, Attempt, Authenticator, AuthorizationDecision,
-    AuthorizationRequest, Authorizer, Description, Directory, Factor, Lookup, Offer, Person,
-    PutOutcome, SignInContext, SignInDecision, SignInPolicy, Verdict, Waiting,
+    AuthorizationRequest, Authorizer, Claims, Description, Directory, Factor, Lookup, Offer,
+    Person, PutOutcome, SignInContext, SignInDecision, SignInPolicy, Verdict, Waiting,
 };
 use guatiao_serde::Presentation;
 use guatiao_serde::text::json;
@@ -90,6 +90,7 @@ fn every_model_requires_the_keys_it_always_did_and_skips_ones_it_does_not_know()
         reads_past_what_it_does_not_know::<Lookup>(),
         keys(&["by", "value"])
     );
+    assert_eq!(reads_past_what_it_does_not_know::<Claims>(), keys(&[]));
     assert_eq!(
         reads_past_what_it_does_not_know::<Person>(),
         keys(&["attributes", "groups", "id", "name"])
@@ -191,6 +192,42 @@ fn each_sign_in_model_round_trips_with_every_field_set() {
     assert_eq!(AccountPut::from_value(&value).unwrap(), put);
 }
 
+/// A lookup written before claims existed still reads, and says none.
+#[test]
+fn a_lookup_written_before_claims_existed_still_reads() {
+    let mut map = Map::new();
+    map.set("by", "id");
+    map.set("value", "x");
+    let read = Lookup::from_value(&Value::from(map)).expect("an old lookup reads");
+    assert_eq!(read.claims, None);
+}
+
+#[test]
+fn claims_round_trip_and_show_counts_not_values() {
+    let claims = Claims {
+        values: [(
+            "san.upn".to_owned(),
+            vec!["someone@corp.example".to_owned()],
+        )]
+        .into(),
+        certificate: Some(vec![1_u8, 2, 3].into()),
+    };
+    let lookup = Lookup {
+        by: "claims".to_owned(),
+        value: "label".to_owned(),
+        claims: Some(claims.clone()),
+    };
+    let value = lookup.to_value().unwrap();
+    assert_eq!(Lookup::from_value(&value).unwrap(), lookup);
+    assert_eq!(claims.get("san.upn"), ["someone@corp.example"]);
+    assert!(claims.get("san.email").is_empty());
+    let shown = format!("{lookup:?}");
+    assert!(
+        !shown.contains("someone@corp") && !shown.contains("label"),
+        "{shown}"
+    );
+}
+
 /// A debug line is read in logs: it holds words and counts, never an identity or a code.
 #[test]
 fn a_debug_line_of_a_sign_in_model_holds_no_identity_address_or_code() {
@@ -230,6 +267,7 @@ fn a_verdict_round_trips_in_each_form() {
     let valid = Verdict::Valid(Lookup {
         by: "id".to_owned(),
         value: "x".to_owned(),
+        ..Lookup::default()
     });
     for verdict in [Verdict::Unknown, Verdict::Invalid, valid] {
         let value = verdict.to_value().unwrap();

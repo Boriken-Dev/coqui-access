@@ -278,6 +278,7 @@ impl Authenticator for SystemAccounts {
         let lookup = Lookup {
             by: "name".to_owned(),
             value: name,
+            ..Lookup::default()
         };
         let Some(account) = self.admitted(&lookup)? else {
             return Ok(Verdict::Unknown);
@@ -290,6 +291,7 @@ impl Authenticator for SystemAccounts {
                 Verdict::Valid(Lookup {
                     by: "id".to_owned(),
                     value: account.id,
+                    ..Lookup::default()
                 })
             } else {
                 Verdict::Invalid
