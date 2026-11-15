@@ -58,6 +58,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- `MtlsAccounts` decides whether a certificate waits inside the waiting table's own `update`, from the entries it holds
+  then, so providers and processes sharing a waiting table share its places and total; it used to decide from an
+  unlocked read and a queue private to the provider. `MemoryTable` implements `Table::update` under its own lock.
+- A stuck pin file read holds a place per account (one) and eight in all, released by a drop guard; the plugin of
+  `coqui-access-totp` sizes its files from its recovery code and name and label limits; `docs/sign-in.md` lets the
+  consumer's count of wrong second-factor codes decay.
 - **Breaking: `coqui_access_proxy::default_account()` is empty.** A forwarded certificate is then answered
   `by: "claims"` for the consumer's matcher, as `coqui_access_mtls` does; it used to be `subject.cn` by `name`. A
   subject header, which has no certificate, still names its common name, by `name`. Set `account` picks to keep the old

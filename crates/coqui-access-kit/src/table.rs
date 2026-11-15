@@ -251,6 +251,17 @@ impl<T: Keyed + Clone + Send> Table<T> for MemoryTable<T> {
         Ok(())
     }
 
+    fn update(&self, make: &mut Update<'_, T>) -> Result<(), SourceError> {
+        // The table stays locked from the read to the write, so two updates never both
+        // decide from the same records.
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(record) = make(&state.1)? {
+            upsert(&mut state.1, record);
+            state.0 += 1;
+        }
+        Ok(())
+    }
+
     fn remove(&self, key: &str) -> Result<bool, SourceError> {
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         let before = state.1.len();

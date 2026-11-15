@@ -517,28 +517,38 @@ impl MtlsAccounts {
 
     /// Writes a fingerprint nobody accepted down as waiting, when coqui-peer's
     /// [`WaitingQueue`] admits it: one already waiting stays as it is.
+    ///
+    /// The decision is made inside the waiting table's own update, from the entries it holds
+    /// then (a file table is locked for it), with a queue built from them. So entries another
+    /// provider or process wrote count against their source and the total, and two racing
+    /// providers cannot both take the last place.
     fn wait(&self, fingerprint: &PeerId, from: Option<String>) {
-        let mut queue = self.queue.lock().unwrap_or_else(PoisonError::into_inner);
-        let waits = self.waits();
-        if waits.iter().any(|had| had.fingerprint == *fingerprint) {
-            return;
-        }
-        let admission = queue.admit(
-            *fingerprint,
-            source_of(from.as_deref()),
-            waits.len(),
-            Instant::now(),
-        );
-        if !admission.record {
-            return;
-        }
+        let queue = self.queue.lock().unwrap_or_else(PoisonError::into_inner);
+        let limits = queue.limits();
+        let source = source_of(from.as_deref());
+        let mut evict = Vec::new();
         // Whether it could be written is not the peer's to be told.
-        for old in &admission.evict {
+        let _ = self.waiting_table.update(&mut |waits| {
+            if waits.iter().any(|had| had.fingerprint == *fingerprint) {
+                return Ok(None);
+            }
+            let (now, now_unix) = (Instant::now(), unix_now());
+            let mut fresh = WaitingQueue::new(limits);
+            for had in waits {
+                let age = Duration::from_secs(u64::try_from(now_unix - had.seen_unix).unwrap_or(0));
+                let at = now.checked_sub(age).unwrap_or(now);
+                fresh.remember(had.fingerprint, source_of(had.peer.as_deref()), at);
+            }
+            let admission = fresh.admit(*fingerprint, source, waits.len(), now);
+            if !admission.record {
+                return Ok(None);
+            }
+            evict = admission.evict;
+            Ok(Some(Unaccepted::new(fingerprint, from.clone(), now_unix)))
+        });
+        for old in &evict {
             let _ = self.waiting_table.remove(&old.canonical());
         }
-        let _ = self
-            .waiting_table
-            .put(Unaccepted::new(fingerprint, from, unix_now()));
     }
 
     /// MtlsAccounts that are accepted wait no more.
@@ -1072,6 +1082,71 @@ mod tests {
             peers.authenticate(attempt(Some(&shown))).unwrap();
         }
         assert_eq!(peers.waiting().unwrap().len(), 1);
+    }
+
+    fn from_source(last: u8, certificate: &PeerId) -> Attempt {
+        Attempt {
+            peer: Some(format!("192.0.2.{last}:4000")),
+            certificate: Some(certificate.to_string()),
+            ..Attempt::default()
+        }
+    }
+
+    #[test]
+    fn two_providers_over_one_waiting_table_share_a_sources_place() {
+        let waiting = Arc::new(MemoryTable::<Unaccepted>::new());
+        let build = || {
+            MtlsAccounts::builder()
+                .waiting(waiting.clone())
+                .build()
+                .unwrap()
+        };
+        let (first, second) = (build(), build());
+        first.authenticate(from_source(9, &fingerprint())).unwrap();
+        // The second provider has not seen the first one's entry in memory, only in the table.
+        second.authenticate(from_source(9, &fingerprint())).unwrap();
+        assert_eq!(
+            waiting.load().unwrap().records.len(),
+            1,
+            "one place for 192.0.2.9"
+        );
+    }
+
+    #[test]
+    fn providers_racing_over_one_waiting_table_never_pass_its_total() {
+        let waiting = Arc::new(MemoryTable::<Unaccepted>::new());
+        let limits = {
+            let mut limits = default_waiting_limits();
+            limits.total = 3;
+            limits
+        };
+        let providers: Vec<Arc<MtlsAccounts>> = (0..2)
+            .map(|_| {
+                Arc::new(
+                    MtlsAccounts::builder()
+                        .waiting(waiting.clone())
+                        .waiting_limits(limits.clone())
+                        .build()
+                        .unwrap(),
+                )
+            })
+            .collect();
+        let start = Arc::new(std::sync::Barrier::new(16));
+        let threads: Vec<_> = (0..16u8)
+            .map(|number| {
+                let provider = providers[usize::from(number % 2)].clone();
+                let start = start.clone();
+                let from = from_source(number + 10, &fingerprint());
+                std::thread::spawn(move || {
+                    start.wait();
+                    provider.authenticate(from).unwrap();
+                })
+            })
+            .collect();
+        for thread in threads {
+            thread.join().unwrap();
+        }
+        assert_eq!(waiting.load().unwrap().records.len(), 3);
     }
 
     #[test]

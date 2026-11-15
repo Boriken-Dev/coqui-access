@@ -313,8 +313,8 @@ pub fn unix_now() -> i64;                                    // whole seconds si
   stale answer. `put_with` validates the records as they would be with the new one before
   putting it, so a refused change leaves the table alone. `make` is run through `Table::update`,
   against the records the table read for that update: a `FileTable` reads them under its lock, so
-  `put_with` is atomic across processes sharing the file; `MemoryTable` and a table that does not
-  override `update` are atomic within the one `Reloading` only.
+  `put_with` is atomic across processes sharing the file; `MemoryTable::update` holds its own lock from the
+  read to the write; a table that does not override `update` is atomic within the one `Reloading` only.
 - `check_keys` refuses more than `max` records or a repeated key; providers call it first.
 - A provider maps a table error with `reading` where it only reads (a table it cannot read
   means "could not find out", never "no") and with `writing` where it puts, removes or opens

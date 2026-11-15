@@ -342,6 +342,24 @@ mod tests {
     }
 
     #[test]
+    fn two_providers_over_one_waiting_file_share_the_places_in_it() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("peers.toml");
+        let (first, second) = (
+            MtlsAccountsProvider::try_from(config(&path)).unwrap(),
+            MtlsAccountsProvider::try_from(config(&path)).unwrap(),
+        );
+        let from = |certificate: &str| shown(certificate);
+        let one = Identity::generate().unwrap().fingerprint().to_string();
+        let other = Identity::generate().unwrap().fingerprint().to_string();
+        first.authenticate(from(&one)).unwrap();
+        // The same address, through the other provider: its one place is taken in the file.
+        second.authenticate(from(&other)).unwrap();
+        assert_eq!(first.waiting().unwrap().len(), 1);
+        assert_eq!(second.waiting().unwrap().len(), 1);
+    }
+
+    #[test]
     fn waiting_can_be_a_separate_source_or_memory() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("peers.toml");

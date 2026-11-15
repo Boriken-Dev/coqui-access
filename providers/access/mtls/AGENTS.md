@@ -100,7 +100,9 @@ impl Accounts for MtlsAccounts { /* accounts, put, remove, waiting */ }
   source; a source holds `per_source` entries (past it the newcomer is not written down), the list holds `total`
   (past it the newcomer is not written down, nobody is pushed out), and one certificate from
   one source is written down again only after `rerecord`. A fingerprint already waiting stays
-  as it is. A provider built over a waiting table counts what is there. `Accounts::waiting` lists them newest first with
+  as it is. The decision is made inside the waiting table's `update` (a file table is locked for it), from a queue built
+  from the entries it holds at that moment, so entries another provider or process wrote count against their
+  source and the total, and two racing providers cannot both take the last place. `Accounts::waiting` lists them newest first with
   `shown` in canonical `sha256:<hex>` form. A waiting table that cannot be read or written
   means nobody waits; the peer is never told.
 - `put`: `secret` is a pin and is required for a new peer: a SHA-256 certificate fingerprint (any
