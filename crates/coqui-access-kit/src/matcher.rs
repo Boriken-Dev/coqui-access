@@ -50,11 +50,16 @@ pub struct MatchRule {
     pub by: String,
     /// Text with `{claim}` and `{claim|filter|...}` parts; `{{` and `}}` are braces. The
     /// filters are `lower`, `upper`, `local` (before the last `@`) and `domain` (after it).
-    /// It names at least one claim.
+    /// It names at least one claim. Stripping a realm with `local` loses what ties the name
+    /// to it, so such a rule also needs `domain` or `pins`.
     pub template: String,
     /// The name of a pin source (given to the builder): the one account this rule finds must
     /// also hold one of the certificate's pins there.
     pub pins: Option<String>,
+    /// The realm a `local` filter strips: a claim value passed through `local` counts only
+    /// when it ends `@<domain>` (any case), so `alice@evil.example` is not `alice`. A rule
+    /// that strips a domain says which, or names `pins`; one with no `local` has none.
+    pub domain: Option<String>,
 }
 
 impl MatchRule {
@@ -64,7 +69,15 @@ impl MatchRule {
             by: by.into(),
             template: template.into(),
             pins: None,
+            domain: None,
         }
+    }
+
+    /// This rule keeping, for `local`, only values of `domain`.
+    #[must_use]
+    pub fn domain(mut self, domain: impl Into<String>) -> Self {
+        self.domain = Some(domain.into());
+        self
     }
 
     /// This rule also requiring the account to hold a pin in the source called `source`.
@@ -76,12 +89,12 @@ impl MatchRule {
 }
 
 /// The rules a matcher uses unless told otherwise: the UPN as a name, the email address as
-/// an email, the subject's common name as a name.
+/// an email. The subject's common name is not among them: it is whatever the issuer let the
+/// holder type, so a deployment that trusts it says so in a rule of its own.
 pub fn default_rules() -> Vec<MatchRule> {
     vec![
         MatchRule::new("name", "{san.upn}"),
         MatchRule::new("email", "{san.email}"),
-        MatchRule::new("name", "{subject.cn}"),
     ]
 }
 
@@ -278,6 +291,15 @@ struct Compiled {
     filter: bool,
     pieces: Vec<Piece>,
     pins: Option<String>,
+    /// The realm `local` keeps, lower case.
+    domain: Option<String>,
+}
+
+/// Whether `value` is `<something>@<domain>`, in any case.
+fn in_realm(value: &str, domain: &str) -> bool {
+    value
+        .rsplit_once('@')
+        .is_some_and(|(local, found)| !local.is_empty() && found.eq_ignore_ascii_case(domain))
 }
 
 impl Compiled {
@@ -293,6 +315,33 @@ impl Compiled {
             return Err(fail(
                 index,
                 "the template names no claim, so it would look up the same account for everyone",
+            ));
+        }
+        let strips = pieces.iter().any(|piece| {
+            matches!(piece, Piece::Field { filters, .. } if filters.contains(&Filter::Local))
+        });
+        let domain = match rule.domain.as_deref() {
+            None => None,
+            Some(domain) => {
+                if domain.is_empty()
+                    || domain.contains('@')
+                    || domain.chars().any(|c| c.is_control() || c.is_whitespace())
+                {
+                    return Err(fail(index, "the domain is not a domain name"));
+                }
+                if !strips {
+                    return Err(fail(
+                        index,
+                        "a domain applies to a template that uses local",
+                    ));
+                }
+                Some(domain.to_ascii_lowercase())
+            }
+        };
+        if strips && domain.is_none() && rule.pins.is_none() {
+            return Err(fail(
+                index,
+                "local strips the realm from a name: say which with domain, or require pins",
             ));
         }
         let filter = *by == "filter";
@@ -313,6 +362,7 @@ impl Compiled {
             filter,
             pieces,
             pins: rule.pins.clone(),
+            domain,
         })
     }
 
@@ -326,6 +376,12 @@ impl Compiled {
                 Piece::Field { name, filters } => {
                     let mut values: Vec<String> = Vec::new();
                     for value in claims.get(name) {
+                        if let Some(domain) = &self.domain
+                            && filters.contains(&Filter::Local)
+                            && !in_realm(value, domain)
+                        {
+                            continue;
+                        }
                         let mut value = Some(value.clone());
                         for filter in filters {
                             value = value.and_then(|value| filter.apply(&value));
@@ -460,14 +516,18 @@ impl Matcher {
     /// A `by` other than `name`, `email`, `id` or `filter`; a template with an unmatched
     /// brace, a claim name that is not lowercase words, a filter that is not `lower`,
     /// `upper`, `local` or `domain`, or no claim at all; a `filter` template that is not one
-    /// balanced parenthesised group; a rule naming a pin source.
+    /// balanced parenthesised group; a rule naming a pin source; a template using `local`
+    /// with neither a `domain` nor `pins`; a `domain` that is empty, holds `@` or whitespace,
+    /// or is given to a template without `local`.
     pub fn new(config: MatcherConfig) -> Result<Self, MatcherError> {
         Self::builder(config).build()
     }
 
     /// Finds the account `lookup` names.
     ///
-    /// A lookup that is not `by: "claims"`, or has no claims, is looked up as it is.
+    /// A lookup that is not `by: "claims"`, or has no claims, is looked up as it is, except a
+    /// `by: "filter"` one, which is refused (`NotFound`): filters come only from the rules'
+    /// escaped templates.
     ///
     /// # Errors
     ///
@@ -492,6 +552,9 @@ impl Matcher {
         let claims = match (&lookup.claims, lookup.by.as_str()) {
             (Some(claims), "claims") => claims,
             (None, "claims") => return Ok(Match::NotFound),
+            // A filter is made by a rule's template, with its values escaped; one handed in
+            // is somebody's raw text.
+            (_, "filter") => return Ok(Match::NotFound),
             _ => {
                 return Ok(match asked(directory, lookup.clone())? {
                     Asked::One(person) => Match::Found(person),

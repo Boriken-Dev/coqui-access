@@ -81,6 +81,11 @@ fn matcher(rules: &[(&str, &str)]) -> Matcher {
     Matcher::new(config).unwrap()
 }
 
+/// A rule that strips a realm, which a rule must say which realm it is and a test says so.
+fn realm(by: &str, template: &str) -> MatchRule {
+    MatchRule::new(by, template).domain("corp.example")
+}
+
 fn found(result: Match) -> String {
     match result {
         Match::Found(person) => person.id,
@@ -104,7 +109,14 @@ fn a_name_template_renders_claims_through_its_filters() {
         ("prefix-{subject.cn|lower}-{{x}}", "prefix-client one-{x}"),
     ] {
         let directory = Stand::default().knows("name", rendered, "p");
-        let result = matcher(&[("name", template)])
+        let mut config = MatcherConfig::default();
+        config.rule = vec![if template.contains("local") {
+            realm("name", template)
+        } else {
+            MatchRule::new("name", template)
+        }];
+        let result = Matcher::new(config)
+            .unwrap()
             .resolve(&lookup, &directory)
             .unwrap();
         assert_eq!(found(result.result), "p", "{template}");
@@ -116,23 +128,23 @@ fn a_name_template_renders_claims_through_its_filters() {
 }
 
 #[test]
-fn the_default_matcher_tries_the_upn_then_the_email_then_the_common_name() {
+fn the_default_matcher_tries_the_upn_then_the_email_and_never_the_common_name() {
     let lookup = claims(&[
         ("san.upn", &["u@corp.example"]),
         ("san.email", &["e@example.org"]),
         ("subject.cn", &["Common"]),
     ]);
+    // A common name is whatever the issuer let the holder type: it names nobody by default.
     let by_cn = Stand::default().knows("name", "Common", "cn");
-    assert_eq!(
-        found(Matcher::default().resolve(&lookup, &by_cn).unwrap().result),
-        "cn"
-    );
+    assert!(matches!(
+        Matcher::default().resolve(&lookup, &by_cn).unwrap().result,
+        Match::NotFound
+    ));
     assert_eq!(
         by_cn.asked(),
         [
             ("name".to_owned(), "u@corp.example".to_owned()),
             ("email".to_owned(), "e@example.org".to_owned()),
-            ("name".to_owned(), "Common".to_owned()),
         ]
     );
     let by_upn = Stand::default()
@@ -327,6 +339,68 @@ fn a_lookup_that_is_not_by_claims_goes_to_the_directory_as_it_is() {
 }
 
 #[test]
+fn a_filter_lookup_is_never_passed_through_to_the_directory() {
+    let directory = Stand::default().knows("filter", "(uid=*)", "anyone");
+    for lookup in [
+        Lookup {
+            by: "filter".to_owned(),
+            value: "(uid=*)".to_owned(),
+            claims: None,
+        },
+        // Even with claims: only a claims lookup is templated.
+        Lookup {
+            claims: Some(Claims::default()),
+            by: "filter".to_owned(),
+            value: "(uid=*)".to_owned(),
+        },
+    ] {
+        let result = Matcher::default().resolve(&lookup, &directory).unwrap();
+        assert!(matches!(result.result, Match::NotFound));
+    }
+    assert!(directory.asked().is_empty(), "the directory was not asked");
+}
+
+#[test]
+fn a_realm_rule_keeps_only_values_of_its_domain_and_stripping_one_without_a_realm_is_refused() {
+    let lookup = claims(&[("san.upn", &["Alice@CORP.example", "mallory@evil.example"])]);
+    let directory = Stand::default()
+        .knows("name", "Alice", "alice")
+        .knows("name", "mallory", "mallory");
+    let mut config = MatcherConfig::default();
+    config.rule = vec![realm("name", "{san.upn|local}")];
+    let result = Matcher::new(config)
+        .unwrap()
+        .resolve(&lookup, &directory)
+        .unwrap();
+    assert_eq!(found(result.result), "alice");
+    assert_eq!(directory.asked(), [("name".to_owned(), "Alice".to_owned())]);
+
+    let build = |rule: MatchRule| {
+        let mut config = MatcherConfig::default();
+        config.rule = vec![rule];
+        Matcher::new(config)
+    };
+    assert!(build(MatchRule::new("name", "{san.upn|local}")).is_err());
+    assert!(build(MatchRule::new("name", "{san.upn}").domain("corp.example")).is_err());
+    assert!(build(MatchRule::new("name", "{san.upn|local}").domain("")).is_err());
+    assert!(build(MatchRule::new("name", "{san.upn|local}").domain("a b")).is_err());
+    assert!(build(MatchRule::new("name", "{san.upn|local}").pins("p")).is_err()); // no such source
+}
+
+#[test]
+fn a_stripped_name_with_pins_needs_no_realm() {
+    let source = std::sync::Arc::new(Source::new(|_| Ok(PinCheck::Holds)));
+    let mut config = MatcherConfig::default();
+    config.rule = vec![MatchRule::new("name", "{san.upn|local}").pins("table")];
+    assert!(
+        Matcher::builder(config)
+            .pin_source("table", source)
+            .build()
+            .is_ok()
+    );
+}
+
+#[test]
 fn rules_that_cannot_work_are_refused_when_the_matcher_is_built() {
     let build = |by: &str, template: &str| {
         let mut config = MatcherConfig::default();
@@ -375,7 +449,7 @@ fn too_many_candidates_from_several_claims_is_an_error() {
 fn the_config_reads_defaults_and_refuses_unknown_keys() {
     use coqui_builder::Partial;
     let empty = Partial::<MatcherConfig>::new().build().unwrap();
-    assert_eq!(empty.rule.len(), 3, "the default rules");
+    assert_eq!(empty.rule.len(), 2, "the default rules");
     let mut partial = Partial::<MatcherConfig>::new();
     assert!(partial.set("nonsense", "x").is_err());
     assert!(Matcher::new(empty).is_ok());
