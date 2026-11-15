@@ -1125,7 +1125,7 @@ mod tests {
                 Arc::new(
                     MtlsAccounts::builder()
                         .waiting(waiting.clone())
-                        .waiting_limits(limits.clone())
+                        .waiting_limits(limits)
                         .build()
                         .unwrap(),
                 )
