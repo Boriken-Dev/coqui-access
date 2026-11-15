@@ -317,7 +317,9 @@ pub struct Waiting {
 }
 
 /// One step of a sign-in that already succeeded.
-#[derive(Debug, Clone, Default, PartialEq, Eq, ToValue, FromValue, Schema)]
+///
+/// `Debug` shows the method and provider, never who the step named.
+#[derive(Clone, Default, PartialEq, Eq, ToValue, FromValue, Schema)]
 #[map(crate = ::guatiao)]
 pub struct Factor {
     /// The [`methods`](crate::methods) word it was presented as.
@@ -325,6 +327,20 @@ pub struct Factor {
     /// The provider that accepted it, by the id the consumer asks it under. A rule that
     /// names `providers` counts only a factor a listed provider accepted.
     pub provider: Option<String>,
+    /// The [`Person::id`] the step named. A policy refuses a sign-in whose steps name
+    /// different people; a step that names none (`None`) is not held against it.
+    pub person: Option<String>,
+}
+
+impl fmt::Debug for Factor {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("Factor")
+            .field("method", &self.method)
+            .field("provider", &self.provider)
+            .field("person", &self.person.as_ref().map(|_| "…"))
+            .finish()
+    }
 }
 
 /// What a consumer knows when it asks which methods a sign-in may use, and what is still

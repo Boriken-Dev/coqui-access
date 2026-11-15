@@ -8,8 +8,8 @@
 
 The **kinds and models** that every access provider and every host share: authenticate
 credentials, resolve a person, authorize an action, and manage accounts. Built on
-[Guatiao](https://github.com/Boriken-Dev/guatiao); kind names and the hashes of their required
-methods are a pinned ABI. See the [documentation](https://boriken-dev.github.io/coqui-access/).
+[Guatiao](https://github.com/Boriken-Dev/guatiao); kind names and the floor hashes of their
+methods (optional ones included) are a pinned ABI. See the [documentation](https://boriken-dev.github.io/coqui-access/).
 
 ## Features
 

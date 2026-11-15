@@ -299,6 +299,8 @@ impl SignInRulesBuilder {
 ///   its chains is within the steps done; otherwise the offer is the methods still missing
 ///   from the chains that hold every step done, and none such is a refusal.
 /// - No rule true: nothing is offered.
+/// - Steps done that name different people (`Factor::person`), or a person other than the
+///   context's, are a refusal whatever the rules say.
 #[derive(Clone, Provider)]
 #[provider(
     SignInPolicy,
@@ -419,6 +421,17 @@ impl SignInRules {
     }
 
     fn decision(&self, context: &SignInContext) -> SignInDecision {
+        // Steps that name different people are not one sign-in, whatever each would allow.
+        let named = context
+            .done
+            .iter()
+            .filter_map(|factor| factor.person.as_deref())
+            .chain(context.person.as_ref().map(|person| person.id.as_str()));
+        if let Some(first) = named.clone().next()
+            && named.clone().any(|id| id != first)
+        {
+            return SignInDecision::default();
+        }
         let address = context
             .address
             .as_deref()

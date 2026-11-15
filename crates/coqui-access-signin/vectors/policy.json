@@ -1204,6 +1204,159 @@
     ],
     "complete": false
    }
+  },
+  {
+   "name": "steps that name the same person count",
+   "config": {
+    "rule": [
+     {
+      "allow": [
+       [
+        "password",
+        "totp"
+       ]
+      ]
+     }
+    ]
+   },
+   "context": {
+    "purpose": "sign_in",
+    "person": {
+     "id": "id-alice",
+     "name": "alice",
+     "groups": [
+      "admins"
+     ],
+     "attributes": {}
+    },
+    "done": [
+     {
+      "method": "password",
+      "person": "id-alice"
+     }
+    ]
+   },
+   "expect": {
+    "methods": [
+     "totp"
+    ],
+    "complete": false
+   }
+  },
+  {
+   "name": "steps that name different people are refused",
+   "config": {
+    "rule": [
+     {
+      "allow": [
+       [
+        "password",
+        "totp"
+       ]
+      ]
+     }
+    ]
+   },
+   "context": {
+    "purpose": "sign_in",
+    "person": {
+     "id": "id-alice",
+     "name": "alice",
+     "groups": [
+      "admins"
+     ],
+     "attributes": {}
+    },
+    "done": [
+     {
+      "method": "password",
+      "person": "id-alice"
+     },
+     {
+      "method": "totp",
+      "person": "id-bob"
+     }
+    ]
+   },
+   "expect": {
+    "methods": [],
+    "complete": false
+   }
+  },
+  {
+   "name": "a step that names someone other than the person is refused",
+   "config": {
+    "rule": [
+     {
+      "allow": [
+       [
+        "password",
+        "totp"
+       ]
+      ]
+     }
+    ]
+   },
+   "context": {
+    "purpose": "sign_in",
+    "person": {
+     "id": "id-alice",
+     "name": "alice",
+     "groups": [
+      "admins"
+     ],
+     "attributes": {}
+    },
+    "done": [
+     {
+      "method": "password",
+      "person": "id-bob"
+     }
+    ]
+   },
+   "expect": {
+    "methods": [],
+    "complete": false
+   }
+  },
+  {
+   "name": "a step that names nobody is not held against the sign-in",
+   "config": {
+    "rule": [
+     {
+      "allow": [
+       [
+        "password",
+        "totp"
+       ]
+      ]
+     }
+    ]
+   },
+   "context": {
+    "purpose": "resume",
+    "person": {
+     "id": "id-alice",
+     "name": "alice",
+     "groups": [
+      "admins"
+     ],
+     "attributes": {}
+    },
+    "done": [
+     {
+      "method": "password"
+     },
+     {
+      "method": "totp",
+      "person": "id-alice"
+     }
+    ]
+   },
+   "expect": {
+    "methods": [],
+    "complete": true
+   }
   }
  ]
 }

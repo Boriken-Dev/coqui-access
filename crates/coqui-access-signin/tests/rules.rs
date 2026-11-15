@@ -35,6 +35,14 @@ fn factor(method: &str) -> Factor {
     Factor {
         method: method.to_owned(),
         provider: None,
+        person: None,
+    }
+}
+
+fn by(method: &str, person: &str) -> Factor {
+    Factor {
+        person: Some(person.to_owned()),
+        ..factor(method)
     }
 }
 
@@ -379,6 +387,7 @@ fn a_rule_that_names_providers_offers_only_them_and_counts_only_their_steps() {
         done: vec![Factor {
             method: "password".to_owned(),
             provider: Some("ldap".to_owned()),
+            person: None,
         }],
         person: Some(alice()),
         ..context(purposes::RESUME, Some("10.1.1.1"))
@@ -544,4 +553,48 @@ fn debug_shows_a_count_and_no_rule_content() {
 fn the_methods_words_are_the_ones_the_rules_use() {
     assert!(methods::NEEDS_ACCOUNT.contains(&methods::TOTP));
     assert!(!methods::NEEDS_ACCOUNT.contains(&methods::PASSWORD));
+}
+
+#[test]
+fn steps_that_name_different_people_are_one_sign_in_for_nobody() {
+    let rules = SignInRules::builder()
+        .rule(RuleDef::new([["password", "totp"]]))
+        .build()
+        .unwrap();
+    let ask = |done: Vec<Factor>, person: Option<Person>| {
+        rules
+            .decide(SignInContext {
+                done,
+                person,
+                ..context(purposes::SIGN_IN, None)
+            })
+            .unwrap()
+    };
+    // The same person throughout is one sign-in.
+    let same = ask(vec![by("password", "id-alice")], Some(alice()));
+    assert_eq!(offered(&same), ["totp"]);
+    assert!(
+        ask(
+            vec![by("password", "id-alice"), by("totp", "id-alice")],
+            Some(alice())
+        )
+        .complete
+    );
+    // Two steps naming different people are refused, complete or not, named or not.
+    let mixed = vec![by("password", "id-alice"), by("totp", "id-bob")];
+    for person in [None, Some(alice()), Some(bob())] {
+        let refused = ask(mixed.clone(), person);
+        assert!(!refused.complete && refused.methods.is_empty());
+    }
+    // A step that names someone other than the context's person is refused too.
+    let other = ask(vec![by("password", "id-bob")], Some(alice()));
+    assert!(!other.complete && other.methods.is_empty());
+    // A step that names nobody is not held against it.
+    assert!(
+        ask(
+            vec![factor("password"), by("totp", "id-alice")],
+            Some(alice())
+        )
+        .complete
+    );
 }

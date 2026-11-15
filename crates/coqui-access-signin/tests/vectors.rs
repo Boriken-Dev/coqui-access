@@ -75,7 +75,13 @@ struct Consumer {
     /// The steps the last session was opened with.
     session: Option<(Person, Vec<Factor>)>,
     failures: u32,
+    /// Failed second-factor attempts, per person id: the contract's counting.
+    second_failures: std::collections::BTreeMap<String, u32>,
+    recovery_used: bool,
 }
+
+/// Failed second-factor attempts the stand-in consumer allows a person.
+const MOST_SECOND_FACTOR_FAILURES: u32 = 3;
 
 struct Step {
     result: &'static str,
@@ -157,6 +163,18 @@ impl Consumer {
         let Some(offer) = decision.methods.iter().find(|offer| offer.method == method) else {
             return step;
         };
+        // Failures of a second factor are counted per person, whatever the address.
+        let second = coqui_access::methods::NEEDS_ACCOUNT.contains(&method);
+        let who = self.pending.as_ref().map(|(person, _)| person.id.clone());
+        if second
+            && who.as_ref().is_some_and(|id| {
+                self.second_failures.get(id).copied().unwrap_or(0) >= MOST_SECOND_FACTOR_FAILURES
+            })
+        {
+            step.result = "failed";
+            step.throttled = true;
+            return step;
+        }
         // Point 3: only the offered providers are asked, in list order.
         let providers = if offer.providers.is_empty() {
             vec!["local".to_owned()]
@@ -171,6 +189,7 @@ impl Consumer {
                 let factor = Factor {
                     method: method.to_owned(),
                     provider: Some(provider.clone()),
+                    person: Some(person.id.clone()),
                 };
                 named = Some((person, factor));
                 break;
@@ -184,10 +203,19 @@ impl Consumer {
         };
         let Some((person, factor)) = named.filter(|found| !mismatch(found)) else {
             self.failures += 1;
+            if let (true, Some(id)) = (second, who) {
+                *self.second_failures.entry(id).or_insert(0) += 1;
+            }
             step.result = "failed";
             step.throttled = true;
             return step;
         };
+        if second {
+            self.second_failures.remove(&person.id);
+        }
+        if method == "recovery_code" {
+            self.recovery_used = true;
+        }
         let mut done = self
             .pending
             .take()
@@ -227,6 +255,10 @@ impl Consumer {
                 self.person("alice")
             }
             "certificate" if name == "alice" || name == "bob" => self.person(name),
+            "recovery_code" if secret == "RECOVER-1" && !self.recovery_used => {
+                let (first, _) = self.pending.as_ref()?;
+                (first.id == name).then(|| first.clone())
+            }
             "totp" if secret == "123456" => {
                 let (first, _) = self.pending.as_ref()?;
                 (first.id == name).then(|| first.clone())
@@ -257,6 +289,8 @@ fn every_flow_goes_as_the_stand_in_consumer_of_the_contract_does() {
             pending: None,
             session: None,
             failures: 0,
+            second_failures: std::collections::BTreeMap::new(),
+            recovery_used: false,
         };
         for (index, step) in flow["steps"].as_array().unwrap().iter().enumerate() {
             let address = step.get("address").and_then(Json::as_str);
