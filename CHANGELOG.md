@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`coqui-access-signin`**, the `coqui_signin_rules` provider of the sign-in policy kind: ordered rules over purpose,
+  client network, kind of client, service and subject, whose chains of methods say what a sign-in may use and when it
+  asks for a further step. `SignInRules::single_factor` is the policy of a deployment with none. Its `test-support`
+  feature carries the shared vectors (`policy.json`, `flows.json`); `docs/sign-in.md` is the contract a consumer follows.
 - **`coqui-access-mtls` pins by public key as well as by fingerprint, and an account holds several pins.** `Pin`
   (`kind` `fingerprint` or `key`, SHA-256 of the whole certificate or of its SubjectPublicKeyInfo) names what a record
   pins; `PeerRecord::pins` lists them beside the existing `certificate`, `PeerRecord::keyed` makes a record from one,

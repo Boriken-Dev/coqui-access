@@ -28,10 +28,14 @@ methods are a pinned contract; providers are built against the host's Guatiao re
 | `coqui_access_system` | nothing; asks the operating system (PAM and NSS, or Windows logon) | name and password |
 | `coqui_access_mtls` | peer certificate fingerprints or public keys, in any table | a verified certificate |
 | `coqui_roles` | role rules (an authorizer) | person, action, resource |
+| `coqui_signin_rules` | ordered sign-in rules (a sign-in policy) | where and how a sign-in is made |
 
 Each is an ordinary library, built in code with a builder over a table you supply (memory by
 default), and a `cdylib` (`coqui-access-<name>-plugin`) that builds it from a Guatiao config
 whose `source` object says where the records live.
+
+[Sign-in policy](sign-in.md) is the contract a consumer follows to decide which methods a
+sign-in may use from where it is made, and when to ask for a second step.
 
 [`coqui-access-acl`](acl.md) decides requests against access control lists kept on items,
 and answers `coqui_authorizer` over the consumer's store.
