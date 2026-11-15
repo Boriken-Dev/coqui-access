@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **`coqui-access-totp` delays an account under wrong codes.** `Lockout` (default: after five wrong codes in a row, 30 s,
   doubling to an hour; `Lockout::OFF` lifts it) with `TotpRecord::failures` and `locked_until_unix` (old files read).
   The plugin takes `lockout_after`, `lockout_seconds` and `lockout_longest_seconds`, and sizes its file bound from
-  `max_records` (2 KiB each, at least 1 MiB); it used to stop at about 1 200 accounts.
+  `max_records`, the recovery code count and the name and label limits (each record as large as they allow, at least 1 MiB; an unbounded name or label limit is refused unless the source names its `max_bytes`); it used to stop at about 1 200 accounts.
 - **`Factor::person`.** The `Person::id` a step named; the rules provider refuses a sign-in whose steps name different
   people. The contract requires counting second-factor failures per person, the person to be looked up again at resume,
   and per-address-and-account throttling before anyone is named. The shared flows gain the cases for each.

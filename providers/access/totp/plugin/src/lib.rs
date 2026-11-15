@@ -12,8 +12,10 @@
 //!   "lockout_after": 5, "lockout_seconds": 30, "lockout_longest_seconds": 3600 }
 //! ```
 //!
-//! A file source may name `max_bytes`; absent, the bound is sized from `max_records` (2 KiB
-//! a record, at least 1 MiB).
+//! A file source may name `max_bytes`; absent, the bound is sized from `max_records`, the
+//! recovery code count and the `record_limits` of a name and a label, as large as they allow
+//! (at least 1 MiB). With `field_bytes` or `display_name_bytes` unbounded there is no largest
+//! record, and the combination is refused unless every file source names its `max_bytes`.
 //!
 //! Every key is optional. With no `source` the accounts live in memory. The file holds each
 //! account's secret readable, as a time-based code needs it: it is written with the owner's
@@ -97,16 +99,50 @@ impl Default for TotpConfig {
     }
 }
 
-/// What one account's records take in a file, at most: a secret, its label and name, and the
-/// digests of ten recovery codes, in either format.
-const BYTES_PER_RECORD: u64 = 2048;
+/// What one account's record takes in a file besides its name, label and recovery codes: the
+/// keys, the secret, the numbers and the lockout, in either format and indented.
+const FIXED_BYTES: u64 = 400;
+/// What one recovery code's digest takes in a file: 64 hex digits, quotes, a comma and the
+/// indent.
+const BYTES_PER_CODE: u64 = 80;
 
-/// The bound on a file holding `max_records` accounts: room for all of them, and never less
-/// than the kit's default.
-fn file_limit(max_records: u32) -> u32 {
-    let wanted = u64::from(max_records).saturating_mul(BYTES_PER_RECORD);
+/// The bound on a file holding `max_records` accounts, each as large as the configured limits
+/// allow (a name or label may double when quoted): room for all of them, and never less than
+/// the kit's default.
+///
+/// # Errors
+///
+/// When the name or label size is unbounded and no source names a size of its own, as there
+/// is then no largest record to size for.
+fn file_limit(config: &TotpConfig) -> Result<u32, ProviderError> {
+    let named = |source: &Option<Source<Format>>| {
+        source
+            .as_ref()
+            .and_then(|source| source.file.as_ref())
+            .is_some_and(|file| file.max_bytes.is_some())
+    };
     let least = coqui_access_kit::file::DEFAULT_MAX_BYTES as u64;
-    u32::try_from(wanted.max(least)).unwrap_or(u32::MAX)
+    if config.source.is_none() && config.pending.is_none() {
+        return Ok(least as u32);
+    }
+    let (Some(name), Some(label)) = (
+        config.record_limits.field_bytes.get(),
+        config.record_limits.display_name_bytes.get(),
+    ) else {
+        return if named(&config.source) && (config.pending.is_none() || named(&config.pending)) {
+            Ok(least as u32)
+        } else {
+            Err(coqui_access::error::bad_value(
+                "an unbounded record_limits field_bytes or display_name_bytes needs a max_bytes on the source files",
+            ))
+        };
+    };
+    let record = FIXED_BYTES
+        + 2 * u64::from(name)
+        + 2 * u64::from(label)
+        + BYTES_PER_CODE * u64::from(config.recovery_codes);
+    let wanted = u64::from(config.max_records).saturating_mul(record);
+    Ok(u32::try_from(wanted.max(least)).unwrap_or(u32::MAX))
 }
 
 /// The table `source` names, or one in memory.
@@ -141,7 +177,7 @@ impl TryFrom<TotpConfig> for TotpProvider {
     type Error = ProviderError;
 
     fn try_from(config: TotpConfig) -> Result<Self, Self::Error> {
-        let size = file_limit(config.max_records);
+        let size = file_limit(&config)?;
         let sized = |source: &Source<Format>| source.clone().max_bytes_unless_set(size);
         let pending_source = config.pending.as_ref().map(sized).or_else(|| {
             config
@@ -405,8 +441,21 @@ codes = [{}]
             ..TotpConfig::default()
         };
         assert!(TotpProvider::try_from(small).is_err());
-        assert_eq!(file_limit(10_000), 10_000 * 2048);
-        assert_eq!(file_limit(10), 1024 * 1024);
+        let sized = |recovery_codes: u32, max_records: u32| {
+            file_limit(&TotpConfig {
+                source: Some(Source::file("totp.toml", Format::Toml)),
+                recovery_codes,
+                max_records,
+                ..TotpConfig::default()
+            })
+            .unwrap()
+        };
+        // The defaults: a 256-byte name and a 1 024-byte label doubled, and ten digests.
+        assert_eq!(sized(10, 10_000), 10_000 * (400 + 512 + 2048 + 800));
+        assert_eq!(sized(10, 10), 1024 * 1024);
+        // More recovery codes make a larger record.
+        assert!(sized(64, 10_000) > sized(10, 10_000));
+        assert_eq!(sized(64, 10_000), 10_000 * (400 + 512 + 2048 + 64 * 80));
     }
 
     #[test]
@@ -416,5 +465,59 @@ codes = [{}]
             ..TotpConfig::default()
         };
         assert!(TotpProvider::try_from(bad).is_err());
+    }
+
+    #[test]
+    fn an_unbounded_field_limit_is_refused_unless_the_files_name_their_size() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("totp.toml");
+        let unbounded = |source: Source<Format>| TotpConfig {
+            source: Some(source),
+            record_limits: RecordLimits::UNBOUNDED,
+            ..TotpConfig::default()
+        };
+        let plain = Source::file(path.to_str().unwrap(), Format::Toml);
+        assert!(TotpProvider::try_from(unbounded(plain.clone())).is_err());
+        assert!(TotpProvider::try_from(unbounded(plain.max_bytes(1 << 20))).is_ok());
+        let memory = TotpConfig {
+            record_limits: RecordLimits::UNBOUNDED,
+            ..TotpConfig::default()
+        };
+        assert!(
+            TotpProvider::try_from(memory).is_ok(),
+            "memory has no file to size"
+        );
+    }
+
+    #[test]
+    fn a_file_of_accounts_with_the_most_recovery_codes_loads_under_the_sized_bound() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("totp.toml");
+        let digests = (0..64)
+            .map(|number| format!("'{number:02}{}'", "ab".repeat(31)))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let mut text = String::new();
+        for number in 0..300 {
+            text.push_str(&format!(
+                "[[accounts]]
+name = 'id-{number:05}'
+secret = 'GEZDGNBVGY3TQOJQ'
+algorithm = 'sha1'
+digits = 6
+period = 30
+codes = [{digests}]
+"
+            ));
+        }
+        assert!(text.len() > 1024 * 1024, "past the kit's default bound");
+        std::fs::write(&path, text).unwrap();
+        let sixty_four = TotpConfig {
+            recovery_codes: 64,
+            max_records: 300,
+            ..config(&path)
+        };
+        let provider = TotpProvider::try_from(sixty_four).unwrap();
+        assert_eq!(provider.accounts().unwrap().len(), 300);
     }
 }
