@@ -38,7 +38,7 @@ domain = "corp.example"         # the realm `local` strips; or `pins = "..."`
 ```
 
 - `{claim}` is a claim's value; `{claim|lower|local}` passes it through filters: `lower`, `upper`,
-  `local` (the part before the last `@`) and `domain` (the part after it). `{{` and `}}` are braces.
+  `local` (the part before the last `@`) and `domain` (the part after it); a value with more than one `@` has neither, so it makes no candidate. `{{` and `}}` are braces.
   A template names at least one claim: a rule that looked up the same account for everybody is
   refused when the matcher is built.
 - A claim that is missing, or empty, makes the rule not apply. A claim with several values renders

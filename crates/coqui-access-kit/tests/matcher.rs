@@ -388,6 +388,44 @@ fn a_realm_rule_keeps_only_values_of_its_domain_and_stripping_one_without_a_real
 }
 
 #[test]
+fn a_value_with_more_than_one_at_is_not_stripped_by_any_rule() {
+    // The realm is what follows the last `@`; what is left of two is a name that holds an `@`, which a directory that searches
+    // might still find as someone. A rule with a realm, with pins, and the `domain` filter alike get no candidate from it.
+    let directory = Stand::default()
+        .knows("name", "alice@evil", "alice")
+        .knows("name", "corp.example", "corp")
+        .knows("name", "evil@corp.example", "evil");
+    let lookup = claims(&[("san.upn", &["alice@evil@corp.example"])]);
+    let source = std::sync::Arc::new(Source::new(|_| Ok(PinCheck::Holds)));
+    for rule in [
+        MatchRule::new("name", "{san.upn|local}").domain("corp.example"),
+        MatchRule::new("name", "{san.upn|local}").pins("table"),
+        MatchRule::new("name", "{san.upn|domain}").pins("table"),
+        MatchRule::new("name", "{san.upn|local|lower}").pins("table"),
+    ] {
+        let mut config = MatcherConfig::default();
+        config.rule = vec![rule];
+        let matcher = Matcher::builder(config)
+            .pin_source("table", source.clone())
+            .build()
+            .unwrap();
+        let result = matcher.resolve(&lookup, &directory).unwrap();
+        assert!(matches!(result.result, Match::NotFound));
+    }
+    assert!(directory.asked().is_empty(), "the directory was not asked");
+    // One `@` still strips.
+    let mut config = MatcherConfig::default();
+    config.rule = vec![realm("name", "{san.upn|local}")];
+    let directory = Stand::default().knows("name", "alice", "alice");
+    let one = claims(&[("san.upn", &["alice@corp.example"])]);
+    let result = Matcher::new(config)
+        .unwrap()
+        .resolve(&one, &directory)
+        .unwrap();
+    assert_eq!(found(result.result), "alice");
+}
+
+#[test]
 fn a_stripped_name_with_pins_needs_no_realm() {
     let source = std::sync::Arc::new(Source::new(|_| Ok(PinCheck::Holds)));
     let mut config = MatcherConfig::default();
