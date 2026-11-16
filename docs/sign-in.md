@@ -12,7 +12,7 @@ gateway) follows so that every consumer behaves alike; the shared vectors under
 | Group | Words |
 | --- | --- |
 | Methods | `password`, `certificate`, `proxy`, `key`, `totp`, `recovery_code` |
-| Purposes | `sign_in`, `resume` (a session that exists is checked again; `done` holds the steps it was opened with), `enrol` (a person sets up a second step of their own) |
+| Purposes | `sign_in`, `resume` (a session that exists is checked again; `done` holds the steps it was opened with), `enrol` (a signed-in person sets up a second step of their own), `enrol_first` (a sign-in that has passed some steps, with no session yet, asks to set up the step it is waiting for) |
 | Clients | `browser`, `app`, `api` |
 
 `totp` and `recovery_code` check a code against an account an earlier step already named, so a
@@ -148,6 +148,11 @@ an authenticator app, which works in a browser, a desktop app and a command line
   `otpauth://` link, to show as a QR code, and the recovery codes, said once. Nothing is a factor
   yet. `put` again with `secret` set to a code from the app confirms it. A person who rotates
   enrols again: the old secret keeps working until the new one is confirmed.
+- **Enrolling inside a sign-in.** A person who has no code yet cannot pass a chain that needs one, so a consumer
+  may let the sign-in itself set one up, decided under `purpose = enrol_first` with the steps passed. Whoever holds
+  those steps can then set up a code for that account, and the real person is shut out: so a policy allows it
+  only by a rule that names `enrol_first`, and a deployment writes it for the networks it trusts with that
+  (the first factor alone, from inside the office, say). A rule for `enrol` does not allow it.
 - **Who may enrol.** The library does not decide; the consumer does. The recommended rule:
   a person may enrol themselves only after a fresh sign-in decided under `purpose = enrol`, which
   needs an `enrol` rule in the policy, so that a password accepted at the office cannot set up a

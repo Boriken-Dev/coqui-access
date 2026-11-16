@@ -284,6 +284,53 @@ fn a_session_resumed_from_outside_loses_what_only_the_inside_accepted() {
 }
 
 #[test]
+fn enrolling_inside_a_sign_in_needs_a_rule_that_names_it_and_a_rule_for_enrol_is_not_one() {
+    let for_enrol = SignInRules::builder()
+        .rule(
+            RuleDef::new([["password"]])
+                .name("enrol")
+                .purposes([purposes::ENROL]),
+        )
+        .rule(RuleDef::new([["password"]]))
+        .build()
+        .unwrap();
+    let ask = |rules: &SignInRules, purpose: &str| {
+        rules
+            .decide(named(
+                alice(),
+                &["password"],
+                context(purpose, Some("10.1.2.3")),
+            ))
+            .unwrap()
+    };
+    assert!(ask(&for_enrol, purposes::ENROL).complete);
+    let first = ask(&for_enrol, purposes::ENROL_FIRST);
+    assert!(
+        !first.complete && first.methods.is_empty(),
+        "a rule for enrol is not one for enrol_first"
+    );
+    let named_first = SignInRules::builder()
+        .rule(
+            RuleDef::new([["password"]])
+                .name("first use")
+                .networks(["10.0.0.0/8"])
+                .purposes([purposes::ENROL_FIRST]),
+        )
+        .build()
+        .unwrap();
+    assert!(ask(&named_first, purposes::ENROL_FIRST).complete);
+    let outside = named_first
+        .decide(named(
+            alice(),
+            &["password"],
+            context(purposes::ENROL_FIRST, Some("203.0.113.7")),
+        ))
+        .unwrap();
+    assert!(!outside.complete);
+    assert!(!ask(&named_first, purposes::ENROL).complete);
+}
+
+#[test]
 fn enrolment_needs_a_rule_that_names_it() {
     let without = owners();
     let refused = without
