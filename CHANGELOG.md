@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`coqui-roles`: the subject `any:signed-in`.** A rule may bind a role to every subject a sign-in or key resolved (a
+  directory person or a key-provider account); a caller with no identity (an empty `Person::id`) never matches. It grants
+  nothing by itself and rules stay first-match. Any other `any:` subject is refused when the policy builds.
 - **`coqui_access_ldap` answers `by: "id"` lookups and fills `display_name` and `email`.** An id is the DN a lookup
   returned: the entry is read directly, only when it lies strictly below `base` and meets `object_filter`, so a
   gateway that resolves a bearer token by `Person.id` finds the person. `display_name` is `displayName`, else
