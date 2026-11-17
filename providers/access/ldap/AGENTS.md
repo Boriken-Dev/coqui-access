@@ -35,7 +35,7 @@ impl LdapAccounts {
     pub fn cache(&self) -> coqui_access_kit::CacheOptions;     // how lookups are kept
 }
 impl Authenticator for LdapAccounts { /* takes name + secret */ }
-impl Directory for LdapAccounts { /* by "name" only */ }
+impl Directory for LdapAccounts { /* by "name", "id" and (when allowed) "filter" */ }
 ```
 
 ## Behaviour
@@ -50,8 +50,11 @@ impl Directory for LdapAccounts { /* by "name" only */ }
 - `authenticate`: unknown account `Unknown`; disabled account (AD `userAccountControl` bit 2),
   empty password or rejected credentials `Invalid`; success is `Lookup { by: "name", value:
   canonical name }`. Other directory failures are errors.
-- `lookup` returns `Person { id: DN, name, groups }`; disabled accounts are `None`. `by: "name"` uses
-  `user_filter`. `by: "filter"` is answered only when `allow_filter_lookups` is true (else
+- `lookup` returns `Person { id: DN, name, display_name, email, groups }`; disabled accounts are `None`. `by: "name"` uses
+  `user_filter`. `by: "id"` takes the DN a lookup returned and reads that one entry (base scope) under
+  `object_filter`; a DN not strictly below `base`, a missing one or a disabled one is `None`, and nothing
+  outside `base` is read. `display_name` is `displayName` when set, else `givenName`, `initials` and `sn`
+  joined by spaces (those present; `None` when none); `email` is `mail`. `by: "filter"` is answered only when `allow_filter_lookups` is true (else
   `GUATIAO_ERR_UNSUPPORTED`); it takes an LDAP filter that is one parenthesised group (else
   `GUATIAO_ERR_BAD_VALUE`) and searches `base`, subtree, with `(&<object_filter><filter>)`: no
   account, or a disabled one, is `None`; more than one is `error::ambiguous()`. The filter is the
@@ -66,7 +69,7 @@ impl Directory for LdapAccounts { /* by "name" only */ }
 
 ## `search` module
 
-`IN_CHAIN`, `escaped(value)` (coqui-access-kit's `escape_filter_value`: metacharacters, controls and
+`IN_CHAIN`, `below(dn, base)`, `display_name(display, given, initials, surname)`, `escaped(value)` (coqui-access-kit's `escape_filter_value`: metacharacters, controls and
 every byte of a non-ASCII character as `\xx`), `filter(template, field, value)`, `all_of(account_filter,
 given)`, `one_group(filter)`, `group_name(dn)`, `disabled(flags)`, `in_the_clear(url, start_tls)`.
 

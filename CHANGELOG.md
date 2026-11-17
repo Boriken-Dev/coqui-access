@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`coqui_access_ldap` answers `by: "id"` lookups and fills `display_name` and `email`.** An id is the DN a lookup
+  returned: the entry is read directly, only when it lies strictly below `base` and meets `object_filter`, so a
+  gateway that resolves a bearer token by `Person.id` finds the person. `display_name` is `displayName`, else
+  `givenName`, `initials` and `sn` joined; `email` is `mail`. `search` gains `below` and `display_name`.
 - **A sign-in reads only its own account's record.** `Table::get(key)` and `Table::update_one(key, make)` (defaults over
   `load` and `update`, so no table breaks; `MemoryTable` reads one record) and `Reloading::get` and
   `Reloading::update_one`, which check only the record they read. `coqui-access-totp` signs in through them: a check

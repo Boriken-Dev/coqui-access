@@ -192,6 +192,8 @@ impl fmt::Debug for Ldap {
 struct Found {
     dn: String,
     name: Option<String>,
+    display_name: Option<String>,
+    email: Option<String>,
     groups: Vec<String>,
     disabled: bool,
 }
@@ -265,32 +267,46 @@ impl Ldap {
         Duration::from_secs(u64::from(self.config.timeout_seconds.max(1)))
     }
 
-    fn found(&self, connection: &mut LdapConn, name: &str) -> Result<Option<Found>, ProviderError> {
+    fn found(
+        &self,
+        connection: &mut dyn Entries,
+        name: &str,
+    ) -> Result<Option<Found>, ProviderError> {
         let filter = search::filter(&self.config.user_filter, "name", name);
         self.found_by(connection, &filter, false)
+    }
+
+    fn attributes(&self) -> Vec<&str> {
+        let mut attributes = vec![
+            self.config.name_attribute.as_str(),
+            "userAccountControl",
+            "displayName",
+            "givenName",
+            "initials",
+            "sn",
+            "mail",
+        ];
+        if !self.config.group_attribute.is_empty() {
+            attributes.push(&self.config.group_attribute);
+        }
+        attributes
     }
 
     /// The one account `filter` finds. Several are nobody for a name (as ever), and
     /// `ambiguous` for a caller's filter, which must be able to tell the two.
     fn found_by(
         &self,
-        connection: &mut LdapConn,
+        connection: &mut dyn Entries,
         filter: &str,
         refuse_several: bool,
     ) -> Result<Option<Found>, ProviderError> {
-        let mut attributes = vec![self.config.name_attribute.as_str(), "userAccountControl"];
-        if !self.config.group_attribute.is_empty() {
-            attributes.push(&self.config.group_attribute);
-        }
-        let result = connection
-            .search(&self.config.base, Scope::Subtree, filter, attributes)
-            .map_err(|error| {
-                coqui_access::error::internal(&format!("directory search failed: {error}"))
-            })?;
-        let (entries, _) = result.success().map_err(|error| {
-            coqui_access::error::internal(&format!("directory search failed: {error}"))
-        })?;
-        let mut entries = entries.into_iter().map(SearchEntry::construct);
+        let entries = connection.search(
+            &self.config.base,
+            Scope::Subtree,
+            filter,
+            &self.attributes(),
+        )?;
+        let mut entries = entries.into_iter();
         let (first_entry, second_entry) = (entries.next(), entries.next());
         if refuse_several && second_entry.is_some() {
             return Err(coqui_access::error::ambiguous());
@@ -298,6 +314,40 @@ impl Ldap {
         let (Some(entry), None) = (first_entry, second_entry) else {
             return Ok(None);
         };
+        self.describe(connection, entry).map(Some)
+    }
+
+    /// The account whose distinguished name is `dn`, read directly (base scope) and only when
+    /// it lies below the configured base and meets the account filter.
+    fn found_at(
+        &self,
+        connection: &mut dyn Entries,
+        dn: &str,
+    ) -> Result<Option<Found>, ProviderError> {
+        if !search::below(dn, &self.config.base) {
+            return Ok(None);
+        }
+        let entries = connection.search(
+            dn,
+            Scope::Base,
+            &self.config.object_filter,
+            &self.attributes(),
+        )?;
+        let Some(entry) = entries.into_iter().next() else {
+            return Ok(None);
+        };
+        // The server's own spelling of the name must still be inside the base.
+        if !search::below(&entry.dn, &self.config.base) {
+            return Ok(None);
+        }
+        self.describe(connection, entry).map(Some)
+    }
+
+    fn describe(
+        &self,
+        connection: &mut dyn Entries,
+        entry: SearchEntry,
+    ) -> Result<Found, ProviderError> {
         let first = |attribute: &str| {
             entry
                 .attrs
@@ -324,27 +374,68 @@ impl Ldap {
                 .group_base
                 .as_deref()
                 .unwrap_or(&self.config.base);
-            let result = connection
-                .search(base, Scope::Subtree, &filter, vec!["cn"])
-                .map_err(|error| {
-                    coqui_access::error::internal(&format!("group search failed: {error}"))
-                })?;
-            let (entries, _) = result.success().map_err(|error| {
-                coqui_access::error::internal(&format!("group search failed: {error}"))
-            })?;
-            for group in entries.into_iter().map(SearchEntry::construct) {
+            for group in connection.search(base, Scope::Subtree, &filter, &["cn"])? {
                 let name = search::group_name(&group.dn);
                 if !groups.contains(&name) {
                     groups.push(name);
                 }
             }
         }
-        Ok(Some(Found {
+        Ok(Found {
             name: first(&self.config.name_attribute),
             disabled: search::disabled(first("userAccountControl").as_deref()),
+            display_name: search::display_name(
+                first("displayName").as_deref(),
+                first("givenName").as_deref(),
+                first("initials").as_deref(),
+                first("sn").as_deref(),
+            ),
+            email: first("mail")
+                .map(|mail| mail.trim().to_owned())
+                .filter(|mail| !mail.is_empty()),
             dn: entry.dn,
             groups,
-        }))
+        })
+    }
+}
+
+/// What the account searches need of a directory connection, so a stand-in can answer them.
+trait Entries {
+    /// The entries a search finds; none for a base-scope read of a name that is not there.
+    fn search(
+        &mut self,
+        base: &str,
+        scope: Scope,
+        filter: &str,
+        attributes: &[&str],
+    ) -> Result<Vec<SearchEntry>, ProviderError>;
+}
+
+impl Entries for LdapConn {
+    fn search(
+        &mut self,
+        base: &str,
+        scope: Scope,
+        filter: &str,
+        attributes: &[&str],
+    ) -> Result<Vec<SearchEntry>, ProviderError> {
+        let single = matches!(scope, Scope::Base);
+        let result =
+            LdapConn::search(self, base, scope, filter, attributes.to_vec()).map_err(|error| {
+                coqui_access::error::internal(&format!("directory search failed: {error}"))
+            })?;
+        match result.success() {
+            Ok((entries, _)) => Ok(entries.into_iter().map(SearchEntry::construct).collect()),
+            // noSuchObject and invalidDNSyntax on a base read mean "no such account".
+            Err(ldap3::LdapError::LdapResult { result })
+                if single && matches!(result.rc, 32 | 34) =>
+            {
+                Ok(Vec::new())
+            }
+            Err(error) => Err(coqui_access::error::internal(&format!(
+                "directory search failed: {error}"
+            ))),
+        }
     }
 }
 
@@ -402,24 +493,45 @@ impl Authenticator for Ldap {
 impl Ldap {
     /// The one enabled account a filter finds under the account filter: `ambiguous` for
     /// several, `None` for none or a disabled one.
-    fn lookup_filter(&self, given: &str) -> Result<Option<Person>, ProviderError> {
+    fn lookup_filter(
+        &self,
+        connection: &mut dyn Entries,
+        given: &str,
+    ) -> Result<Option<Person>, ProviderError> {
         if !search::one_group(given) {
             return Err(coqui_access::error::bad_value(
                 "a filter lookup is one parenthesised filter",
             ));
         }
         let filter = search::all_of(&self.config.object_filter, given);
-        let mut connection = self.searching()?;
-        let found = self.found_by(&mut connection, &filter, true);
-        let _ = connection.unbind();
-        Ok(found?.filter(|found| !found.disabled).map(|found| Person {
-            name: found.name.clone().unwrap_or_else(|| found.dn.clone()),
-            id: found.dn,
-            display_name: None,
-            email: None,
-            groups: found.groups,
-            attributes: Default::default(),
-        }))
+        let found = self.found_by(connection, &filter, true)?;
+        Ok(found.filter(|found| !found.disabled).map(person))
+    }
+
+    /// A `name` lookup by `user_filter`, an `id` lookup by the distinguished name a lookup
+    /// returned; any other `by` is nobody.
+    fn resolve(
+        &self,
+        connection: &mut dyn Entries,
+        lookup: &Lookup,
+    ) -> Result<Option<Person>, ProviderError> {
+        let found = match lookup.by.as_str() {
+            "name" => self.found(connection, &lookup.value)?,
+            "id" => self.found_at(connection, &lookup.value)?,
+            _ => None,
+        };
+        Ok(found.filter(|found| !found.disabled).map(person))
+    }
+}
+
+fn person(found: Found) -> Person {
+    Person {
+        name: found.name.unwrap_or_else(|| found.dn.clone()),
+        id: found.dn,
+        display_name: found.display_name,
+        email: found.email,
+        groups: found.groups,
+        attributes: Default::default(),
     }
 }
 
@@ -431,22 +543,23 @@ impl Directory for Ldap {
                     "this directory does not take filter lookups",
                 ));
             }
-            return self.lookup_filter(&lookup.value);
+            if !search::one_group(&lookup.value) {
+                return Err(coqui_access::error::bad_value(
+                    "a filter lookup is one parenthesised filter",
+                ));
+            }
+            let mut connection = self.searching()?;
+            let found = self.lookup_filter(&mut connection, &lookup.value);
+            let _ = connection.unbind();
+            return found;
         }
-        if lookup.by != "name" {
+        if lookup.by != "name" && lookup.by != "id" {
             return Ok(None);
         }
         let mut connection = self.searching()?;
-        let found = self.found(&mut connection, &lookup.value)?;
+        let found = self.resolve(&mut connection, &lookup);
         let _ = connection.unbind();
-        Ok(found.filter(|found| !found.disabled).map(|found| Person {
-            id: found.dn,
-            name: found.name.unwrap_or(lookup.value),
-            display_name: None,
-            email: None,
-            groups: found.groups,
-            attributes: Default::default(),
-        }))
+        found
     }
 }
 
@@ -621,5 +734,177 @@ mod tests {
         assert_eq!(read("cache", "true"), CacheOptions::default());
         assert_eq!(read("cache.ttl", "1").ttl, Duration::from_secs(1));
         assert_eq!(read("cache.ttl", "250ms").ttl, Duration::from_millis(250));
+    }
+
+    /// A directory held in memory: it answers a search by scope and the one attribute a test's
+    /// filters name, and records what was asked.
+    struct StandIn {
+        entries: Vec<SearchEntry>,
+        asked: Vec<(String, bool)>,
+    }
+
+    fn entry(dn: &str, attrs: &[(&str, &str)]) -> SearchEntry {
+        SearchEntry {
+            dn: dn.to_owned(),
+            attrs: attrs
+                .iter()
+                .map(|(name, value)| ((*name).to_owned(), vec![(*value).to_owned()]))
+                .collect(),
+            bin_attrs: Default::default(),
+        }
+    }
+
+    impl Entries for StandIn {
+        fn search(
+            &mut self,
+            base: &str,
+            scope: Scope,
+            filter: &str,
+            _: &[&str],
+        ) -> Result<Vec<SearchEntry>, ProviderError> {
+            let base_scope = matches!(scope, Scope::Base);
+            self.asked.push((base.to_owned(), base_scope));
+            let wanted = filter
+                .split("sAMAccountName=")
+                .nth(1)
+                .map(|rest| rest.trim_end_matches(')'));
+            Ok(self
+                .entries
+                .iter()
+                .filter(|candidate| {
+                    if base_scope {
+                        // A server compares names by their components, not their spelling.
+                        let squeezed = |dn: &str| dn.replace(' ', "").to_lowercase();
+                        squeezed(&candidate.dn) == squeezed(base)
+                    } else {
+                        wanted.is_none_or(|name| {
+                            candidate
+                                .attrs
+                                .get("sAMAccountName")
+                                .is_some_and(|v| v[0] == name)
+                        })
+                    }
+                })
+                .cloned()
+                .collect())
+        }
+    }
+
+    fn stand_in() -> StandIn {
+        StandIn {
+            entries: vec![
+                entry(
+                    "CN=Ana,OU=People,DC=example,DC=org",
+                    &[
+                        ("sAMAccountName", "ana"),
+                        ("displayName", "Ana Q. Rivera"),
+                        ("mail", "ana@example.org"),
+                    ],
+                ),
+                entry(
+                    "CN=Bo,OU=People,DC=example,DC=org",
+                    &[
+                        ("sAMAccountName", "bo"),
+                        ("givenName", "Bo"),
+                        ("initials", "J"),
+                        ("sn", "Diaz"),
+                    ],
+                ),
+                entry(
+                    "CN=Cy,OU=People,DC=example,DC=org",
+                    &[("sAMAccountName", "cy"), ("userAccountControl", "514")],
+                ),
+                entry(
+                    "CN=Dee,OU=People,DC=example,DC=org",
+                    &[("sAMAccountName", "dee")],
+                ),
+                entry("CN=Outside,DC=other,DC=org", &[("sAMAccountName", "out")]),
+            ],
+            asked: Vec::new(),
+        }
+    }
+
+    fn lookup(directory: &mut StandIn, by: &str, value: &str) -> Option<Person> {
+        let ldap = Ldap::new(config("ldaps://directory.example.org")).unwrap();
+        ldap.resolve(
+            directory,
+            &Lookup {
+                by: by.to_owned(),
+                value: value.to_owned(),
+                ..Lookup::default()
+            },
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn an_id_lookup_answers_the_person_a_name_lookup_gave() {
+        let mut directory = stand_in();
+        let by_name = lookup(&mut directory, "name", "ana").unwrap();
+        assert_eq!(by_name.id, "CN=Ana,OU=People,DC=example,DC=org");
+        let by_id = lookup(&mut directory, "id", &by_name.id).unwrap();
+        assert_eq!(by_id, by_name);
+        // The DN's case and spacing do not matter to which entry it is.
+        let spaced = lookup(
+            &mut directory,
+            "id",
+            "cn=Ana, ou=People, dc=EXAMPLE, dc=org",
+        );
+        assert_eq!(spaced.map(|person| person.name), Some("ana".to_owned()));
+    }
+
+    #[test]
+    fn an_id_lookup_of_a_missing_disabled_or_outside_name_is_nobody() {
+        let mut directory = stand_in();
+        assert!(
+            lookup(
+                &mut directory,
+                "id",
+                "CN=Nobody,OU=People,DC=example,DC=org"
+            )
+            .is_none()
+        );
+        assert!(lookup(&mut directory, "id", "CN=Cy,OU=People,DC=example,DC=org").is_none());
+        directory.asked.clear();
+        for outside in [
+            "CN=Outside,DC=other,DC=org",
+            "DC=example,DC=org",
+            "DC=org",
+            "CN=Ana,OU=People,DC=example,DC=org,DC=evil",
+            "",
+            "not a name",
+        ] {
+            assert!(lookup(&mut directory, "id", outside).is_none(), "{outside}");
+        }
+        assert!(
+            directory.asked.is_empty(),
+            "nothing outside the base is read"
+        );
+    }
+
+    #[test]
+    fn an_id_lookup_reads_one_entry_and_a_name_lookup_searches_the_base() {
+        let mut directory = stand_in();
+        lookup(&mut directory, "id", "CN=Ana,OU=People,DC=example,DC=org");
+        assert_eq!(
+            directory.asked,
+            [("CN=Ana,OU=People,DC=example,DC=org".to_owned(), true)]
+        );
+        directory.asked.clear();
+        lookup(&mut directory, "name", "ana");
+        assert_eq!(directory.asked, [("DC=example,DC=org".to_owned(), false)]);
+    }
+
+    #[test]
+    fn the_person_carries_display_name_and_email() {
+        let mut directory = stand_in();
+        let ana = lookup(&mut directory, "name", "ana").unwrap();
+        assert_eq!(ana.display_name.as_deref(), Some("Ana Q. Rivera"));
+        assert_eq!(ana.email.as_deref(), Some("ana@example.org"));
+        let bo = lookup(&mut directory, "name", "bo").unwrap();
+        assert_eq!(bo.display_name.as_deref(), Some("Bo J Diaz"));
+        assert_eq!(bo.email, None);
+        let dee = lookup(&mut directory, "name", "dee").unwrap();
+        assert_eq!((dee.display_name, dee.email), (None, None));
     }
 }
