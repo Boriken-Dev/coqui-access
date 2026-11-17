@@ -191,6 +191,14 @@ fn each_sign_in_model_round_trips_with_every_field_set() {
     };
     let value = put.to_value().unwrap();
     assert_eq!(AccountPut::from_value(&value).unwrap(), put);
+    let proved = AccountPut {
+        name: "alice".to_owned(),
+        proved_current: true,
+        ..AccountPut::default()
+    };
+    let value = proved.to_value().unwrap();
+    assert_eq!(AccountPut::from_value(&value).unwrap(), proved);
+    assert_ne!(proved, put);
 }
 
 /// A lookup written before claims existed still reads, and says none.

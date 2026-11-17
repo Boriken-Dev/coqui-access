@@ -147,7 +147,9 @@ an authenticator app, which works in a browser, a desktop app and a command line
 - **Enrol.** `put` with a name (the `Person::id`) and no secret begins an enrolment and answers an
   `otpauth://` link, to show as a QR code, and the recovery codes, said once. Nothing is a factor
   yet. `put` again with `secret` set to a code from the app confirms it. A person who rotates
-  enrols again: the old secret keeps working until the new one is confirmed.
+  enrols again, and the old secret keeps working until the new one is confirmed; the provider begins
+  that only when `AccountPut::proved_current` says the consumer checked the current code (or a sign-in
+  that just used it) in the same request, and refuses it otherwise.
 - **Enrolling inside a sign-in.** A person who has no code yet cannot pass a chain that needs one, so a consumer
   may let the sign-in itself set one up, decided under `purpose = enrol_first` with the steps passed. Whoever holds
   those steps can then set up a code for that account, and the real person is shut out: so a policy allows it

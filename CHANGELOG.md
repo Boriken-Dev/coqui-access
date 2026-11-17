@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **A rotation of a one-time code secret needs the caller's word that it proved the current one.** `AccountPut` gains
+  `proved_current: bool` (default false, read when absent, not written when false). `coqui-access-totp` refuses
+  beginning an enrolment for an account that already has a secret unless it is true (`GUATIAO_ERR_BAD_VALUE`, nothing
+  written, an enrolment already waiting kept); before, anyone who could call `put` could replace a person's factor.
+  Enrolment of an account with no secret, confirming and disabling are unchanged; the other providers ignore the field.
+  A caller that builds `AccountPut` without `..AccountPut::default()` must name it.
+
 ### Added
 
 - **A sign-in reads only its own account's record.** `Table::get(key)` and `Table::update_one(key, make)` (defaults over

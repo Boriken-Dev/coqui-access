@@ -50,14 +50,25 @@ impl Setup {
     }
 
     fn begin(&self, name: &str) -> (Vec<u8>, Vec<String>, String) {
-        let begun = self
-            .totp
-            .put(AccountPut {
-                name: name.to_owned(),
-                display_name: Some("alice@example.org".to_owned()),
-                ..AccountPut::default()
-            })
-            .unwrap();
+        self.begin_saying(name, false).unwrap()
+    }
+
+    /// Begins a rotation of an enrolled account, the caller saying it proved the factor.
+    fn rotate(&self, name: &str) -> (Vec<u8>, Vec<String>, String) {
+        self.begin_saying(name, true).unwrap()
+    }
+
+    fn begin_saying(
+        &self,
+        name: &str,
+        proved: bool,
+    ) -> Result<(Vec<u8>, Vec<String>, String), ProviderError> {
+        let begun = self.totp.put(AccountPut {
+            name: name.to_owned(),
+            display_name: Some("alice@example.org".to_owned()),
+            proved_current: proved,
+            ..AccountPut::default()
+        })?;
         let link = begun.secret.unwrap();
         let secret = link
             .split(['?', '&'])
@@ -66,7 +77,7 @@ impl Setup {
         let key = data_encoding::BASE32_NOPAD
             .decode(secret.as_bytes())
             .unwrap();
-        (key, begun.codes.unwrap(), link)
+        Ok((key, begun.codes.unwrap(), link))
     }
 
     fn confirm(&self, name: &str, with: &str) -> Result<(), ProviderError> {
@@ -333,7 +344,7 @@ fn rotation_keeps_the_old_secret_working_until_the_new_one_is_proven() {
     let setup = setup();
     let (old, _) = setup.enrol("id-alice");
     setup.at(START + 90);
-    let (new, _, _) = setup.begin("id-alice");
+    let (new, _, _) = setup.rotate("id-alice");
     assert_ne!(old, new);
     // Before the new code is confirmed, the old secret is the factor.
     assert_eq!(
@@ -358,6 +369,59 @@ fn rotation_keeps_the_old_secret_working_until_the_new_one_is_proven() {
 }
 
 #[test]
+fn a_rotation_the_caller_did_not_prove_is_refused_and_changes_nothing() {
+    let setup = setup();
+    let (old, _) = setup.enrol("id-alice");
+    setup.at(START + 90);
+    let error = setup.begin_saying("id-alice", false).unwrap_err();
+    let text = error_text(&error);
+    assert!(text.contains("BAD_VALUE"), "{error:?}");
+    assert!(text.contains("current"), "the reason says why: {text}");
+    // Nothing waits, and the factor the person holds still works.
+    assert!(setup.totp.waiting().unwrap().is_empty());
+    assert_eq!(
+        setup.present("id-alice", &code(&old, START + 90)),
+        valid("id-alice")
+    );
+}
+
+#[test]
+fn a_refused_rotation_leaves_an_enrolment_already_waiting_alone() {
+    let setup = setup();
+    let (_, _) = setup.enrol("id-alice");
+    setup.at(START + 60);
+    let (waiting, _, _) = setup.rotate("id-alice");
+    assert!(setup.begin_saying("id-alice", false).is_err());
+    // The proven rotation's secret is still the one that confirms.
+    setup
+        .confirm("id-alice", &code(&waiting, START + 60))
+        .unwrap();
+}
+
+#[test]
+fn enrolling_an_account_with_no_factor_needs_no_statement() {
+    let setup = setup();
+    // Said or not, a first enrolment is the same; so is beginning again before any is confirmed.
+    setup.begin_saying("id-alice", true).unwrap();
+    let (key, _, _) = setup.begin("id-alice");
+    setup.confirm("id-alice", &code(&key, START)).unwrap();
+}
+
+#[test]
+fn disabling_an_account_needs_no_statement() {
+    let setup = setup();
+    setup.enrol("id-alice");
+    setup
+        .totp
+        .put(AccountPut {
+            name: "id-alice".to_owned(),
+            disabled: Some(true),
+            ..AccountPut::default()
+        })
+        .unwrap();
+}
+
+#[test]
 fn beginning_again_replaces_the_enrolment_that_was_waiting() {
     let setup = setup();
     let (first, _, _) = setup.begin("id-alice");
@@ -372,7 +436,7 @@ fn beginning_again_replaces_the_enrolment_that_was_waiting() {
 fn removing_resets_the_account_and_any_enrolment_waiting() {
     let setup = setup();
     let (key, _) = setup.enrol("id-alice");
-    setup.begin("id-alice");
+    setup.rotate("id-alice");
     setup.totp.remove("id-alice".to_owned()).unwrap();
     setup.at(START + 30);
     assert_eq!(

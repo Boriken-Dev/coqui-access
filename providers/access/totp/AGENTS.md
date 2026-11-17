@@ -89,6 +89,12 @@ impl Accounts for TotpAccounts { /* accounts, put, remove, waiting */ }
   codes }` once. Nothing is a factor yet. The link is
   `otpauth://totp/[ISSUER:]LABEL?secret=BASE32[&issuer=ISSUER]&algorithm=SHA1&digits=6&period=30`, the
   label `AccountPut::display_name` else `name`, percent-encoded.
+- **Rotation.** For an account that is already enrolled, the no-`secret` call begins a rotation only
+  when `AccountPut::proved_current` is true (the caller checked the current code, or a sign-in that
+  just used it, in this request); otherwise it is `GUATIAO_ERR_BAD_VALUE` ("replacing the one-time
+  code secret needs the caller to prove the current one first"), nothing is written and an
+  enrolment already waiting stays. The provider takes the statement on trust: it cannot re-check
+  a code the caller's own check already spent. An account with no secret needs no statement.
 - `secret` a code from the app: confirms the enrolment waiting, within `enrol_seconds`. The pending
   entry becomes the account, replacing any the account had (rotation: the old secret works until
   this moment). The confirming code is spent. A wrong code is `GUATIAO_ERR_BAD_VALUE` and leaves the

@@ -593,6 +593,19 @@ impl TotpAccounts {
     }
 
     fn begin(&self, account: &AccountPut) -> Result<PutOutcome, ProviderError> {
+        // Confirming replaces the factor the person holds, so beginning that replacement is
+        // for a caller that has checked the current one.
+        if !account.proved_current {
+            let enrolled = self
+                .records
+                .read(|records| records.iter().any(|record| record.name == account.name))
+                .map_err(|reason| reason.reading("one-time code table"))?;
+            if enrolled {
+                return Err(error::bad_value(
+                    "replacing the one-time code secret needs the caller to prove the current one first",
+                ));
+            }
+        }
         let mut key = [0u8; 20];
         getrandom::fill(&mut key)
             .map_err(|_| error::internal("system random source is unavailable"))?;
@@ -808,7 +821,10 @@ impl Accounts for TotpAccounts {
     ///
     /// - With no `secret` and no `disabled`: begins an enrolment, replacing one waiting for
     ///   the account. The answer's `secret` is the `otpauth://` link (its label the
-    ///   `display_name`, else the name) and `codes` the recovery codes, both said once.
+    ///   `display_name`, else the name) and `codes` the recovery codes, both said once. For
+    ///   an account that is already enrolled (a rotation) it needs `proved_current`, the
+    ///   caller's statement that it checked the current secret, and is refused with
+    ///   `GUATIAO_ERR_BAD_VALUE` without it.
     /// - With a `secret` that is a code from the app: confirms the enrolment waiting for the
     ///   account, within `enrol_seconds`. The new secret replaces any the account had, which
     ///   keeps working until then. A wrong code is `GUATIAO_ERR_BAD_VALUE`; no enrolment
