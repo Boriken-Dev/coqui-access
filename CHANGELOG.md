@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **`coqui-access-ldap` adds an Active Directory account's primary group to its groups.** `memberOf` leaves it out, so
+  `group:Domain Users` never matched. The group is found by the account's domain SID plus its `primaryGroupID`, searched by
+  binary `objectSid` under `group_base`, kept per domain as the lookup cache keeps lookups, and followed through nested groups
+  when `nested_groups` is on. A missing or unresolvable one adds nothing.
+
 ### Changed
 
 - **A rotation of a one-time code secret needs the caller's word that it proved the current one.** `AccountPut` gains

@@ -61,6 +61,14 @@ impl Directory for LdapAccounts { /* by "name", "id" and (when allowed) "filter"
   caller's (a matcher's, whose values are escaped), so anything that can make a lookup `by: "filter"`
   with its own text can search the directory: turn the setting on only where filter lookups come
   from a matcher's rules.
+- **The primary group.** Active Directory leaves an account's primary group out of `memberOf`. When the account has a numeric
+  `primaryGroupID` and a binary `objectSid`, the group is the account's domain SID (its `objectSid` without the last RID)
+  plus that RID, searched as `(&(objectClass=group)(objectSid=<bytes, each \xx>))` under `group_base` (else `base`) and
+  named as the other groups are; with `nested_groups` on, the groups it is in follow (`group_filter`, else the matching
+  rule). Resolutions are kept per group SID, so per domain, as long as the lookup `cache` keeps lookups (found for `ttl`, not
+  found for `negative_ttl`, at most `max_entries`). A missing or malformed `primaryGroupID` or `objectSid`, no such group or
+  several, or a directory error on that search adds nothing and refuses nothing. "Everyone" and "Authenticated Users" are
+  not synthesised.
 - **`object_filter` must carry every restriction an account must meet to sign in** (people, an
   organisational unit, a group): `user_filter` is built around a name and is not applied to a filter
   lookup. The default, `(&(objectCategory=person)(objectClass=user))`, is people, which leaves out

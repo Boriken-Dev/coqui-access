@@ -4,6 +4,7 @@
 #![warn(missing_debug_implementations)]
 #![warn(missing_docs)]
 
+mod primary;
 pub mod search;
 
 use std::fmt;
@@ -177,6 +178,7 @@ struct Ldap {
     config: LdapAccountsConfig,
     trusted: Option<Arc<rustls::ClientConfig>>,
     non_defaults: Vec<NonDefault>,
+    primary_groups: primary::GroupCache,
 }
 
 impl fmt::Debug for Ldap {
@@ -231,6 +233,7 @@ impl Ldap {
             None => (None, Vec::new()),
         };
         Ok(Self {
+            primary_groups: primary::GroupCache::new(config.cache.options()),
             config,
             trusted,
             non_defaults,
@@ -285,6 +288,8 @@ impl Ldap {
             "initials",
             "sn",
             "mail",
+            "primaryGroupID",
+            "objectSid",
         ];
         if !self.config.group_attribute.is_empty() {
             attributes.push(&self.config.group_attribute);
@@ -343,6 +348,68 @@ impl Ldap {
         self.describe(connection, entry).map(Some)
     }
 
+    fn group_base(&self) -> &str {
+        self.config
+            .group_base
+            .as_deref()
+            .unwrap_or(&self.config.base)
+    }
+
+    /// The group `primaryGroupID` names: the account's domain SID with that RID, searched by
+    /// its binary `objectSid` under the group base. Active Directory leaves it out of
+    /// `memberOf`. A missing or malformed id or SID, no such group, several, or a directory
+    /// that will not answer, is no primary group: it adds nothing and refuses nothing.
+    fn primary_group(
+        &self,
+        connection: &mut dyn Entries,
+        entry: &SearchEntry,
+    ) -> Option<primary::Group> {
+        let rid: u32 = entry
+            .attrs
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case("primaryGroupID"))?
+            .1
+            .first()?
+            .trim()
+            .parse()
+            .ok()?;
+        let sid = entry
+            .bin_attrs
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case("objectSid"))
+            .and_then(|(_, values)| values.first().map(Vec::as_slice))
+            .or_else(|| {
+                entry
+                    .attrs
+                    .iter()
+                    .find(|(name, _)| name.eq_ignore_ascii_case("objectSid"))
+                    .and_then(|(_, values)| values.first().map(String::as_bytes))
+            })?;
+        let group_sid = primary::Sid::parse(sid)?.sibling(rid)?;
+        let key = group_sid.text();
+        if let Some(kept) = self.primary_groups.get(&key) {
+            return kept;
+        }
+        // The filter holds only the group SID's bytes, each as `\xx`; nothing read from the
+        // account is text in it.
+        let filter = format!(
+            "(&(objectClass=group)(objectSid={}))",
+            group_sid.filter_value()
+        );
+        let found = connection
+            .search(self.group_base(), Scope::Subtree, &filter, &["cn"])
+            .ok()?;
+        let group = match found.as_slice() {
+            [only] if search::below(&only.dn, self.group_base()) => Some(primary::Group {
+                name: search::group_name(&only.dn),
+                dn: only.dn.clone(),
+            }),
+            _ => None,
+        };
+        self.primary_groups.put(&key, group.clone());
+        group
+    }
+
     fn describe(
         &self,
         connection: &mut dyn Entries,
@@ -378,6 +445,31 @@ impl Ldap {
                 let name = search::group_name(&group.dn);
                 if !groups.contains(&name) {
                     groups.push(name);
+                }
+            }
+        }
+        if let Some(primary) = self.primary_group(connection, &entry) {
+            let name = primary.name;
+            if !groups.contains(&name) {
+                groups.push(name);
+            }
+            // Only the matching rule or filter that says nested groups count reaches the
+            // groups the primary group is in.
+            let nested = self.config.nested_groups.then(|| {
+                self.config
+                    .group_filter
+                    .as_deref()
+                    .unwrap_or(search::IN_CHAIN)
+            });
+            if let Some(template) = nested {
+                let filter = search::filter(template, "dn", &primary.dn);
+                // A failed search for these adds nothing, as a primary group not found does.
+                let found = connection.search(self.group_base(), Scope::Subtree, &filter, &["cn"]);
+                for group in found.unwrap_or_default() {
+                    let name = search::group_name(&group.dn);
+                    if !groups.contains(&name) {
+                        groups.push(name);
+                    }
                 }
             }
         }
@@ -741,6 +833,7 @@ mod tests {
     struct StandIn {
         entries: Vec<SearchEntry>,
         asked: Vec<(String, bool)>,
+        filters: Vec<String>,
     }
 
     fn entry(dn: &str, attrs: &[(&str, &str)]) -> SearchEntry {
@@ -764,6 +857,18 @@ mod tests {
         ) -> Result<Vec<SearchEntry>, ProviderError> {
             let base_scope = matches!(scope, Scope::Base);
             self.asked.push((base.to_owned(), base_scope));
+            self.filters.push(filter.to_owned());
+            let wanted_sid = filter.split("(objectSid=").nth(1).map(|rest| {
+                let hex = rest.split(')').next().unwrap_or_default();
+                hex.split('\\')
+                    .filter(|byte| !byte.is_empty())
+                    .map(|byte| u8::from_str_radix(byte, 16).unwrap())
+                    .collect::<Vec<u8>>()
+            });
+            let chain_of = filter
+                .split("1.2.840.113556.1.4.1941:=")
+                .nth(1)
+                .map(|rest| rest.trim_end_matches(')').to_owned());
             let wanted = filter
                 .split("sAMAccountName=")
                 .nth(1)
@@ -776,6 +881,18 @@ mod tests {
                         // A server compares names by their components, not their spelling.
                         let squeezed = |dn: &str| dn.replace(' ', "").to_lowercase();
                         squeezed(&candidate.dn) == squeezed(base)
+                    } else if !below_or_at(&candidate.dn, base) {
+                        false
+                    } else if let Some(sid) = &wanted_sid {
+                        candidate
+                            .bin_attrs
+                            .get("objectSid")
+                            .is_some_and(|values| values[0] == *sid)
+                    } else if let Some(group) = &chain_of {
+                        candidate
+                            .attrs
+                            .get("member")
+                            .is_some_and(|members| members.contains(group))
                     } else {
                         wanted.is_none_or(|name| {
                             candidate
@@ -821,11 +938,30 @@ mod tests {
                 entry("CN=Outside,DC=other,DC=org", &[("sAMAccountName", "out")]),
             ],
             asked: Vec::new(),
+            filters: Vec::new(),
         }
     }
 
+    fn below_or_at(dn: &str, base: &str) -> bool {
+        search::below(dn, base) || dn.eq_ignore_ascii_case(base)
+    }
+
     fn lookup(directory: &mut StandIn, by: &str, value: &str) -> Option<Person> {
-        let ldap = Ldap::new(config("ldaps://directory.example.org")).unwrap();
+        lookup_with(
+            directory,
+            config("ldaps://directory.example.org"),
+            by,
+            value,
+        )
+    }
+
+    fn lookup_with(
+        directory: &mut StandIn,
+        config: LdapAccountsConfig,
+        by: &str,
+        value: &str,
+    ) -> Option<Person> {
+        let ldap = Ldap::new(config).unwrap();
         ldap.resolve(
             directory,
             &Lookup {
@@ -906,5 +1042,223 @@ mod tests {
         assert_eq!(bo.email, None);
         let dee = lookup(&mut directory, "name", "dee").unwrap();
         assert_eq!((dee.display_name, dee.email), (None, None));
+    }
+
+    const DOMAIN: [u32; 4] = [21, 11, 22, 33];
+
+    fn sid_in(domain: &[u32], rid: u32) -> Vec<u8> {
+        let mut subs = domain.to_vec();
+        subs.push(rid);
+        let mut bytes = vec![1, subs.len() as u8, 0, 0, 0, 0, 0, 5];
+        for sub in subs {
+            bytes.extend_from_slice(&sub.to_le_bytes());
+        }
+        bytes
+    }
+
+    fn sid(rid: u32) -> Vec<u8> {
+        sid_in(&DOMAIN, rid)
+    }
+
+    fn with_sid(mut found: SearchEntry, bytes: Vec<u8>) -> SearchEntry {
+        found.bin_attrs.insert("objectSid".to_owned(), vec![bytes]);
+        found
+    }
+
+    fn with_attr(mut found: SearchEntry, name: &str, values: &[&str]) -> SearchEntry {
+        found.attrs.insert(
+            name.to_owned(),
+            values.iter().map(|value| (*value).to_owned()).collect(),
+        );
+        found
+    }
+
+    /// A user whose `memberOf` is empty, the domain's groups, and a group of another domain
+    /// with the same RID. `Domain Users` is RID 513; `Staff` has it as a member.
+    fn domain_directory(primary: Option<&str>) -> StandIn {
+        let mut user = with_sid(
+            entry(
+                "CN=Eve,OU=People,DC=example,DC=org",
+                &[("sAMAccountName", "eve")],
+            ),
+            sid(1104),
+        );
+        if let Some(primary) = primary {
+            user = with_attr(user, "primaryGroupID", &[primary]);
+        }
+        StandIn {
+            entries: vec![
+                user,
+                with_sid(
+                    entry("CN=Domain Users,CN=Users,DC=example,DC=org", &[]),
+                    sid(513),
+                ),
+                with_attr(
+                    with_sid(
+                        entry("CN=Staff,OU=Groups,DC=example,DC=org", &[]),
+                        sid(2001),
+                    ),
+                    "member",
+                    &["CN=Domain Users,CN=Users,DC=example,DC=org"],
+                ),
+                with_sid(
+                    entry("CN=Interns,CN=Users,DC=example,DC=org", &[]),
+                    sid(2002),
+                ),
+                with_sid(
+                    entry("CN=Domain Users,CN=Users,DC=example,DC=org", &[]),
+                    sid_in(&[21, 99, 22, 33], 513),
+                ),
+            ],
+            asked: Vec::new(),
+            filters: Vec::new(),
+        }
+    }
+
+    fn eve(primary: Option<&str>, tweak: impl FnOnce(&mut LdapAccountsConfig)) -> Person {
+        let mut directory = domain_directory(primary);
+        let mut settings = config("ldaps://directory.example.org");
+        tweak(&mut settings);
+        lookup_with(&mut directory, settings, "name", "eve").unwrap()
+    }
+
+    fn sid_searches(directory: &StandIn) -> usize {
+        directory
+            .filters
+            .iter()
+            .filter(|filter| filter.contains("objectSid="))
+            .count()
+    }
+
+    #[test]
+    fn a_user_whose_only_group_is_the_primary_one_gets_it() {
+        assert_eq!(eve(Some("513"), |_| {}).groups, ["Domain Users"]);
+    }
+
+    #[test]
+    fn another_primary_group_is_the_one_added() {
+        assert_eq!(eve(Some("2002"), |_| {}).groups, ["Interns"]);
+    }
+
+    #[test]
+    fn a_missing_or_unresolvable_primary_group_adds_nothing_and_refuses_nothing() {
+        for primary in [
+            None,
+            Some("999"),
+            Some(""),
+            Some("-1"),
+            Some("513)(objectClass=*"),
+            Some("99999999999999"),
+        ] {
+            let person = eve(primary, |_| {});
+            assert_eq!(person.name, "eve", "{primary:?}");
+            assert!(person.groups.is_empty(), "{primary:?}");
+        }
+        // Without a readable objectSid there is no domain to name a group in.
+        let mut directory = domain_directory(Some("513"));
+        directory.entries[0].bin_attrs.clear();
+        let person = lookup(&mut directory, "name", "eve").unwrap();
+        assert!(person.groups.is_empty());
+        assert_eq!(sid_searches(&directory), 0);
+    }
+
+    #[test]
+    fn the_primary_group_is_not_listed_twice_and_follows_direct_groups() {
+        let mut directory = domain_directory(Some("513"));
+        directory.entries[0] = with_attr(
+            directory.entries[0].clone(),
+            "memberOf",
+            &[
+                "CN=Domain Users,CN=Users,DC=example,DC=org",
+                "CN=Ops,OU=Groups,DC=example,DC=org",
+            ],
+        );
+        let person = lookup(&mut directory, "name", "eve").unwrap();
+        assert_eq!(person.groups, ["Domain Users", "Ops"]);
+    }
+
+    #[test]
+    fn nested_groups_of_the_primary_group_follow_when_nested_groups_is_on() {
+        assert_eq!(eve(Some("513"), |_| {}).groups, ["Domain Users"]);
+        let on = eve(Some("513"), |settings| settings.nested_groups = true);
+        assert_eq!(on.groups, ["Domain Users", "Staff"]);
+    }
+
+    #[test]
+    fn the_primary_group_is_searched_by_its_binary_sid_under_the_group_base_only() {
+        let mut directory = domain_directory(Some("513"));
+        let mut settings = config("ldaps://directory.example.org");
+        settings.group_base = Some("CN=Users,DC=example,DC=org".to_owned());
+        let person = lookup_with(&mut directory, settings, "name", "eve").unwrap();
+        assert_eq!(person.groups, ["Domain Users"]);
+        let at = directory
+            .filters
+            .iter()
+            .position(|filter| filter.contains("objectSid="))
+            .unwrap();
+        assert_eq!(
+            directory.asked[at],
+            ("CN=Users,DC=example,DC=org".to_owned(), false)
+        );
+        assert_eq!(
+            directory.filters[at],
+            "(&(objectClass=group)(objectSid=\\01\\05\\00\\00\\00\\00\\00\\05\\15\\00\\00\\00\\0b\\00\\00\\00\\16\\00\\00\\00\\21\\00\\00\\00\\01\\02\\00\\00))"
+        );
+        // A group base that excludes the group leaves the user without it.
+        let mut elsewhere = domain_directory(Some("513"));
+        let mut narrow = config("ldaps://directory.example.org");
+        narrow.group_base = Some("OU=Groups,DC=example,DC=org".to_owned());
+        let person = lookup_with(&mut elsewhere, narrow, "name", "eve").unwrap();
+        assert!(person.groups.is_empty());
+    }
+
+    #[test]
+    fn a_crafted_object_sid_or_group_id_cannot_widen_the_search() {
+        // A group id that is not a number is never searched for.
+        for primary in ["513)(objectClass=*", "*", "513\\00"] {
+            let mut directory = domain_directory(Some(primary));
+            lookup(&mut directory, "name", "eve").unwrap();
+            assert_eq!(sid_searches(&directory), 0, "{primary}");
+        }
+        // A SID that is not a SID is never searched for either; a real one is written as
+        // bytes, so no value read from the directory reaches the filter as text.
+        let mut directory = domain_directory(Some("513"));
+        directory.entries[0]
+            .bin_attrs
+            .insert("objectSid".to_owned(), vec![b"*)(objectClass=*".to_vec()]);
+        let person = lookup(&mut directory, "name", "eve").unwrap();
+        assert!(person.groups.is_empty());
+        assert_eq!(sid_searches(&directory), 0);
+    }
+
+    #[test]
+    fn the_rid_to_group_answer_is_kept_per_domain_as_the_cache_says() {
+        let ldap = Ldap::new(config("ldaps://directory.example.org")).unwrap();
+        let mut directory = domain_directory(Some("513"));
+        let first = ldap.found(&mut directory, "eve").unwrap().unwrap();
+        let second = ldap.found(&mut directory, "eve").unwrap().unwrap();
+        assert_eq!(first.groups, ["Domain Users"]);
+        assert_eq!(second.groups, first.groups);
+        assert_eq!(
+            sid_searches(&directory),
+            1,
+            "the second read hits the cache"
+        );
+        // Another domain's RID 513 is its own entry.
+        directory.entries[0].bin_attrs.insert(
+            "objectSid".to_owned(),
+            vec![sid_in(&[21, 99, 22, 33], 1104)],
+        );
+        let other = ldap.found(&mut directory, "eve").unwrap().unwrap();
+        assert_eq!(other.groups, ["Domain Users"]);
+        assert_eq!(sid_searches(&directory), 2);
+        // With the cache off, every read asks.
+        let mut off = config("ldaps://directory.example.org");
+        off.cache = CacheSetting::Enabled(false);
+        let ldap = Ldap::new(off).unwrap();
+        let mut directory = domain_directory(Some("513"));
+        ldap.found(&mut directory, "eve").unwrap();
+        ldap.found(&mut directory, "eve").unwrap();
+        assert_eq!(sid_searches(&directory), 2);
     }
 }
