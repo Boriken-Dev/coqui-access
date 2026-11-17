@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **A sign-in reads only its own account's record.** `Table::get(key)` and `Table::update_one(key, make)` (defaults over
+  `load` and `update`, so no table breaks; `MemoryTable` reads one record) and `Reloading::get` and
+  `Reloading::update_one`, which check only the record they read. `coqui-access-totp` signs in through them: a check
+  no longer reads every account, and a record that cannot be read or is not valid is an error for its own account's
+  sign-in (its message names the table's reason, never the account) and for no one else's. A table that keeps every
+  record in one file (`FileTable`) still reads the file whole; a table that reads by key (a database, an API) gains the
+  full benefit by overriding the two methods.
 - **File tables lock their file.** `FileTable` holds an exclusive operating-system lock on `<path>.lock` from the read
   to the write of every `put`, `remove` and `update`, so processes sharing a file lose no update. `Table::update(&mut
   Update<T>)` (default: load, decide, put) lets a change be computed from the records a table read for it, and

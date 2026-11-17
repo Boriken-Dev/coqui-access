@@ -1,8 +1,8 @@
 //! Enrolment, verification, replay, recovery and reset, through the public API and with a
 //! clock the test moves.
 
-use std::sync::Arc;
-use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
 use coqui_access::guatiao::library::ProviderError;
 use coqui_access::{AccountPut, Accounts, Attempt, Authenticator, Lookup, Verdict, methods};
@@ -739,4 +739,167 @@ fn a_record_written_before_lockout_existed_still_reads() {
     let read = TotpRecord::from_value(&map.into()).expect("an old record reads");
     assert!(format!("{read:?}").contains("failures: 0"));
     assert!(read.to_value().is_ok());
+}
+
+/// A table that finds a record by its key, counting what it is made to read: whole-table
+/// reads (`full`) apart from records read by key (`by_key`). Keys in `unreadable` cannot be
+/// read, and then neither can the table as a whole.
+struct ByKey {
+    inner: MemoryTable<TotpRecord>,
+    full: AtomicUsize,
+    by_key: AtomicUsize,
+    unreadable: Mutex<Vec<String>>,
+}
+
+impl ByKey {
+    fn new() -> Arc<Self> {
+        Arc::new(Self {
+            inner: MemoryTable::new(),
+            full: AtomicUsize::new(0),
+            by_key: AtomicUsize::new(0),
+            unreadable: Mutex::new(Vec::new()),
+        })
+    }
+
+    fn whole(&self) -> Result<(), SourceError> {
+        self.full.fetch_add(1, Ordering::SeqCst);
+        if self.unreadable.lock().unwrap().is_empty() {
+            Ok(())
+        } else {
+            Err(SourceError::unavailable("a record cannot be read"))
+        }
+    }
+
+    fn one(&self, key: &str) -> Result<(), SourceError> {
+        if self.unreadable.lock().unwrap().iter().any(|bad| bad == key) {
+            return Err(SourceError::unavailable("a record cannot be read"));
+        }
+        self.by_key.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+}
+
+impl Table<TotpRecord> for ByKey {
+    fn load(&self) -> Result<Snapshot<TotpRecord>, SourceError> {
+        self.whole()?;
+        self.inner.load()
+    }
+
+    fn put(&self, record: TotpRecord) -> Result<(), SourceError> {
+        self.inner.put(record)
+    }
+
+    fn remove(&self, key: &str) -> Result<bool, SourceError> {
+        self.inner.remove(key)
+    }
+
+    fn update(
+        &self,
+        make: &mut coqui_access_kit::Update<'_, TotpRecord>,
+    ) -> Result<(), SourceError> {
+        self.whole()?;
+        self.inner.update(make)
+    }
+
+    fn get(&self, key: &str) -> Result<Option<TotpRecord>, SourceError> {
+        self.one(key)?;
+        self.inner.get(key)
+    }
+
+    fn update_one(
+        &self,
+        key: &str,
+        make: &mut coqui_access_kit::UpdateOne<'_, TotpRecord>,
+    ) -> Result<(), SourceError> {
+        self.one(key)?;
+        self.inner.update_one(key, make)
+    }
+}
+
+/// Alice, bob and carol enrolled over `table`.
+fn three_over(table: Arc<dyn Table<TotpRecord>>) -> (Setup, [Vec<u8>; 3]) {
+    let clock = Arc::new(AtomicI64::new(START));
+    let reader = clock.clone();
+    let totp = TotpAccounts::builder()
+        .table(table)
+        .clock(move || reader.load(Ordering::SeqCst))
+        .build()
+        .unwrap();
+    let setup = Setup { clock, totp };
+    let keys = ["id-alice", "id-bob", "id-carol"].map(|name| setup.enrol(name).0);
+    (setup, keys)
+}
+
+#[test]
+fn a_sign_in_reads_only_its_own_record() {
+    let table = ByKey::new();
+    let (setup, [alice, ..]) = three_over(table.clone());
+    setup.at(START + 30);
+    let (full, by_key) = (
+        table.full.load(Ordering::SeqCst),
+        table.by_key.load(Ordering::SeqCst),
+    );
+    assert_eq!(
+        setup.present("id-alice", &code(&alice, START + 30)),
+        valid("id-alice")
+    );
+    // A wrong code (a write), a code already used (a write) and an unknown account.
+    assert_eq!(setup.present("id-alice", "000000"), Verdict::Invalid);
+    assert_eq!(setup.present("id-nobody", "000000"), Verdict::Unknown);
+    assert_eq!(
+        table.full.load(Ordering::SeqCst),
+        full,
+        "a sign-in loaded every record"
+    );
+    assert!(table.by_key.load(Ordering::SeqCst) > by_key);
+}
+
+#[test]
+fn a_record_that_cannot_be_read_fails_its_own_sign_in_only() {
+    let table = ByKey::new();
+    let (setup, [alice, bob, carol]) = three_over(table.clone());
+    table.unreadable.lock().unwrap().push("id-bob".to_owned());
+    setup.at(START + 30);
+    assert_eq!(
+        setup.present("id-alice", &code(&alice, START + 30)),
+        valid("id-alice")
+    );
+    let refused = setup
+        .totp
+        .authenticate(Attempt {
+            name: Some("id-bob".to_owned()),
+            secret: Some(code(&bob, START + 30)),
+            ..Attempt::default()
+        })
+        .expect_err("an unreadable record is not a sign-in");
+    let text = error_text(&refused);
+    assert!(text.contains("cannot be read"), "{text}");
+    assert!(!text.contains("id-bob"), "the error names the account");
+    assert_eq!(
+        setup.present("id-carol", &code(&carol, START + 30)),
+        valid("id-carol")
+    );
+}
+
+#[test]
+fn a_record_that_is_not_valid_fails_its_own_sign_in_only() {
+    let table = Arc::new(MemoryTable::<TotpRecord>::new());
+    let (setup, [alice, ..]) = three_over(table.clone());
+    let mut broken = table.get("id-bob").unwrap().unwrap();
+    broken.secret = "not base32 !".to_owned();
+    table.put(broken).unwrap();
+    setup.at(START + 30);
+    assert_eq!(
+        setup.present("id-alice", &code(&alice, START + 30)),
+        valid("id-alice")
+    );
+    let refused = setup
+        .totp
+        .authenticate(Attempt {
+            name: Some("id-bob".to_owned()),
+            secret: Some("123456".to_owned()),
+            ..Attempt::default()
+        })
+        .expect_err("an invalid record is not a sign-in");
+    assert!(!error_text(&refused).contains("id-bob"));
 }

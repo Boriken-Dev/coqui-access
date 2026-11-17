@@ -69,6 +69,11 @@ impl Accounts for TotpAccounts { /* accounts, put, remove, waiting */ }
   right code resets it; `put` with `disabled` (either value) resets it. `Lockout::OFF` (`after` 0)
   keeps no count and writes nothing on a wrong code. The delay lets anyone who can name an account keep
   its owner out for up to `longest_seconds` at a time: the consumer's per-address throttle limits that.
+- A check reads and writes only the signing-in account's record (`Table::get`, `Table::update_one`), so its
+  cost does not grow with the number of accounts when the table reads by key. A record the table cannot read, or
+  that is not valid, answers an error for its own account (`GUATIAO_ERR_INTERNAL`, `one-time code table: <reason>`,
+  never the name) and leaves every other account's sign-in alone. A `FileTable` reads its whole file; a file with
+  one undecodable record cannot be read at all.
 - Every step in range is compared in constant time, and every recovery code is compared, none
   stopping the others.
 - A recovery code is `XXXXX-XXXXX` (letters and digits, no `I`, `O`, `0`, `1`), compared without the
