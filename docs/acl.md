@@ -29,7 +29,7 @@ flags, and an optional condition:
   "inherit": { "items": true, "containers": true }, "condition": "@Device.managed == 0" }
 ```
 
-Principals are `account:<name>`, `person:<id>`, `group:<name>`, `everyone`, `authenticated`,
+Principals are `account:<name>`, `person:<id>`, `group:<name>`, `any:signed-in`, `everyone`, `authenticated`,
 `owner`, `owner_group`, and `mask` for POSIX. `owner` and `owner_group` resolve against the
 item's owner and owning group, stored beside its list.
 

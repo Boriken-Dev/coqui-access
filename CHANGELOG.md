@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`coqui_access::Subject` knows `any:signed-in`.** `Subject::AnySignedIn` is parsed from and shown as `any:signed-in`, and
+  `matches` is true for every person with a non-empty `Person::id`, as `coqui-roles` already ruled; any other `any:` text
+  is a `SubjectError`. `coqui-roles` now reads its rule subjects through `Subject` alone, and ACL principals and sign-in
+  rule subjects accept the new name too. `Subject` is `#[non_exhaustive]`, so this is an addition.
 - **`coqui-access-ldap` adds an Active Directory account's primary group to its groups.** `memberOf` leaves it out, so
   `group:Domain Users` never matched. The group is found by the account's domain SID plus its `primaryGroupID`, searched by
   binary `objectSid` under `group_base`, kept per domain as the lookup cache keeps lookups, and followed through nested groups

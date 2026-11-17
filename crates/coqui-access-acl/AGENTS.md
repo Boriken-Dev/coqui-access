@@ -63,7 +63,7 @@ impl RightsSchemaBuilder {
 pub enum Principal { Subject(Subject), Everyone, Authenticated, Owner, OwnerGroup, Mask }
 impl Principal { pub fn matches(&self, person: Option<&Person>, owner: Option<&Subject>, owner_group: Option<&Subject>) -> bool; }
 // FromStr/Display: "everyone" "authenticated" "owner" "owner_group" "mask", or a Subject's text
-// ("account:<name>", "person:<id>", "group:<name>"); From<Subject>. Err = PrincipalError.
+// ("account:<name>", "person:<id>", "group:<name>", "any:signed-in"); From<Subject>. Err = PrincipalError.
 
 pub enum Effect { Allow /* default */, Deny }                      // "allow" | "deny"
 #[non_exhaustive]
