@@ -20,6 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **A sign-in rule's `clients` condition can only add steps unless the consumer verified the client kind.** A kind taken
+  from a request's headers is whatever the caller says, so a rule that let one kind in with fewer steps (or by another
+  method) than the rest was no barrier. `coqui_signin_rules` now decides a request whose `client` is not marked
+  `attributes.client_verified` twice, as claimed and with no client, and holds it to both; a rule that asks for more for
+  a kind works as written, and one that asks for less, or opens a method, no longer has any effect. A consumer that fixes
+  the kind by the endpoint it serves says so with the new `SignInContext::with_verified_client` (`attributes::CLIENT_VERIFIED`,
+  read by `client_is_verified`) and its `clients` rules decide alone, as before. A policy with no `clients` rule is unchanged.
 - **A subject value may hold inner spaces, so `group:Domain Users` is accepted everywhere.** `coqui-roles` refused any
   whitespace in a rule's subject value, though Active Directory group names routinely hold spaces; it now takes what
   `coqui_access::Subject` takes, plus its `name_bytes` limit. `Subject::from_str` (and so ACL principals, sign-in rule

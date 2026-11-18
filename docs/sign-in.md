@@ -28,7 +28,7 @@ The consumer builds a `SignInContext` and calls `decide`:
 | `purpose` | One of the purposes above. |
 | `done` | The steps already passed, each `{ method, provider, person }`: the provider is the id that accepted it and the person the `Person::id` it named. Empty before the first. |
 | `address` | The client's IP address as the consumer determined it, text, no port. **`None` when it could not be determined, never `0.0.0.0` or another placeholder.** |
-| `client`, `service` | The kind of client, and the consumer's own word for what is signed in to (`portal`, `pages`). `client` comes from how the consumer serves the request (the endpoint or listener it arrived on), never from anything the client says about itself. |
+| `client`, `service` | The kind of client, and the consumer's own word for what is signed in to (`portal`, `pages`). `client` comes from how the consumer serves the request (the endpoint or listener it arrived on), never from anything the client says about itself; a consumer that sets it so says so with `attributes.client_verified = true` (`SignInContext::with_verified_client`), and one that cannot leaves that out. See [A client kind is a claim unless verified](#a-client-kind-is-a-claim-unless-verified). |
 | `time_unix` | When it is asked. |
 | `person` | Who the passed steps named, once one did. |
 | `attributes` | Anything else the consumer says; a policy reads what it knows. |
@@ -115,6 +115,30 @@ A rule has conditions (`purposes`, `networks`, `clients`, `services`, `subjects`
 of chains; a chain is a set of methods that must all succeed and name one account. Every
 condition left out is true; `purposes` defaults to `sign_in` and `resume`, so a rule for `enrol` is
 always written out. `providers` limits who is asked for the methods the rule offers.
+
+### A client kind is a claim unless verified
+
+A caller holding a credential can say it is any kind of client, so a kind the consumer took from
+the request (an `Origin` or `Sec-Fetch-*` header, a `User-Agent`, a flag in the body) proves
+nothing. A rule that lets one kind in with fewer steps than another, or by a method the others
+lack, is then no barrier: the caller names the kind that suits it. The rules provider therefore
+reads a `client` the consumer has not marked verified as a claim that can **add steps and never
+take any away**: the request is decided as the claim says and again as if no client were given,
+and both must be satisfied.
+
+- Before anyone is named, a method is offered only when both decisions offer it (and only the
+  providers both allow).
+- Once someone is named, the sign-in is complete only when both are; what either still lacks is
+  offered, and either one refusing is a refusal.
+- A rule with a `clients` condition that asks for more than the same request with no client
+  (`["password", "totp"]` for `browser`, `["password"]` for the rest) works as written. One that
+  asks for less, or opens a method the rest of the policy does not offer, has no effect for a
+  consumer that did not verify its client kind.
+- A consumer that fixes the kind by the listener it serves (a portal that only serves a
+  browser page, a gateway with a separate endpoint for its apps) marks the context
+  `client_verified` and its `clients` rules decide alone, as they read.
+- A policy with no `clients` condition is unaffected, and a context with no `client` is the
+  "no client" decision itself.
 
 **Evaluation order.** A rule is true, false or unknown; a false condition makes it false, and
 `subjects` makes it unknown until a step has named someone.
