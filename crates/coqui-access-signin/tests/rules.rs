@@ -400,7 +400,7 @@ fn clients_and_services_narrow_a_rule_and_an_unsaid_one_does_not_match() {
         .rule(RuleDef::new([["password"]]))
         .build()
         .unwrap();
-    let mut api = context(purposes::SIGN_IN, None);
+    let mut api = verified(context(purposes::SIGN_IN, None));
     api.client = Some(clients::API.to_owned());
     api.service = Some("unex".to_owned());
     assert_eq!(offered(&rules.decide(api.clone()).unwrap()), ["key"]);
@@ -408,7 +408,7 @@ fn clients_and_services_narrow_a_rule_and_an_unsaid_one_does_not_match() {
     assert_eq!(offered(&rules.decide(api.clone()).unwrap()), ["password"]);
     api.service = None;
     assert_eq!(offered(&rules.decide(api).unwrap()), ["password"]);
-    let mut browser = context(purposes::SIGN_IN, None);
+    let mut browser = verified(context(purposes::SIGN_IN, None));
     browser.client = Some(clients::BROWSER.to_owned());
     browser.service = Some("unex".to_owned());
     assert_eq!(offered(&rules.decide(browser).unwrap()), ["password"]);
@@ -705,4 +705,154 @@ fn a_subject_may_hold_inner_spaces_but_not_start_or_end_with_whitespace() {
             "{subject:?}"
         );
     }
+}
+
+// A client kind the consumer has not said it verified is only a claim: whoever holds a credential
+// can send any claim, so a rule that names a client may add steps and may never take any away.
+
+/// Marks the client as one the consumer established itself (from the listener it arrived on).
+fn verified(context: SignInContext) -> SignInContext {
+    context.with_verified_client()
+}
+
+fn claiming(client: &str, mut context: SignInContext) -> SignInContext {
+    context.client = Some(client.to_owned());
+    context
+}
+
+/// An app needs the password alone; everyone else, the password and a code.
+fn lighter_for_apps() -> SignInRules {
+    SignInRules::builder()
+        .rule(RuleDef::new([["password"]]).clients([clients::APP]))
+        .rule(RuleDef::new([["password", "totp"]]))
+        .build()
+        .unwrap()
+}
+
+#[test]
+fn a_claimed_client_cannot_ask_for_fewer_steps_than_the_same_request_with_none() {
+    let rules = lighter_for_apps();
+    let base = || context(purposes::SIGN_IN, Some("10.1.2.3"));
+    for claim in [Some(clients::APP), Some(clients::API), None] {
+        let mut asked = base();
+        asked.client = claim.map(str::to_owned);
+        let decision = rules.decide(named(alice(), &["password"], asked)).unwrap();
+        assert!(!decision.complete, "{claim:?}");
+        assert_eq!(offered(&decision), ["totp"], "{claim:?}");
+    }
+}
+
+#[test]
+fn a_client_the_consumer_verified_may_ask_for_fewer_steps() {
+    let rules = lighter_for_apps();
+    let decision = rules
+        .decide(verified(claiming(
+            clients::APP,
+            named(alice(), &["password"], context(purposes::SIGN_IN, None)),
+        )))
+        .unwrap();
+    assert!(decision.complete);
+    let decision = rules
+        .decide(verified(claiming(
+            clients::API,
+            named(alice(), &["password"], context(purposes::SIGN_IN, None)),
+        )))
+        .unwrap();
+    assert!(!decision.complete);
+    assert_eq!(offered(&decision), ["totp"]);
+}
+
+#[test]
+fn a_claimed_client_cannot_open_a_method_the_rest_of_the_policy_does_not_offer() {
+    let rules = SignInRules::builder()
+        .rule(RuleDef::new([["password"]]).clients([clients::BROWSER]))
+        .rule(RuleDef::new([["certificate"]]))
+        .build()
+        .unwrap();
+    let claimed = claiming(clients::BROWSER, context(purposes::SIGN_IN, None));
+    // What the browser rule opens, the rest of the policy does not, so nothing can finish: the
+    // claim is no way around the rest, and a rule that opens a method needs a verified client.
+    let decision = rules.decide(claimed.clone()).unwrap();
+    assert!(decision.methods.is_empty());
+    let decision = rules.decide(context(purposes::SIGN_IN, None)).unwrap();
+    assert_eq!(offered(&decision), ["certificate"]);
+    let decision = rules
+        .decide(named(
+            alice(),
+            &["password"],
+            claiming(clients::BROWSER, context(purposes::SIGN_IN, None)),
+        ))
+        .unwrap();
+    assert!(!decision.complete);
+    assert!(decision.methods.is_empty());
+    let decision = rules.decide(verified(claimed)).unwrap();
+    assert_eq!(offered(&decision), ["password"]);
+}
+
+#[test]
+fn a_claimed_client_may_add_steps_and_the_others_are_not_held_to_them() {
+    let rules = SignInRules::builder()
+        .rule(RuleDef::new([["password", "totp"]]).clients([clients::BROWSER]))
+        .rule(RuleDef::new([["password"]]))
+        .build()
+        .unwrap();
+    let browser = |done: &[&str]| {
+        named(
+            alice(),
+            done,
+            claiming(clients::BROWSER, context(purposes::SIGN_IN, None)),
+        )
+    };
+    let decision = rules.decide(browser(&["password"])).unwrap();
+    assert!(!decision.complete);
+    assert_eq!(offered(&decision), ["totp"]);
+    let decision = rules.decide(browser(&["password", "totp"])).unwrap();
+    assert!(decision.complete);
+    let decision = rules
+        .decide(named(
+            alice(),
+            &["password"],
+            context(purposes::SIGN_IN, None),
+        ))
+        .unwrap();
+    assert!(decision.complete);
+}
+
+#[test]
+fn a_claimed_client_is_held_to_the_providers_of_both_evaluations() {
+    let rules = SignInRules::builder()
+        .rule(
+            RuleDef::new([["password"]])
+                .clients([clients::API])
+                .providers(["ldap", "local"]),
+        )
+        .rule(RuleDef::new([["password"]]).providers(["local"]))
+        .build()
+        .unwrap();
+    let decision = rules
+        .decide(claiming(clients::API, context(purposes::SIGN_IN, None)))
+        .unwrap();
+    assert_eq!(offered(&decision), ["password"]);
+    assert_eq!(decision.methods[0].providers, ["local"]);
+    let by_ldap = Factor {
+        provider: Some("ldap".to_owned()),
+        ..factor("password")
+    };
+    let mut asked = claiming(clients::API, context(purposes::SIGN_IN, None));
+    asked.person = Some(alice());
+    asked.done = vec![by_ldap];
+    let decision = rules.decide(asked).unwrap();
+    assert!(!decision.complete);
+}
+
+#[test]
+fn a_policy_that_names_no_client_ignores_the_claim() {
+    let decision = owners()
+        .decide(claiming(
+            clients::API,
+            context(purposes::SIGN_IN, Some("10.1.2.3")),
+        ))
+        .unwrap();
+    assert_eq!(offered(&decision), ["password", "certificate"]);
+    assert_eq!(decision.rule.as_deref(), Some("0"));
 }
