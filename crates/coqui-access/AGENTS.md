@@ -135,7 +135,11 @@ pub struct SubjectError;                                // non_exhaustive, Error
 ```
 
 - `Account` matches `Person::name`, `Person` matches `Person::id`, `Group` any of
-  `Person::groups`; all compare exact strings. `AnySignedIn` matches every person whose
+  `Person::groups`. `Account` and `Person` compare exact strings. `Group` compares by Unicode
+  lowercase (`char::to_lowercase`, not full case folding), so `group:Domain Users` matches a
+  person whose groups hold `domain users` (SSSD reports Active Directory groups in lowercase),
+  and two POSIX groups that differ only in case are one. `==` on a `Subject` stays exact.
+  `AnySignedIn` matches every person whose
   `Person::id` is not empty, so an anonymous caller never matches; it grants nothing by itself.
 - `any:signed-in` is the only reserved `any:` name: every other text starting `any:` is a
   `SubjectError` (`group:any:signed-in` is still a group, since the kind comes first).

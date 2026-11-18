@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **A group subject matches a person's groups without regard to case.** `Subject::matches` compares `group:<name>` by
+  Unicode lowercase, so `group:Domain Users` reaches a person whose groups hold `domain users`, which is how SSSD reports
+  Active Directory groups; Active Directory itself treats the names alike. It applies wherever a subject is read: ACL
+  principals and the owning group, sign-in rule subjects and `coqui-roles` rules. Two POSIX groups that differ only in case
+  are now one. `account:` and `person:` still compare exactly, and `==` on a `Subject` still compares its text.
 - **A rotation of a one-time code secret needs the caller's word that it proved the current one.** `AccountPut` gains
   `proved_current: bool` (default false, read when absent, not written when false). `coqui-access-totp` refuses
   beginning an enrolment for an account that already has a secret unless it is true (`GUATIAO_ERR_BAD_VALUE`, nothing

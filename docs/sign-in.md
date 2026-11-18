@@ -132,7 +132,9 @@ strictest rule goes last, where an unknown address falls.
 
 Growing it is data, not code: `["password", "totp"]` in a rule's `allow` asks for a code after the
 password, a rule with `subjects = ["group:admins"]` above the others narrows it for a group, and
-a rule with `purposes = ["enrol"]` says who may set up a second step.
+a rule with `purposes = ["enrol"]` says who may set up a second step. A group subject matches
+without regard to case, so `group:Domain Users` reaches a person the directory reports in
+`domain users`.
 
 With no policy configured, a consumer uses `SignInRules::single_factor(methods)`: each
 configured method alone is enough, from anywhere, and enrolment is an administrator's only.

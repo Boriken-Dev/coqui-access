@@ -31,7 +31,9 @@ flags, and an optional condition:
 
 Principals are `account:<name>`, `person:<id>`, `group:<name>`, `any:signed-in`, `everyone`, `authenticated`,
 `owner`, `owner_group`, and `mask` for POSIX. `owner` and `owner_group` resolve against the
-item's owner and owning group, stored beside its list.
+item's owner and owning group, stored beside its list. A group is matched without regard to
+case, since a directory may report `Domain Users` as `domain users`; two POSIX groups that differ
+only in case are one group here.
 
 ## Modes
 

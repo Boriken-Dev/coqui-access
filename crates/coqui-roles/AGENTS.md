@@ -56,7 +56,8 @@ impl From<RolePolicyError> for ProviderError;   // GUATIAO_ERR_BAD_VALUE
 ```
 
 - `subject` is `account:<name>` | `person:<id>` | `group:<name>` | `any:signed-in`, read as
-  `coqui_access::Subject` (a name's value also has no whitespace and is at most 256 bytes).
+  `coqui_access::Subject` (a name's value also has no whitespace and is at most 256 bytes). A
+  `group:` subject matches a person's groups without regard to case (`group:Staff` matches `staff`).
   `any:signed-in` matches every subject a sign-in or key resolved (a directory person or a key or other
   provider's account) and never one with an empty `Person::id`, which is how an anonymous
   caller reaches an authorizer. It grants nothing by itself: the rule's role does, and rules
