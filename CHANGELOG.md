@@ -20,6 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **A subject value may hold inner spaces, so `group:Domain Users` is accepted everywhere.** `coqui-roles` refused any
+  whitespace in a rule's subject value, though Active Directory group names routinely hold spaces; it now takes what
+  `coqui_access::Subject` takes, plus its `name_bytes` limit. `Subject::from_str` (and so ACL principals, sign-in rule
+  subjects and `coqui-roles` rules alike) now also refuses a value that starts or ends with whitespace, which could never
+  match a directory name and was most likely a typo; before, it was accepted. A policy is data, so no quoting is needed.
+  Role, action and scope names in `coqui-roles` still hold no whitespace.
 - **A group subject matches a person's groups without regard to case.** `Subject::matches` compares `group:<name>` by
   Unicode lowercase, so `group:Domain Users` reaches a person whose groups hold `domain users`, which is how SSSD reports
   Active Directory groups; Active Directory itself treats the names alike. It applies wherever a subject is read: ACL

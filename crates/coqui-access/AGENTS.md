@@ -145,7 +145,8 @@ pub struct SubjectError;                                // non_exhaustive, Error
   `SubjectError` (`group:any:signed-in` is still a group, since the kind comes first).
   `Debug` shows `Subject(any:signed-in)` whole, since it names no one. Everything that reads a
   `Subject` (roles, ACL principals, sign-in rule subjects) accepts it.
-- The value after the first colon may hold colons; empty or holding a control character is
+- The value after the first colon may hold colons and inner spaces (`group:Domain Users`); empty,
+  holding a control character, or starting or ending with whitespace is
   refused. Policies add their own length and character rules.
 - `Debug` shows the kind only: the value is an identity.
 
