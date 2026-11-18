@@ -645,3 +645,30 @@ fn steps_that_name_different_people_are_one_sign_in_for_nobody() {
         .complete
     );
 }
+
+#[test]
+fn a_rule_about_a_group_applies_to_a_person_whose_group_differs_only_in_case() {
+    let rules = SignInRules::builder()
+        .rule(RuleDef::new([["password", "totp"]]).subjects(["group:Admins"]))
+        .rule(RuleDef::new([["password"]]))
+        .build()
+        .unwrap();
+    let decide = |person| {
+        rules
+            .decide(named(
+                person,
+                &["password"],
+                context(purposes::SIGN_IN, Some("10.1.2.3")),
+            ))
+            .unwrap()
+    };
+    // alice's group is `admins`: the rule written `Admins` is the one that wants a code.
+    let admin = decide(alice());
+    assert_eq!(admin.rule.as_deref(), Some("0"));
+    assert_eq!(offered(&admin), ["totp"]);
+    let other = Person {
+        groups: vec!["administrators".to_owned()],
+        ..alice()
+    };
+    assert_eq!(decide(other).rule.as_deref(), Some("1"));
+}

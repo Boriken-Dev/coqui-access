@@ -545,6 +545,20 @@ mod tests {
     }
 
     #[test]
+    fn a_group_rule_applies_to_a_person_whose_group_differs_only_in_case() {
+        let policy = RoleAuthorizer::builder()
+            .scope_kinds(["site"])
+            .role("viewer", ["document.read"])
+            .rule(Rule::new("group:Domain-Users", "site:north", "viewer"))
+            .build()
+            .unwrap();
+        let lowercase = person("a", "alice", &["domain-users"]);
+        let other = person("b", "bob", &["domain-admins"]);
+        assert!(allowed(&policy, &lowercase, "document.read", "site:north"));
+        assert!(!allowed(&policy, &other, "document.read", "site:north"));
+    }
+
+    #[test]
     fn a_grant_on_an_ancestor_reaches_what_sits_under_it_unless_it_does_not_propagate() {
         let policy = RoleAuthorizer::builder()
             .scope_kinds(["site"])

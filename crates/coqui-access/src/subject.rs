@@ -32,7 +32,9 @@ pub enum Subject {
     Account(String),
     /// The person whose [`Person::id`] is this.
     Person(String),
-    /// Every person whose [`Person::groups`] holds this.
+    /// Every person whose [`Person::groups`] holds this, compared without regard to case: a
+    /// directory may report a group in either case, and two groups that differ only in case are
+    /// one.
     Group(String),
     /// Every person who carries an identity: a non-empty [`Person::id`]. An anonymous caller
     /// has none, so it never matches. It is the only reserved `any:` name.
@@ -60,14 +62,27 @@ impl Subject {
 
     /// Whether `person` is the one this names, is in the group it names, or, for
     /// `any:signed-in`, has an id.
+    ///
+    /// An account name and a person id compare exactly. A group compares by Unicode lowercase,
+    /// so `group:Domain Users` names `domain users`; two POSIX groups that differ only in case
+    /// are therefore one here. `==` on a `Subject` stays exact, since it compares the text.
     pub fn matches(&self, person: &Person) -> bool {
         match self {
             Self::Account(name) => name == &person.name,
             Self::Person(id) => id == &person.id,
-            Self::Group(group) => person.groups.iter().any(|member| member == group),
+            Self::Group(group) => person.groups.iter().any(|member| same_group(member, group)),
             Self::AnySignedIn => !person.id.is_empty(),
         }
     }
+}
+
+/// Whether two group names are the same without regard to case: equal after Unicode lowercase
+/// (`char::to_lowercase`, not full case folding, so `ß` and `SS` differ), compared a character
+/// at a time so nothing is allocated.
+fn same_group(left: &str, right: &str) -> bool {
+    left.chars()
+        .flat_map(char::to_lowercase)
+        .eq(right.chars().flat_map(char::to_lowercase))
 }
 
 impl fmt::Debug for Subject {
@@ -153,6 +168,66 @@ mod tests {
             "group:a:b".parse::<Subject>(),
             Ok(Subject::Group("a:b".into()))
         );
+    }
+
+    fn in_groups(groups: &[&str]) -> Person {
+        Person {
+            groups: groups.iter().map(|group| (*group).to_owned()).collect(),
+            ..Person::default()
+        }
+    }
+
+    #[test]
+    fn a_group_matches_without_regard_to_case_in_either_direction() {
+        let written: Subject = "group:Domain Users".parse().unwrap();
+        assert!(written.matches(&in_groups(&["domain users"])));
+        assert!(written.matches(&in_groups(&["DOMAIN USERS"])));
+        let lowercase: Subject = "group:domain users".parse().unwrap();
+        assert!(lowercase.matches(&in_groups(&["Domain Users"])));
+        // Any one of the groups may be the one.
+        assert!(written.matches(&in_groups(&["staff", "domain users"])));
+        // Non-ASCII names fold too.
+        let accented: Subject = "group:Ñandú Équipe".parse().unwrap();
+        assert!(accented.matches(&in_groups(&["ñandú équipe"])));
+        let greek: Subject = "group:ΣΟΦΙΑ".parse().unwrap();
+        assert!(greek.matches(&in_groups(&["σοφια"])));
+    }
+
+    #[test]
+    fn a_group_differing_in_more_than_case_does_not_match() {
+        let written: Subject = "group:Domain Users".parse().unwrap();
+        for other in [
+            "domain  users",
+            "domain users ",
+            "domain user",
+            "domainusers",
+            "domain admins",
+        ] {
+            assert!(!written.matches(&in_groups(&[other])), "{other:?}");
+        }
+        assert!(!written.matches(&in_groups(&[])));
+        // Only groups fold: an account or a person id is still compared exactly.
+        let by_name = Person {
+            name: "Alice".into(),
+            id: "P-1".into(),
+            ..Person::default()
+        };
+        assert!(
+            !"account:alice"
+                .parse::<Subject>()
+                .unwrap()
+                .matches(&by_name)
+        );
+        assert!(!"person:p-1".parse::<Subject>().unwrap().matches(&by_name));
+        assert!(
+            "account:Alice"
+                .parse::<Subject>()
+                .unwrap()
+                .matches(&by_name)
+        );
+        // The subject itself stays what was written.
+        assert_ne!(written, "group:domain users".parse::<Subject>().unwrap());
+        assert_eq!(written.to_string(), "group:Domain Users");
     }
 
     #[test]

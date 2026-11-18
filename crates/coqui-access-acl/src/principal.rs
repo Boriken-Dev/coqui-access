@@ -141,4 +141,21 @@ mod tests {
         assert!(!Principal::Owner.matches(None, Some(&owner), None));
         assert!(!Principal::Mask.matches(Some(&alice), None, None));
     }
+
+    #[test]
+    fn a_group_principal_and_the_owning_group_match_without_regard_to_case() {
+        let alice = Person {
+            name: "alice".into(),
+            groups: alloc::vec!["domain users".into()],
+            ..Person::default()
+        };
+        let named: Principal = "group:Domain Users".parse().unwrap();
+        assert!(named.matches(Some(&alice), None, None));
+        let other: Principal = "group:Domain Admins".parse().unwrap();
+        assert!(!other.matches(Some(&alice), None, None));
+        let owning: Subject = "group:DOMAIN USERS".parse().unwrap();
+        assert!(Principal::OwnerGroup.matches(Some(&alice), None, Some(&owning)));
+        let elsewhere: Subject = "group:DOMAIN ADMINS".parse().unwrap();
+        assert!(!Principal::OwnerGroup.matches(Some(&alice), None, Some(&elsewhere)));
+    }
 }

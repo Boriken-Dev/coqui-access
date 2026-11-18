@@ -366,3 +366,34 @@ fn an_item_acl_is_read_from_a_stored_document() {
         assert!(partial::<Acl>(bad).is_err(), "{bad}");
     }
 }
+
+#[test]
+fn a_group_entry_applies_to_a_person_whose_group_differs_only_in_case() {
+    let lowercase = person("alice", &["domain users"]);
+    let other = person("bob", &["domain admins"]);
+    for mode in [
+        Mode::Ordered,
+        Mode::DenyOverrides,
+        Mode::Additive,
+        Mode::Posix,
+    ] {
+        let mut acl = Acl::new(mode).entry(Entry::allow(subject("group:Domain Users"), ["read"]));
+        if mode == Mode::Posix {
+            acl = acl.entry(Entry::allow(Principal::Mask, ["full"]));
+        }
+        assert!(check(&acl, &lowercase, &["read"]).allowed, "{mode:?}");
+        assert!(!check(&acl, &other, &["read"]).allowed, "{mode:?}");
+    }
+}
+
+#[test]
+fn posix_the_owning_group_and_a_named_group_match_without_regard_to_case() {
+    // The owning group is written `users` and the named group `dev`.
+    assert!(posix(&person("dan", &["USERS"]), &["read"]).allowed);
+    assert!(
+        !posix(&person("dan", &["Dev"]), &["write"]).allowed,
+        "the mask still caps it"
+    );
+    assert!(posix(&person("dan", &["Dev"]), &["read"]).allowed);
+    assert!(!posix(&person("dan", &["developers"]), &["read"]).allowed);
+}
