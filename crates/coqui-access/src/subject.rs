@@ -101,7 +101,8 @@ impl fmt::Display for Subject {
 }
 
 /// Text that is not `account:<name>`, `person:<id>` or `group:<name>` with a value that is
-/// not empty and holds no control character, or `any:signed-in`. Any other `any:` name is
+/// not empty, holds no control character and neither starts nor ends with whitespace (inner
+/// spaces are fine: `group:Domain Users`), or `any:signed-in`. Any other `any:` name is
 /// refused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
@@ -124,7 +125,11 @@ impl FromStr for Subject {
             return Ok(Self::AnySignedIn);
         }
         let (kind, value) = text.split_once(':').ok_or(SubjectError)?;
-        if value.is_empty() || value.chars().any(char::is_control) {
+        if value.is_empty()
+            || value.chars().any(char::is_control)
+            || value.starts_with(char::is_whitespace)
+            || value.ends_with(char::is_whitespace)
+        {
             return Err(SubjectError);
         }
         let value = value.to_owned();
@@ -265,6 +270,24 @@ mod tests {
             "group:any:signed-in".parse::<Subject>(),
             Ok(Subject::Group("any:signed-in".into()))
         );
+    }
+
+    #[test]
+    fn a_value_may_hold_inner_spaces_but_not_start_or_end_with_whitespace() {
+        let group: Subject = "group:Domain Users".parse().unwrap();
+        assert_eq!(group, Subject::Group("Domain Users".into()));
+        assert_eq!(group.to_string(), "group:Domain Users");
+        assert!("account:Ana María".parse::<Subject>().is_ok());
+        for text in [
+            "group: Domain Users",
+            "group:Domain Users ",
+            "account:alice\u{a0}",
+            "person: p-1",
+            "group:  ",
+            "group:Domain\tUsers",
+        ] {
+            assert_eq!(text.parse::<Subject>(), Err(SubjectError), "{text:?}");
+        }
     }
 
     #[test]

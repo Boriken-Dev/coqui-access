@@ -672,3 +672,37 @@ fn a_rule_about_a_group_applies_to_a_person_whose_group_differs_only_in_case() {
     };
     assert_eq!(decide(other).rule.as_deref(), Some("1"));
 }
+
+#[test]
+fn a_subject_may_hold_inner_spaces_but_not_start_or_end_with_whitespace() {
+    let rules = SignInRules::builder()
+        .rule(RuleDef::new([["password", "totp"]]).subjects(["group:Domain Users"]))
+        .rule(RuleDef::new([["password"]]))
+        .build()
+        .unwrap();
+    let member = Person {
+        groups: vec!["domain users".to_owned()],
+        ..alice()
+    };
+    let decision = rules
+        .decide(named(
+            member,
+            &["password"],
+            context(purposes::SIGN_IN, Some("10.1.2.3")),
+        ))
+        .unwrap();
+    assert_eq!(decision.rule.as_deref(), Some("0"));
+    for subject in [
+        "group: Domain Users",
+        "group:Domain Users ",
+        "account:\u{a0}",
+    ] {
+        assert!(
+            SignInRules::builder()
+                .rule(RuleDef::new([["password"]]).subjects([subject]))
+                .build()
+                .is_err(),
+            "{subject:?}"
+        );
+    }
+}
