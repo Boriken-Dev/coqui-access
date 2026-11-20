@@ -77,3 +77,19 @@ windows-sys = { version = "0.61", default-features = false, features = [
     "Win32_Security",
     "Win32_Security_Authorization",
 ] }
+# coqui-access-passkey: WebAuthn verification. Exact pin: the core crate's API may change in a minor
+# version. Pure RustCrypto (no OpenSSL, no ring); EdDSA is not verified upstream.
+webauthn-rs-core = "=0.6.2"
+# coqui-access-passkey: the attestation CA list a registration may be held to.
+webauthn-attestation-ca = "=0.6.2"
+# coqui-access-passkey: an origin is a URL; its scheme, host and port are compared.
+url = "2"
+# coqui-access-passkey tests: a software authenticator and a client that checks the origin like a
+# browser does (1Password's passkey-rs).
+passkey-authenticator = "0.6"
+passkey-client = "0.6"
+passkey-types = "0.6"
+# coqui-access-passkey tests: the software client's crypto backend and its public suffix list type.
+passkey-crypto = "0.1"
+public-suffix = "0.1"
+async-trait = "0.1"

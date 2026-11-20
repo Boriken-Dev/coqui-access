@@ -1,0 +1,36 @@
+[package]
+name = "coqui-access-passkey"
+description = "Passkeys (WebAuthn) as a sign-in: registration through the Accounts kind, the challenge through the Challenger kind and the signed answer through the Authenticator kind"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+exclude = [".*", "*.local.*"]
+
+[dependencies]
+coqui-access.workspace = true
+coqui-access-kit.workspace = true
+coqui-builder.workspace = true
+coqui-peer.workspace = true
+# The records hold webauthn-rs's own types through `Serde<T>`, in no format.
+guatiao-serde.workspace = true
+# WebAuthn's wire format is JSON: the options and the browser's answers cross as that text.
+serde_json.workspace = true
+url.workspace = true
+data-encoding.workspace = true
+webauthn-rs-core.workspace = true
+webauthn-attestation-ca.workspace = true
+
+[dev-dependencies]
+passkey-authenticator = { workspace = true, features = ["testable"] }
+passkey-crypto.workspace = true
+public-suffix.workspace = true
+async-trait.workspace = true
+passkey-client.workspace = true
+passkey-types = { workspace = true, features = ["serialize_bytes_as_base64_string"] }
+tokio = { workspace = true, features = ["rt", "macros"] }
+tempfile.workspace = true
+rcgen.workspace = true
