@@ -5,7 +5,7 @@
 mod support;
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
 
 use coqui_access::guatiao::Status;
 use coqui_access::guatiao::library::ProviderError;
@@ -13,7 +13,7 @@ use coqui_access::{
     AccountPut, Accounts, Attempt, Authenticator, Challenge, ChallengeRequest, Challenger, Verdict,
     error,
 };
-use coqui_access_kit::{MemoryTable, Revision, Snapshot, SourceError, Table};
+use coqui_access_kit::{MemoryTable, Revision, Snapshot, SourceError, Table, Update, UpdateOne};
 use coqui_access_passkey::{
     Ceremony, OnRegression, PasskeyAccount, Passkeys, PasskeysBuilder, UserVerification,
 };
@@ -628,6 +628,95 @@ async fn the_challenges_in_all_are_bounded() {
     }
     let busy = fixture.challenge(None, Some("192.0.2.9")).unwrap_err();
     assert!(error::is_busy(&busy));
+}
+
+/// Challenges kept in memory, counting the writes asked of the table.
+#[derive(Default)]
+struct Counted {
+    inner: MemoryTable<Ceremony>,
+    writes: AtomicUsize,
+}
+
+impl Counted {
+    fn wrote(&self) {
+        self.writes.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+impl Table<Ceremony> for Counted {
+    fn load(&self) -> Result<Snapshot<Ceremony>, SourceError> {
+        self.inner.load()
+    }
+
+    fn changes_since(&self, since: Revision) -> Result<Option<Snapshot<Ceremony>>, SourceError> {
+        self.inner.changes_since(since)
+    }
+
+    fn put(&self, record: Ceremony) -> Result<(), SourceError> {
+        self.wrote();
+        self.inner.put(record)
+    }
+
+    fn remove(&self, key: &str) -> Result<bool, SourceError> {
+        self.wrote();
+        self.inner.remove(key)
+    }
+
+    fn update(&self, make: &mut Update<'_, Ceremony>) -> Result<(), SourceError> {
+        self.wrote();
+        self.inner.update(make)
+    }
+
+    fn get(&self, key: &str) -> Result<Option<Ceremony>, SourceError> {
+        self.inner.get(key)
+    }
+
+    fn update_one(&self, key: &str, make: &mut UpdateOne<'_, Ceremony>) -> Result<(), SourceError> {
+        self.wrote();
+        self.inner.update_one(key, make)
+    }
+
+    fn remove_where(
+        &self,
+        condition: &mut dyn FnMut(&Ceremony) -> bool,
+    ) -> Result<usize, SourceError> {
+        self.wrote();
+        self.inner.remove_where(condition)
+    }
+}
+
+#[test]
+fn the_first_challenge_after_a_flood_has_expired_writes_the_table_a_bounded_number_of_times() {
+    // A file table rewrites the whole file on every write, so one write per expired challenge
+    // makes the next person's challenge wait for every challenge a flood left behind.
+    let clock = Arc::new(AtomicI64::new(START));
+    let reader = clock.clone();
+    let ceremonies = Arc::new(Counted::default());
+    let passkeys = Passkeys::builder()
+        .rp_id(RP_ID)
+        .origin(ORIGIN)
+        .ceremonies(ceremonies.clone())
+        .clock(move || reader.load(Ordering::SeqCst))
+        .build()
+        .unwrap();
+    let ask = |peer: String| {
+        passkeys.challenge(ChallengeRequest {
+            peer: Some(peer),
+            ..ChallengeRequest::default()
+        })
+    };
+    for source in 0..128 {
+        for _ in 0..8 {
+            ask(format!("198.51.100.{source}")).unwrap();
+        }
+    }
+    assert!(error::is_busy(&ask("203.0.113.9".to_owned()).unwrap_err()));
+    clock.fetch_add(301, Ordering::SeqCst);
+    let before = ceremonies.writes.load(Ordering::SeqCst);
+    ask("203.0.113.9".to_owned()).unwrap();
+    let writes = ceremonies.writes.load(Ordering::SeqCst) - before;
+    assert!(writes <= 2, "{writes} writes for one challenge");
+    assert_eq!(ceremonies.load().unwrap().records.len(), 1);
 }
 
 /// A table that reads what it was given and cannot be written.

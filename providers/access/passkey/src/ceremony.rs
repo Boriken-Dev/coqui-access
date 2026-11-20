@@ -258,7 +258,7 @@ impl Challenger for Passkeys {
         };
         let source = source_of(ceremony.source.as_deref());
         let id = PeerId::of(key.as_bytes());
-        let mut expired = Vec::new();
+        let mut expired = false;
         let mut admitted = false;
         // What other instances and processes wrote counts against its source and the total.
         self.ceremonies
@@ -271,7 +271,7 @@ impl Challenger for Passkeys {
                     .map_err(|_| {
                         coqui_access_kit::SourceError::invalid("the ceremony bounds cannot be used")
                     })?;
-                expired.clear();
+                expired = false;
                 let mut live = 0;
                 for had in held {
                     if self.live(had, unix) {
@@ -282,17 +282,20 @@ impl Challenger for Passkeys {
                             age_of(instant, unix, had.created_unix),
                         );
                     } else {
-                        expired.push(had.challenge.clone());
+                        expired = true;
                     }
                 }
                 admitted = queue.admit(id, source, live, instant).record;
                 Ok(admitted.then(|| ceremony.clone()))
             })
             .map_err(|reason| reason.reading("passkey ceremony table"))?;
-        // Best effort: an expired challenge is refused when it is presented, whether or not it
-        // is still there.
-        for old in &expired {
-            let _ = self.ceremonies.remove(old);
+        // In one write: a file table rewrites itself on each, so a write per expired challenge
+        // would make this one wait for every challenge a flood left. Best effort: an expired
+        // challenge is refused when it is presented, whether or not it is still there.
+        if expired {
+            let _ = self
+                .ceremonies
+                .remove_where(&mut |had| !self.live(had, now));
         }
         if !admitted {
             return Err(error::busy());
