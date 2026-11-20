@@ -11,7 +11,7 @@ README; those headers describe the public API and ship with the crate.
 | `crates/coqui-access-claims/AGENTS.md` | The claims a client certificate carries, shared by the mtls and proxy providers. |
 | `crates/coqui-access-signin/AGENTS.md` | Sign-in rules: which methods a sign-in may use, and what it still needs. |
 | `crates/coqui-access-acl/AGENTS.md` | Access control lists on items: rights, entries, evaluation modes, inheritance, `AclAuthorizer`. |
-| `providers/access/<name>/AGENTS.md` | One provider each: password, key, ldap, proxy, mtls, system, totp. |
+| `providers/access/<name>/AGENTS.md` | One provider each: password, key, ldap, proxy, mtls, system, totp, passkey. |
 
 ## Layout
 
@@ -19,7 +19,7 @@ README; those headers describe the public API and ship with the crate.
 | --- | --- |
 | `crates/` | Library crates: kinds, kit, roles, sign-in rules, item ACLs. The TLS peer crate and the network address list crate (`coqui-net-acl`) live in their own repositories and come from crates.io. |
 | `providers/access/<name>/` | A provider as an ordinary library. |
-| `providers/access/<name>/plugin/`, `crates/coqui-roles/plugin/`, `crates/coqui-access-signin/plugin/` | The same provider as a `cdylib`: its Guatiao config, the `providers!` line, and (password, key, mtls, totp) the storage formats it offers (`toml`, `json`) as a kit `Codec`. |
+| `providers/access/<name>/plugin/`, `crates/coqui-roles/plugin/`, `crates/coqui-access-signin/plugin/` | The same provider as a `cdylib`: its Guatiao config, the `providers!` line, and (password, key, mtls, totp, passkey) the storage formats it offers (`toml`, `json`) as a kit `Codec`. The passkey plugin offers four kinds, and a host builds one instance per kind, so what a sign-in carries between them (the registrations waiting, the challenges) is in files beside `source`. |
 | `docs/`, `mkdocs.yml` | Narrative site; Rust API docs are published under `/rust/`. |
 
 ## Commands
@@ -54,6 +54,11 @@ Regenerate the kind description after a deliberate contract change:
   dependency under any feature (a dev-dependency for tests is fine), nothing read from a file
   or the environment unless the caller asks. A storage format is chosen only in a `-plugin`
   crate, which implements the kit's `Codec` over the format crate it depends on.
+- `coqui-access-passkey` departs from two of those, because WebAuthn is its own format and its verifier is
+  not ours: `serde_json` is a normal dependency (the options and the browser's answers are WebAuthn's JSON, passed
+  between browser and provider as text, and the verifier's state is kept as its JSON text), and `webauthn-rs-core` and
+  `webauthn-attestation-ca` are pinned `=0.6.2` (the core's API may change in a minor version). It has no format
+  crate for tables: the plugin's codec still chooses `toml` or `json`.
 - A secret never reaches a log, a `Debug` output or an error message.
 - Limits are defaults the caller can change; do not add a refusal a caller cannot lift.
 

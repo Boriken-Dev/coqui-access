@@ -12,6 +12,7 @@ with [Guatiao](https://github.com/Boriken-Dev/guatiao).
 | `coqui_authorizer` | May this person do this action on this resource? |
 | `coqui_accounts` | Optional: list, put and remove accounts, and list unaccepted peers. |
 | `coqui_sign_in_policy` | Which methods may this sign-in use, and what does it still need? |
+| `coqui_challenger` | Optional: the challenge a method's answer is bound to (a passkey's). |
 
 A host asks authenticators in order until one knows the credentials, resolves the lookup
 through a directory, and asks an authorizer. Kind names and the floor hashes of their
@@ -28,6 +29,7 @@ methods are a pinned contract; providers are built against the host's Guatiao re
 | `coqui_access_system` | nothing; asks the operating system (PAM and NSS, or Windows logon) | name and password |
 | `coqui_access_totp` | one-time code secrets and recovery code digests, in any table | a code from an authenticator app |
 | `coqui_access_mtls` | peer certificate fingerprints or public keys, in any table | a verified certificate |
+| `coqui_access_passkey` | passkeys (WebAuthn public keys) and the challenges waiting, in any table | a challenge and the browser's signed answer |
 | `coqui_roles` | role rules (an authorizer) | person, action, resource |
 | `coqui_signin_rules` | ordered sign-in rules (a sign-in policy) | where and how a sign-in is made |
 

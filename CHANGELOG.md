@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`coqui-access-passkey` signs a person in with a passkey (WebAuthn).** A provider (`coqui_access_passkey`, library and plugin) that
+  registers passkeys through `Accounts::put` (begin answers the creation options, confirm takes the browser's answer; `remove:<id>`
+  and `label:<id>` manage one), answers the sign-in options through the new `Challenger` kind and takes the signed answer through
+  `Authenticator::authenticate` with `Attempt::challenge`. Verification is `webauthn-rs-core =0.6.2`. Strict defaults, each a setting: user
+  verification required (a passkey alone is two factors), a discoverable credential asked for, attestation none, ES256/ES384/RS256,
+  one challenge per sign-in expiring after 300 s and bounded per source (8) and in all (1 024), a counter that does not rise disables
+  the passkey. Synced passkeys are accepted (`reject_synced` refuses them). The sign-in vectors gain the rule that offers `passkey` beside
+  `certificate` outside the office.
 - **The contract has a passkey method and a challenger kind.** `methods::PASSKEY` and `takes::PASSKEY` (a passkey names its own
   account, so it is not in `NEEDS_ACCOUNT`); a new kind `coqui_challenger` (`Challenger::challenge`, floor hash `0x8aa14a59`) that
   issues what a method needs before it can be answered, with `ChallengeRequest`, `Challenge` and `CredentialInfo`; `Attempt::challenge`

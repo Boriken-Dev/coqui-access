@@ -11,13 +11,13 @@ gateway) follows so that every consumer behaves alike; the shared vectors under
 
 | Group | Words |
 | --- | --- |
-| Methods | `password`, `certificate`, `proxy`, `key`, `totp`, `recovery_code` |
+| Methods | `password`, `certificate`, `proxy`, `key`, `totp`, `recovery_code`, `passkey` |
 | Purposes | `sign_in`, `resume` (a session that exists is checked again; `done` holds the steps it was opened with), `enrol` (a signed-in person sets up a second step of their own), `enrol_first` (a sign-in that has passed some steps, with no session yet, asks to set up the step it is waiting for) |
 | Clients | `browser`, `app`, `api` |
 
 `totp` and `recovery_code` check a code against an account an earlier step already named, so a
-policy never offers them before one has (`coqui_access::methods::NEEDS_ACCOUNT`). A policy may use
-method words of its own.
+policy never offers them before one has (`coqui_access::methods::NEEDS_ACCOUNT`). `passkey` names its own
+account and is offered from the start. A policy may use method words of its own.
 
 ## What the consumer asks
 
@@ -206,6 +206,67 @@ an authenticator app, which works in a browser, a desktop app and a command line
   `<path>.lock` around every read-modify-write, so processes sharing the file do not lose each
   other's updates.
 
+## Passkeys
+
+`coqui_access_passkey` (the crate `coqui-access-passkey`) is a sign-in with a passkey (WebAuthn): the
+browser proves the person to the web origin, and the provider verifies it (`webauthn-rs-core`, pure
+RustCrypto). It offers four kinds: `Accounts` (registration), `Challenger` (the sign-in's first call),
+`Authenticator` (its second, `takes::PASSKEY`) and `Directory`. The method word is `passkey`. It names its
+own account, so a policy may offer it before any step has named someone, and it is not in `NEEDS_ACCOUNT`.
+
+User verification is required by default, so a passkey is the device and the person in one step, the way a
+certificate with a PIN is. A rule that offers `["passkey"]` beside `["certificate"]` outside the office is
+therefore a sign-in on its own, the owner's rule with the new method:
+
+```toml
+[[rule]]
+networks = ["10.0.0.0/8"]
+allow = [["password"], ["certificate"], ["passkey"]]
+
+[[rule]]
+allow = [["certificate"], ["passkey"]]
+```
+
+Asking for less (`user_verification = "preferred"` or `"discouraged"`) makes a passkey only something
+the person has; the provider allows it and `non_defaults()` lists it.
+
+What the consumer does:
+
+- **Ask for a challenge.** Call `Challenger::challenge` with `method = passkey`, the client's address as
+  `peer`, and no `name` for a first step (the browser offers the person's discoverable passkeys, so no name is
+  typed). Ask with `name` set to the account only after an earlier step has named it: an unknown or disabled
+  account, or one with no passkey, is `NOT_FOUND`, so asking by a typed name leaks which names hold passkeys.
+  `error::busy()` (`error::is_busy`) means the source already holds its share of waiting challenges: answer
+  "try again later".
+- **Keep the challenge.** Keep `Challenge::challenge` in the pending sign-in of that browser, and hand
+  `Challenge::options` to the page unread (it is the JSON for `navigator.credentials.get`).
+- **Present the answer.** Call `Authenticator::authenticate` with `method = passkey`, `challenge` set to the
+  kept value and `secret` set to the browser's answer, the JSON text of `PublicKeyCredential.toJSON()`, again
+  unread. A challenge answers one sign-in: the same answer twice, an answer for another challenge and an
+  expired one all fail. `Unknown` means the challenge was not issued by this provider, was used already or was
+  swept; `Invalid` is every other refusal, and the reason is never said. A success is `Valid` by `id` with the
+  claims `passkey.credential`, `passkey.user_verified` and `passkey.synced`.
+- **Count each answer** in the per-address throttle, as for a certificate: the provider does not throttle.
+  The challenge bounds the work an attacker can ask for: one source holds eight waiting challenges by
+  default, and a challenge lives five minutes.
+- **Register.** `Accounts::put` with a name and no secret begins a registration and answers the JSON for
+  `navigator.credentials.create`; a second `put` with `secret` set to the browser's answer (JSON text, starting
+  `{`) confirms it. Who may register is the consumer's. The recommended gate is a password typed from where a
+  password is offered, as for a one-time code, so a session opened by a passkey or a certificate from outside
+  cannot add a passkey: a stolen session would then own the account for good. `remove:<id>` and `label:<id>`
+  manage one passkey by the id `AccountInfo::credentials` lists.
+- **Recover.** A lost passkey is replaced through the other methods the policy offers, and an
+  administrator's `remove` or `reset` takes a person's passkeys away.
+
+Where it keeps things. A host builds one instance per kind, so the registrations waiting and the challenges
+are kept in files every instance reads (`<path>.pending`, `<path>.ceremonies` beside `source`); with memory
+tables a challenge made by one instance is `Unknown` to another. A counter that does not rise (a copy of the
+key is in use) refuses the answer and disables that passkey until it is removed; passkeys that sync between
+devices report a counter of 0 and are accepted by default (`reject_synced` refuses them).
+
+What it does not do: verify EdDSA signatures (the verifier does not; `eddsa` is refused when the provider is
+built), or check attestation unless authorities are configured.
+
 ## The shared vectors
 
 The `test-support` feature of `coqui-access-signin` exposes `vectors::POLICY` and `vectors::FLOWS`.
@@ -215,7 +276,7 @@ The `test-support` feature of `coqui-access-signin` exposes `vectors::POLICY` an
   complete, providers? }`. Any implementation of the policy passes them.
 - `flows.json`: scripted sign-ins for a consumer's real endpoint, with stand-in authenticators
   (`password` valid for `alice` with `pw`, the stand-in provider `ldap` rejecting every password
-  and `local` accepting; `certificate` naming `alice` or `bob`; `totp` accepting `123456` for the id of
+  and `local` accepting; `certificate` and `passkey` naming `alice` or `bob`; `totp` accepting `123456` for the id of
   the person already named). Each step is `{ action: offer | present | resume, address, method?, name?,
   secret?, after_seconds?, expect: { result, methods?, authenticator_calls, throttled, asked? } }` where `result` is
   `methods`, `refused_unasked`, `failed`, `next` or `signed_in`. There is a flow for each of the six

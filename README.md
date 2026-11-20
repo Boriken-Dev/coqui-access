@@ -81,6 +81,8 @@ other options). The per-crate READMEs show each provider's configuration.
 | `coqui-access-proxy` | Trusted reverse-proxy identity headers. |
 | `coqui-access-system` | The operating system's accounts: PAM and NSS, or a Windows logon. |
 | `coqui-access-mtls` | Peer certificate fingerprints, in any table, mapped to identities. |
+| `coqui-access-totp` | One-time codes (TOTP) as a second factor, with recovery codes. |
+| `coqui-access-passkey` | Passkeys (WebAuthn): registration, challenge and signed answer. |
 
 ## Development
 
