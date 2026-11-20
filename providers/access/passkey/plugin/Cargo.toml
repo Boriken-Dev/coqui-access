@@ -1,0 +1,43 @@
+[package]
+name = "coqui-access-passkey-plugin"
+description = "coqui-access-passkey as a library a host loads"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+exclude = [".*", "*.local.*"]
+
+# A cdylib and nothing else: it exports the Guatiao entry symbol, and anything that
+# linked it as Rust would export that symbol as its own.
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+coqui-access.workspace = true
+coqui-builder.workspace = true
+guatiao-builder.workspace = true
+coqui-peer.workspace = true
+coqui-access-passkey = { path = ".." }
+coqui-access-kit = { workspace = true, features = ["file"] }
+# The formats a file source may be written in: this plugin's choice, not the libraries'.
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+guatiao = { workspace = true, features = ["provider", "load"] }
+guatiao-serde = { workspace = true, features = ["json"] }
+# The software authenticator of the library's own tests, shared by path.
+passkey-authenticator = { workspace = true, features = ["testable"] }
+passkey-client.workspace = true
+passkey-crypto.workspace = true
+passkey-types = { workspace = true, features = ["serialize_bytes_as_base64_string"] }
+public-suffix.workspace = true
+async-trait.workspace = true
+tokio = { workspace = true, features = ["rt", "macros"] }
+url.workspace = true
+sha2.workspace = true
+data-encoding.workspace = true
