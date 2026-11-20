@@ -34,3 +34,4 @@ passkey-types = { workspace = true, features = ["serialize_bytes_as_base64_strin
 tokio = { workspace = true, features = ["rt", "macros"] }
 tempfile.workspace = true
 rcgen.workspace = true
+sha2.workspace = true

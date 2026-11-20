@@ -2,6 +2,7 @@
 //! discoverable credentials, so a sign-in with no name typed can be tested.
 #![allow(dead_code)]
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use passkey_authenticator::{
@@ -11,6 +12,9 @@ use passkey_authenticator::{
 use passkey_client::{Client, DefaultClientData};
 use passkey_crypto::AvailableBackend;
 use passkey_types::Passkey;
+use passkey_types::ctap2::get_assertion::{
+    Options as AssertionOptions, Request as AssertionRequest,
+};
 use passkey_types::ctap2::make_credential::{
     Options, PublicKeyCredentialRpEntity, PublicKeyCredentialUserEntity,
 };
@@ -18,6 +22,7 @@ use passkey_types::ctap2::{Aaguid, Ctap2Error, StatusCode};
 use passkey_types::webauthn::{
     CredentialCreationOptions, CredentialRequestOptions, PublicKeyCredentialDescriptor,
 };
+use sha2::{Digest, Sha256};
 use url::Url;
 
 /// The relying party id and the origin the tests sign in from.
@@ -26,9 +31,26 @@ pub const ORIGIN: &str = "https://portal.example";
 
 /// Every credential the device holds, found by relying party, id and user handle.
 #[derive(Clone, Default)]
-pub struct Store(Arc<Mutex<Vec<Passkey>>>);
+pub struct Store(Arc<Mutex<Vec<Passkey>>>, Arc<AtomicBool>);
 
 impl Store {
+    /// Makes the device find its credentials for any relying party id, as a tampered one would.
+    pub fn ignore_rp(&self, ignore: bool) {
+        self.1.store(ignore, Ordering::SeqCst);
+    }
+
+    /// Sets the signature counter every credential holds (the next assertion says one more).
+    pub fn set_counter(&self, counter: u32) {
+        for key in self
+            .0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter_mut()
+        {
+            key.counter = Some(counter);
+        }
+    }
+
     pub fn len(&self) -> usize {
         self.0.lock().unwrap_or_else(PoisonError::into_inner).len()
     }
@@ -56,7 +78,7 @@ impl CredentialStore for Store {
         let held = self.0.lock().unwrap_or_else(PoisonError::into_inner);
         let found: Vec<Passkey> = held
             .iter()
-            .filter(|key| key.rp_id == rp_id)
+            .filter(|key| self.1.load(Ordering::SeqCst) || key.rp_id == rp_id)
             .filter(|key| match ids {
                 Some(ids) if !ids.is_empty() => ids.iter().any(|id| *id.id == *key.credential_id),
                 _ => true,
@@ -167,5 +189,75 @@ impl Device {
             .await
             .map_err(|error| format!("{error:?}"))?;
         serde_json::to_string(&made).map_err(|error| error.to_string())
+    }
+}
+
+/// The client data a browser would write.
+pub fn client_data(kind: &str, challenge: &str, origin: &str, cross_origin: bool) -> String {
+    format!(
+        "{{\"type\":\"{kind}\",\"challenge\":\"{challenge}\",\"origin\":\"{origin}\",\"crossOrigin\":{cross_origin}}}"
+    )
+}
+
+/// The challenge of sign-in or registration options, unpadded base64url.
+pub fn challenge_of(options: &str) -> String {
+    let value: serde_json::Value = serde_json::from_str(options).unwrap();
+    value["publicKey"]["challenge"].as_str().unwrap().to_owned()
+}
+
+impl Device {
+    /// An assertion the authenticator signs over `client_data` for `rp_id` whatever the client
+    /// data says, as `toJSON()` writes it: what a page that is not the relying party's, or a
+    /// browser that cheats, would send. The credentials offered are `allow` (any when empty).
+    pub async fn raw_assertion(
+        &mut self,
+        rp_id: &str,
+        client_data: &str,
+        allow: &[Vec<u8>],
+    ) -> Result<String, String> {
+        let b64 = |bytes: &[u8]| data_encoding::BASE64URL_NOPAD.encode(bytes);
+        let hash = Sha256::digest(client_data.as_bytes()).to_vec();
+        let allow_list = (!allow.is_empty()).then(|| {
+            allow
+                .iter()
+                .map(|id| PublicKeyCredentialDescriptor {
+                    ty: passkey_types::webauthn::PublicKeyCredentialType::PublicKey,
+                    id: id.clone().into(),
+                    transports: None,
+                })
+                .collect()
+        });
+        let response = self
+            .client
+            .authenticator_mut()
+            .get_assertion(AssertionRequest {
+                rp_id: rp_id.to_owned(),
+                client_data_hash: hash.into(),
+                allow_list,
+                extensions: None,
+                options: AssertionOptions { up: true, uv: true },
+                pin_auth: None,
+                pin_protocol: None,
+            })
+            .await
+            .map_err(|status| format!("{status:?}"))?;
+        let id = response
+            .credential
+            .map(|credential| credential.id.to_vec())
+            .ok_or("no credential")?;
+        let mut answer = serde_json::json!({
+            "id": b64(&id),
+            "rawId": b64(&id),
+            "type": "public-key",
+            "response": {
+                "clientDataJSON": b64(client_data.as_bytes()),
+                "authenticatorData": b64(&response.auth_data.to_vec()),
+                "signature": b64(&response.signature),
+            },
+        });
+        if let Some(user) = response.user {
+            answer["response"]["userHandle"] = b64(&user.id).into();
+        }
+        Ok(answer.to_string())
     }
 }
