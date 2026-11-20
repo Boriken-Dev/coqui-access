@@ -665,7 +665,7 @@ impl Passkeys {
             .credential_algorithms(algorithms)
             .require_resident_key(self.resident_key == ResidentKey::Required)
             .reject_synchronised_authenticators(self.reject_synced)
-            .exclude_credentials(Some(exclude.into_iter().map(Into::into).collect()));
+            .exclude_credentials(Some(exclude));
         let (options, state): (CreationChallengeResponse, RegistrationState) = self
             .core
             .generate_challenge_register(builder)
@@ -938,13 +938,7 @@ impl Accounts for Passkeys {
                         groups: record.groups.clone(),
                         disabled: Some(record.disabled),
                         made_unix: record.made_unix,
-                        credentials: Some(
-                            record
-                                .credentials
-                                .iter()
-                                .map(|credential| ceremony::info(credential))
-                                .collect(),
-                        ),
+                        credentials: Some(record.credentials.iter().map(ceremony::info).collect()),
                         ..AccountInfo::default()
                     })
                     .collect()

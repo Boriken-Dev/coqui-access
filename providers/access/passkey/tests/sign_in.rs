@@ -57,10 +57,10 @@ fn without_verification(options: &str) -> String {
     if let Some(selection) = value["publicKey"].get_mut("authenticatorSelection") {
         selection["userVerification"] = "discouraged".into();
     }
-    if let Some(public_key) = value["publicKey"].as_object_mut() {
-        if public_key.contains_key("userVerification") {
-            public_key.insert("userVerification".to_owned(), "discouraged".into());
-        }
+    if let Some(public_key) = value["publicKey"].as_object_mut()
+        && public_key.contains_key("userVerification")
+    {
+        public_key.insert("userVerification".to_owned(), "discouraged".into());
     }
     value.to_string()
 }
