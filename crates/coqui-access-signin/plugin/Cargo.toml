@@ -22,3 +22,4 @@ coqui-access-signin = { path = ".." }
 coqui-access = { workspace = true }
 guatiao = { workspace = true, features = ["provider", "load"] }
 guatiao-serde = { workspace = true, features = ["json"] }
+serde_json.workspace = true

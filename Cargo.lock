@@ -610,6 +610,7 @@ dependencies = [
  "coqui-access-signin",
  "guatiao",
  "guatiao-serde",
+ "serde_json",
 ]
 
 [[package]]
