@@ -219,6 +219,44 @@ async fn the_same_answer_twice_is_unknown_the_second_time() {
 }
 
 #[tokio::test]
+async fn one_answer_presented_at_once_from_many_threads_signs_in_once() {
+    let fixture = fixture();
+    let mut device = Device::new();
+    fixture.enrol("alice", &mut device).await;
+    for _ in 0..20 {
+        let challenge = fixture.challenge(None, None).unwrap();
+        let answer = device
+            .authenticate(ORIGIN, &challenge.options)
+            .await
+            .unwrap();
+        let start = std::sync::Barrier::new(8);
+        let verdicts: Vec<Verdict> = std::thread::scope(|scope| {
+            let racing: Vec<_> = (0..8)
+                .map(|_| {
+                    scope.spawn(|| {
+                        start.wait();
+                        fixture.present(&challenge.challenge, &answer)
+                    })
+                })
+                .collect();
+            racing.into_iter().map(|one| one.join().unwrap()).collect()
+        });
+        let valid = verdicts
+            .iter()
+            .filter(|verdict| fixture.is_valid_for(verdict, "alice"))
+            .count();
+        assert_eq!(valid, 1, "{verdicts:?}");
+        assert!(
+            verdicts
+                .iter()
+                .all(|verdict| fixture.is_valid_for(verdict, "alice")
+                    || *verdict == Verdict::Unknown),
+            "{verdicts:?}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn an_answer_for_one_challenge_presented_with_another_is_invalid_and_leaves_the_other() {
     let fixture = fixture();
     let mut device = Device::new();

@@ -153,6 +153,67 @@ async fn a_registration_and_a_sign_in_cross_the_instances_through_the_files() {
 }
 
 #[tokio::test]
+async fn one_answer_raced_through_two_instances_over_the_files_signs_in_once() {
+    let mut registry = Registry::new("coqui-access-passkey-test", "0.0.0");
+    registry.load_file(&library()).unwrap();
+    let provider = registry.provider("coqui_access_passkey").unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let config = file_config(directory.path());
+    let accounts = provider.instantiate::<dyn Accounts>(&config).unwrap();
+    let challenger = provider.instantiate::<dyn Challenger>(&config).unwrap();
+    let first = provider.instantiate::<dyn Authenticator>(&config).unwrap();
+    let second = provider.instantiate::<dyn Authenticator>(&config).unwrap();
+
+    let mut device = Device::new();
+    let options = accounts
+        .put(AccountPut {
+            name: "alice".to_owned(),
+            ..AccountPut::default()
+        })
+        .unwrap()
+        .secret
+        .unwrap();
+    let answer = device.register(ORIGIN, &options).await.unwrap();
+    accounts
+        .put(AccountPut {
+            name: "alice".to_owned(),
+            secret: Some(answer),
+            ..AccountPut::default()
+        })
+        .unwrap();
+    for _ in 0..10 {
+        let challenge = challenger.challenge(ChallengeRequest::default()).unwrap();
+        let answer = device
+            .authenticate(ORIGIN, &challenge.options)
+            .await
+            .unwrap();
+        let attempt = || Attempt {
+            challenge: Some(challenge.challenge.clone()),
+            secret: Some(answer.clone()),
+            ..Attempt::default()
+        };
+        let start = std::sync::Barrier::new(2);
+        let verdicts = std::thread::scope(|scope| {
+            let one = scope.spawn(|| {
+                start.wait();
+                first.authenticate(attempt()).unwrap()
+            });
+            let other = scope.spawn(|| {
+                start.wait();
+                second.authenticate(attempt()).unwrap()
+            });
+            [one.join().unwrap(), other.join().unwrap()]
+        });
+        let valid = verdicts
+            .iter()
+            .filter(|verdict| matches!(verdict, Verdict::Valid(_)))
+            .count();
+        assert_eq!(valid, 1, "{verdicts:?}");
+        assert!(verdicts.contains(&Verdict::Unknown), "{verdicts:?}");
+    }
+}
+
+#[tokio::test]
 async fn a_challenge_kept_in_memory_is_not_found_by_another_instance() {
     let mut registry = Registry::new("coqui-access-passkey-test", "0.0.0");
     registry.load_file(&library()).unwrap();
