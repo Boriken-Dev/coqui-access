@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **The contract has a passkey method and a challenger kind.** `methods::PASSKEY` and `takes::PASSKEY` (a passkey names its own
+  account, so it is not in `NEEDS_ACCOUNT`); a new kind `coqui_challenger` (`Challenger::challenge`, floor hash `0x8aa14a59`) that
+  issues what a method needs before it can be answered, with `ChallengeRequest`, `Challenge` and `CredentialInfo`; `Attempt::challenge`
+  and `AccountInfo::credentials`, both `Option`s; `error::busy` and `error::is_busy`. The five kinds' hashes are unchanged, and a
+  struct literal of `Attempt` or `AccountInfo` now names the new field or ends `..Default::default()`.
 - **`coqui_access::Subject` knows `any:signed-in`.** `Subject::AnySignedIn` is parsed from and shown as `any:signed-in`, and
   `matches` is true for every person with a non-empty `Person::id`, as `coqui-roles` already ruled; any other `any:` text
   is a `SubjectError`. `coqui-roles` now reads its rule subjects through `Subject` alone, and ACL principals and sign-in
