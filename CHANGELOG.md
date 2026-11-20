@@ -18,8 +18,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   binary `objectSid` under `group_base`, kept per domain as the lookup cache keeps lookups, and followed through nested groups
   when `nested_groups` is on. A missing or unresolvable one adds nothing.
 
+- **`AccountPut` gains `reset` and `unlock`, and `AccountInfo` `reset` and `unlocked_unix`.** An administrator's reset and
+  unlock now go through the accounts kind, so a host keeps no side files for them. The one-time code provider persists both
+  under the table's lock: `unlock` clears the failure count and any delay and notes the time; `reset` takes the secret and
+  recovery codes and any enrolment waiting away and keeps a mark, which the next confirmed secret clears, and the account
+  takes no code meanwhile. The key, password and certificate providers refuse either as unsupported.
+
 ### Changed
 
+- **The one-time code builder keeps only the digits range.** `skew`, `period` and `recovery_codes` have defaults and no
+  upper bound (a skew over 10, a period over 3 600 or more than 64 recovery codes built an error before); only digits
+  outside 6 to 8, a period of 0 and no time to enrol are refused, as they mean nothing. Files written before still read.
 - **A sign-in rule's `clients` condition can only add steps unless the consumer verified the client kind.** A kind taken
   from a request's headers is whatever the caller says, so a rule that let one kind in with fewer steps (or by another
   method) than the rest was no barrier. `coqui_signin_rules` now decides a request whose `client` is not marked
