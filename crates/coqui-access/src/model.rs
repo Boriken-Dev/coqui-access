@@ -15,6 +15,9 @@ pub mod takes {
     /// A one-time code from an authenticator app, with the account it belongs to, as a
     /// second step of a sign-in.
     pub const OTP: &str = "otp";
+    /// A passkey's signed answer to a challenge the same provider issued
+    /// ([`Challenger`](crate::Challenger)), presented with [`Attempt::challenge`](crate::Attempt::challenge).
+    pub const PASSKEY: &str = "passkey";
 }
 
 /// Why a sign-in policy is asked, as [`SignInContext::purpose`] says.
@@ -85,6 +88,10 @@ pub struct Attempt {
     /// provider serving two methods (a one-time code and a recovery code) tells them apart.
     /// `None` is the provider's own default method.
     pub method: Option<String>,
+    /// The challenge a [`Challenger`](crate::Challenger) issued for this sign-in, as it answered
+    /// it (`Challenge::challenge`), which the consumer keeps with the pending sign-in and returns
+    /// with the answer. `Debug` shows only that there is one.
+    pub challenge: Option<String>,
 }
 
 impl fmt::Debug for Attempt {
@@ -99,7 +106,89 @@ impl fmt::Debug for Attempt {
             .field("certificate", &self.certificate.as_ref().map(|_| "…"))
             .field("certificates", &self.certificates.as_ref().map(Vec::len))
             .field("method", &self.method)
+            .field("challenge", &self.challenge.as_ref().map(|_| "…"))
             .finish()
+    }
+}
+
+/// What a consumer asks a [`Challenger`](crate::Challenger) for.
+///
+/// `Debug` shows the method only.
+#[derive(Clone, Default, PartialEq, Eq, ToValue, FromValue, Schema)]
+#[map(crate = ::guatiao)]
+pub struct ChallengeRequest {
+    /// The [`methods`](crate::methods) word the challenge is for; `None` is the provider's own.
+    pub method: Option<String>,
+    /// The account an earlier step named, when one did; `None` asks for any of the provider's
+    /// accounts (a usernameless sign-in).
+    pub name: Option<String>,
+    /// The remote peer's address, so a provider can bound the challenges one source holds.
+    pub peer: Option<String>,
+}
+
+impl fmt::Debug for ChallengeRequest {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ChallengeRequest")
+            .field("method", &self.method)
+            .finish_non_exhaustive()
+    }
+}
+
+/// What a [`Challenger`](crate::Challenger) made for one sign-in: a challenge the signed answer
+/// is bound to, and the text the client needs to answer it.
+///
+/// `Debug` shows the expiry only.
+#[derive(Clone, Default, PartialEq, Eq, ToValue, FromValue, Schema)]
+#[map(crate = ::guatiao)]
+pub struct Challenge {
+    /// The key the consumer keeps with the pending sign-in and returns in
+    /// [`Attempt::challenge`] (base64url for a passkey).
+    pub challenge: String,
+    /// The text the client needs, in the method's own wire format: for a passkey the JSON for
+    /// `navigator.credentials.get`. The consumer passes it on unread.
+    pub options: String,
+    /// When it stops being taken, in seconds since the Unix epoch.
+    pub expires_unix: i64,
+}
+
+impl fmt::Debug for Challenge {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("Challenge")
+            .field("expires_unix", &self.expires_unix)
+            .finish_non_exhaustive()
+    }
+}
+
+/// One credential of an account that holds several (a passkey), without anything that proves
+/// it.
+///
+/// `Debug` hides the id and the label.
+#[derive(Clone, Default, PartialEq, Eq, ToValue, FromValue, Schema)]
+#[map(crate = ::guatiao)]
+pub struct CredentialInfo {
+    /// The credential's id, as the provider names it for `remove:<id>` and `label:<id>`.
+    pub id: String,
+    /// What the person calls it.
+    pub label: Option<String>,
+    /// When it was made, in seconds since the Unix epoch.
+    pub made_unix: Option<i64>,
+    /// When it last signed in, in seconds since the Unix epoch.
+    pub used_unix: Option<i64>,
+    /// Whether it is a passkey the platform syncs between devices.
+    pub synced: Option<bool>,
+    /// Whether it is refused for now.
+    pub disabled: Option<bool>,
+}
+
+impl fmt::Debug for CredentialInfo {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CredentialInfo")
+            .field("synced", &self.synced)
+            .field("disabled", &self.disabled)
+            .finish_non_exhaustive()
     }
 }
 
@@ -260,6 +349,9 @@ pub struct AccountInfo {
     /// When an administrator last cleared the account's failure counts, in seconds since the
     /// Unix epoch, where the provider keeps it.
     pub unlocked_unix: Option<i64>,
+    /// The credentials of an account that holds several (passkeys); `None` for a provider whose
+    /// accounts hold one.
+    pub credentials: Option<Vec<CredentialInfo>>,
 }
 
 /// An account to make, or what to change of one there is. A field not said is left as it

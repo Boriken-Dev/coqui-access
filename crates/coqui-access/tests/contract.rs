@@ -19,8 +19,9 @@ use coqui_access::guatiao::library::kind::kind_document;
 use coqui_access::guatiao::{FromValue, Map, ToValue, Value};
 use coqui_access::{
     AccountInfo, AccountPut, Accounts, Attempt, Authenticator, AuthorizationDecision,
-    AuthorizationRequest, Authorizer, Claims, Description, Directory, Factor, Lookup, Offer,
-    Person, PutOutcome, SignInContext, SignInDecision, SignInPolicy, Verdict, Waiting,
+    AuthorizationRequest, Authorizer, Challenge, ChallengeRequest, Challenger, Claims,
+    CredentialInfo, Description, Directory, Factor, Lookup, Offer, Person, PutOutcome,
+    SignInContext, SignInDecision, SignInPolicy, Verdict, Waiting,
 };
 use guatiao_serde::Presentation;
 use guatiao_serde::text::json;
@@ -38,6 +39,7 @@ fn every_kind_has_the_table_built_providers_were_built_against() {
             table::<dyn Authorizer>(),
             table::<dyn Accounts>(),
             table::<dyn SignInPolicy>(),
+            table::<dyn Challenger>(),
         ],
         [
             ("coqui_authenticator", false, PINNED_AUTHENTICATOR),
@@ -45,6 +47,7 @@ fn every_kind_has_the_table_built_providers_were_built_against() {
             ("coqui_authorizer", false, PINNED_AUTHORIZER),
             ("coqui_accounts", false, PINNED_ACCOUNTS),
             ("coqui_sign_in_policy", false, PINNED_SIGN_IN_POLICY),
+            ("coqui_challenger", false, PINNED_CHALLENGER),
         ],
         "a method of a kind was added or changed, or a type one of them names was renamed: \
          every provider library built before this change is now refused at load. \
@@ -123,6 +126,18 @@ fn every_model_requires_the_keys_it_always_did_and_skips_ones_it_does_not_know()
     assert_eq!(
         reads_past_what_it_does_not_know::<SignInDecision>(),
         keys(&["complete", "methods"])
+    );
+    assert_eq!(
+        reads_past_what_it_does_not_know::<ChallengeRequest>(),
+        keys(&[])
+    );
+    assert_eq!(
+        reads_past_what_it_does_not_know::<Challenge>(),
+        keys(&["challenge", "expires_unix", "options"])
+    );
+    assert_eq!(
+        reads_past_what_it_does_not_know::<CredentialInfo>(),
+        keys(&["id"])
     );
     assert_eq!(
         reads_past_what_it_does_not_know::<Factor>(),
@@ -211,6 +226,72 @@ fn each_sign_in_model_round_trips_with_every_field_set() {
     let value = put.to_value().unwrap();
     let read = AccountPut::from_value(&value).unwrap();
     assert!(!read.reset && !read.unlock);
+}
+
+/// A passkey sign-in's models round-trip, an attempt written before `challenge` existed still
+/// reads, and a debug line shows no challenge, option text, credential id or account name.
+#[test]
+fn the_challenge_models_round_trip_and_show_no_value() {
+    let request = ChallengeRequest {
+        method: Some("passkey".to_owned()),
+        name: Some("alice-secret-name".to_owned()),
+        peer: Some("192.0.2.77".to_owned()),
+    };
+    let challenge = Challenge {
+        challenge: "challenge-secret".to_owned(),
+        options: "{\"publicKey\":\"options-secret\"}".to_owned(),
+        expires_unix: 1_700_000_300,
+    };
+    let credential = CredentialInfo {
+        id: "credential-secret".to_owned(),
+        label: Some("label-secret".to_owned()),
+        made_unix: Some(1),
+        used_unix: Some(2),
+        synced: Some(true),
+        disabled: Some(false),
+    };
+    let info = AccountInfo {
+        id: "a".to_owned(),
+        name: "alice".to_owned(),
+        credentials: Some(vec![credential.clone()]),
+        ..AccountInfo::default()
+    };
+    assert_eq!(
+        ChallengeRequest::from_value(&request.to_value().unwrap()).unwrap(),
+        request
+    );
+    assert_eq!(
+        Challenge::from_value(&challenge.to_value().unwrap()).unwrap(),
+        challenge
+    );
+    assert_eq!(
+        AccountInfo::from_value(&info.to_value().unwrap()).unwrap(),
+        info
+    );
+    let attempt = Attempt {
+        challenge: Some("challenge-secret".to_owned()),
+        ..Attempt::default()
+    };
+    assert_eq!(
+        Attempt::from_value(&attempt.to_value().unwrap()).unwrap(),
+        attempt
+    );
+    let shown = format!("{request:?} {challenge:?} {credential:?} {attempt:?}");
+    for leaked in [
+        "alice-secret-name",
+        "192.0.2.77",
+        "challenge-secret",
+        "options-secret",
+        "credential-secret",
+        "label-secret",
+    ] {
+        assert!(!shown.contains(leaked), "{shown}");
+    }
+    assert!(shown.contains("passkey"));
+    assert!(coqui_access::error::is_busy(&coqui_access::error::busy()));
+    assert!(!coqui_access::error::is_busy(
+        &coqui_access::error::ambiguous()
+    ));
 }
 
 /// A lookup written before claims existed still reads, and says none.
@@ -315,6 +396,7 @@ fn rendered() -> String {
         <dyn Authorizer as Kind>::describe,
         <dyn Accounts as Kind>::describe,
         <dyn SignInPolicy as Kind>::describe,
+        <dyn Challenger as Kind>::describe,
     ]);
     let value = json::from_str(
         &document,
@@ -347,3 +429,4 @@ const PINNED_DIRECTORY: u32 = 2_407_154_769;
 const PINNED_AUTHORIZER: u32 = 2_693_612_885;
 const PINNED_ACCOUNTS: u32 = 610_858_279;
 const PINNED_SIGN_IN_POLICY: u32 = 3_582_266_584;
+const PINNED_CHALLENGER: u32 = 2_325_826_137;

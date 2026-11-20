@@ -19,6 +19,7 @@ fn attempt(name: String, secret: String) -> Attempt {
         certificate: None,
         certificates: None,
         method: None,
+        challenge: None,
     }
 }
 

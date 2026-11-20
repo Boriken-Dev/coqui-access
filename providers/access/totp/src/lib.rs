@@ -873,6 +873,7 @@ impl Accounts for TotpAccounts {
                         expires_unix: None,
                         reset: record.reset.then_some(true),
                         unlocked_unix: record.unlocked_unix,
+                        ..AccountInfo::default()
                     })
                     .collect()
             })
