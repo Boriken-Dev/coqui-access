@@ -188,8 +188,9 @@ impl PasskeysBuilder {
         self
     }
 
-    /// Whether a registration refuses a passkey the platform syncs between devices. Default
-    /// false: synced passkeys are accepted.
+    /// Whether a passkey the platform syncs between devices is refused: at registration, and at
+    /// sign-in for one registered before this was set. Default false: synced passkeys are
+    /// accepted.
     #[must_use]
     pub fn reject_synced(mut self, reject: bool) -> Self {
         self.reject_synced = reject;

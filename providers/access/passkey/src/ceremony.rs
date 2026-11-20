@@ -74,6 +74,12 @@ impl Passkeys {
         now.saturating_sub(ceremony.created_unix) <= i64::from(self.ceremony_seconds)
     }
 
+    /// Whether a passkey may sign in now: a synced one is refused under `reject_synced`,
+    /// including one registered before that was set.
+    fn accepts(&self, credential: &Credential) -> bool {
+        !(self.reject_synced && credential.backup_eligible)
+    }
+
     /// The enabled account `name`, when it holds at least one enabled passkey.
     fn challengeable(&self, name: &str) -> Result<Vec<Credential>, ProviderError> {
         let account = self
@@ -88,6 +94,7 @@ impl Passkeys {
                     .iter()
                     .filter(|credential| !credential.disabled)
                     .filter_map(|credential| serde_json::from_str(&credential.key).ok())
+                    .filter(|credential| self.accepts(credential))
                     .collect()
             })
             .unwrap_or_default();
@@ -315,8 +322,9 @@ impl Authenticator for Passkeys {
     /// The challenge is taken out of the table first, so one answers one sign-in, and `Unknown`
     /// means it was not issued here, was used already or was swept. An expired challenge, an
     /// answer too large or unreadable, no account (the challenge's, else the user handle's), a
-    /// user handle that is not that account's, a disabled account or passkey, a passkey the
-    /// account does not hold and anything the verifier refuses are `Invalid`. A success is
+    /// user handle that is not that account's, a disabled account or passkey, a synced passkey
+    /// under `reject_synced`, a passkey the account does not hold and anything the verifier
+    /// refuses are `Invalid`. A success is
     /// written down (counter, backup flags, last use) before it is answered, and a write that
     /// fails is an error, never a success.
     ///
@@ -360,6 +368,9 @@ impl Authenticator for Passkeys {
         };
         let credential: Credential = serde_json::from_str(&stored.key)
             .map_err(|_| error::internal("a passkey cannot be read"))?;
+        if !self.accepts(&credential) {
+            return Ok(Verdict::Invalid);
+        }
         let result = match self
             .core
             .authenticate_single_credential(&response, &state, &credential)

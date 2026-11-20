@@ -96,7 +96,8 @@ pub struct PasskeyConfig {
     /// `eddsa` is a word and is refused: the verifier does not check EdDSA signatures.
     #[map(default = Algorithm::DEFAULT.to_vec())]
     pub algorithms: Vec<Algorithm>,
-    /// Whether a registration refuses a passkey the platform syncs between devices.
+    /// Whether a passkey the platform syncs between devices is refused, at registration and at
+    /// sign-in.
     #[map(default)]
     pub reject_synced: bool,
     /// Seconds a registration waits for the browser's answer.

@@ -460,6 +460,46 @@ async fn a_synced_passkey_reports_no_counter_and_is_not_checked() {
 }
 
 #[tokio::test]
+async fn a_synced_passkey_registered_before_reject_synced_was_set_signs_in_no_more() {
+    let fixture = fixture();
+    let mut device = Device::new();
+    fixture.enrol("alice", &mut device).await;
+    // The same accounts, read by a provider that refuses synced passkeys.
+    let strict = Passkeys::builder()
+        .rp_id(RP_ID)
+        .origin(ORIGIN)
+        .table(fixture.table.clone())
+        .ceremonies(fixture.ceremonies.clone())
+        .reject_synced(true)
+        .clock(|| START)
+        .build()
+        .unwrap();
+    let challenge = strict.challenge(ChallengeRequest::default()).unwrap();
+    let answer = device
+        .authenticate(ORIGIN, &challenge.options)
+        .await
+        .unwrap();
+    let verdict = strict
+        .authenticate(Attempt {
+            challenge: Some(challenge.challenge),
+            secret: Some(answer),
+            ..Attempt::default()
+        })
+        .unwrap();
+    assert_eq!(verdict, Verdict::Invalid);
+    // Asked by name, it has no passkey it would take.
+    let named = strict
+        .challenge(ChallengeRequest {
+            name: Some("alice".to_owned()),
+            ..ChallengeRequest::default()
+        })
+        .unwrap_err();
+    assert_eq!(status(&named), Status::GUATIAO_ERR_NOT_FOUND);
+    // The control: the provider that accepts synced passkeys still signs it in.
+    assert!(fixture.is_valid_for(&fixture.sign_in(&mut device, None).await, "alice"));
+}
+
+#[tokio::test]
 async fn another_accounts_user_handle_does_not_take_the_credential() {
     let fixture = fixture();
     let mut alice = Device::new();

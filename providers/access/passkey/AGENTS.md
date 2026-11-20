@@ -48,7 +48,7 @@ impl PasskeysBuilder {
     pub fn attestation(self, Attestation) -> Self;
     pub fn attestation_ca_pem(self, impl Into<Vec<u8>>) -> Self;   // repeatable; needs an attestation other than none
     pub fn algorithms(self, impl IntoIterator<Item = Algorithm>) -> Self;
-    pub fn reject_synced(self, bool) -> Self;                  // default false: synced passkeys accepted
+    pub fn reject_synced(self, bool) -> Self;                  // default false: synced passkeys accepted; true refuses them at registration and sign-in
     pub fn enrol_seconds(self, u32) -> Self;                   // >= 1, default 600
     pub fn ceremony_seconds(self, u32) -> Self;                // >= 1, default 300; also the browser's timeout
     pub fn max_records(self, usize) -> Self;                   // default 10 000, each table
@@ -122,7 +122,8 @@ than required, `resident_key` other than required, `allow_subdomains`, `allow_an
   that returns true owns it), so an answer is taken once: not issued here, used, or swept is
   `Unknown`. `Invalid`: expired; an answer over `max_response_bytes` or not a `PublicKeyCredential`;
   `crossOrigin` true; no account (the challenge's, else the user handle's); a user handle that is not
-  the account's; a disabled account or passkey; a passkey the account does not hold; anything
+  the account's; a disabled account or passkey; a synced passkey under `reject_synced` (registered
+  before it was set; a named challenge lists none); a passkey the account does not hold; anything
   `webauthn-rs-core` refuses (origin, RP ID hash, challenge, type, signature, user verification).
   Success is `Valid(Lookup { by: "id", value: <account id>, claims })` with `passkey.credential`,
   `passkey.user_verified` and `passkey.synced` (`"true"`/`"false"`). The counter, the backup flags
