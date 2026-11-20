@@ -637,8 +637,6 @@ fn groups_and_expiry_are_refused_and_settings_out_of_range_do_not_build() {
     assert!(TotpAccounts::builder().digits(5).build().is_err());
     assert!(TotpAccounts::builder().digits(9).build().is_err());
     assert!(TotpAccounts::builder().period(0).build().is_err());
-    assert!(TotpAccounts::builder().skew(11).build().is_err());
-    assert!(TotpAccounts::builder().recovery_codes(65).build().is_err());
     assert!(TotpAccounts::builder().enrol_seconds(0).build().is_err());
     assert!(
         TotpAccounts::builder()
@@ -647,6 +645,124 @@ fn groups_and_expiry_are_refused_and_settings_out_of_range_do_not_build() {
             .skew(2)
             .build()
             .is_ok()
+    );
+}
+
+/// The settings that only meant something to a fixed bound are the caller's: a long period,
+/// a wide skew and many recovery codes build and work, and only meaningless values refuse.
+#[test]
+fn skew_period_and_recovery_codes_have_no_invented_bounds() {
+    let clock = Arc::new(AtomicI64::new(START));
+    let reader = clock.clone();
+    let totp = TotpAccounts::builder()
+        .period(7_200)
+        .skew(50)
+        .recovery_codes(100)
+        .clock(move || reader.load(Ordering::SeqCst))
+        .build()
+        .unwrap();
+    let begun = totp
+        .put(AccountPut {
+            name: "id-alice".to_owned(),
+            ..AccountPut::default()
+        })
+        .unwrap();
+    assert_eq!(begun.codes.unwrap().len(), 100);
+    assert!(begun.secret.unwrap().contains("period=7200"));
+    assert!(TotpAccounts::builder().period(0).build().is_err());
+    assert!(TotpAccounts::builder().digits(9).build().is_err());
+}
+
+#[test]
+fn an_administrator_unlocks_through_put_and_the_time_is_listed() {
+    let setup = with_lockout(coqui_access_totp::Lockout::new(2, 600, 600));
+    let (key, _) = setup.enrol("id-bob");
+    setup.at(START + 30);
+    for _ in 0..2 {
+        setup.present("id-bob", &wrong_for(&key, START + 30));
+    }
+    assert_eq!(
+        setup.present("id-bob", &code(&key, START + 30)),
+        Verdict::Invalid
+    );
+    assert_eq!(setup.totp.accounts().unwrap()[0].unlocked_unix, None);
+    setup
+        .totp
+        .put(AccountPut {
+            name: "id-bob".to_owned(),
+            unlock: true,
+            ..AccountPut::default()
+        })
+        .unwrap();
+    assert_eq!(
+        setup.totp.accounts().unwrap()[0].unlocked_unix,
+        Some(START + 30)
+    );
+    assert_eq!(
+        setup.present("id-bob", &code(&key, START + 30)),
+        valid("id-bob")
+    );
+    let unknown = setup.totp.put(AccountPut {
+        name: "id-nobody".to_owned(),
+        unlock: true,
+        ..AccountPut::default()
+    });
+    assert!(unknown.is_err());
+}
+
+#[test]
+fn an_administrator_reset_takes_the_factor_and_keeps_a_mark_until_a_new_one_is_confirmed() {
+    let setup = setup();
+    let (key, codes) = setup.enrol("id-alice");
+    setup.rotate("id-alice");
+    setup
+        .totp
+        .put(AccountPut {
+            name: "id-alice".to_owned(),
+            reset: true,
+            ..AccountPut::default()
+        })
+        .unwrap();
+    let listed = setup.totp.accounts().unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].reset, Some(true));
+    // The old secret and recovery codes take nothing, and the waiting rotation is gone.
+    setup.at(START + 30);
+    assert_eq!(
+        setup.present("id-alice", &code(&key, START + 30)),
+        Verdict::Unknown
+    );
+    assert_eq!(setup.recover("id-alice", &codes[0]), Verdict::Unknown);
+    assert!(setup.totp.waiting().unwrap().is_empty());
+    // Setting up again needs no proof of a factor that is gone, and clears the mark.
+    let (key, _) = setup.enrol("id-alice");
+    assert_eq!(setup.totp.accounts().unwrap()[0].reset, None);
+    setup.at(START + 90);
+    assert_eq!(
+        setup.present("id-alice", &code(&key, START + 90)),
+        valid("id-alice")
+    );
+    // A reset comes with no secret, and an account that is not there is not found.
+    assert!(
+        setup
+            .totp
+            .put(AccountPut {
+                name: "id-alice".to_owned(),
+                reset: true,
+                secret: Some("123456".to_owned()),
+                ..AccountPut::default()
+            })
+            .is_err()
+    );
+    assert!(
+        setup
+            .totp
+            .put(AccountPut {
+                name: "id-nobody".to_owned(),
+                reset: true,
+                ..AccountPut::default()
+            })
+            .is_err()
     );
 }
 

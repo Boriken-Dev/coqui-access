@@ -199,6 +199,18 @@ fn each_sign_in_model_round_trips_with_every_field_set() {
     let value = proved.to_value().unwrap();
     assert_eq!(AccountPut::from_value(&value).unwrap(), proved);
     assert_ne!(proved, put);
+    let administered = AccountPut {
+        name: "alice".to_owned(),
+        reset: true,
+        unlock: true,
+        ..AccountPut::default()
+    };
+    let value = administered.to_value().unwrap();
+    assert_eq!(AccountPut::from_value(&value).unwrap(), administered);
+    // Written without the two, an old put still reads and says neither.
+    let value = put.to_value().unwrap();
+    let read = AccountPut::from_value(&value).unwrap();
+    assert!(!read.reset && !read.unlock);
 }
 
 /// A lookup written before claims existed still reads, and says none.

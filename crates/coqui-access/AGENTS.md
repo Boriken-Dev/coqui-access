@@ -78,8 +78,8 @@ fields. Unknown keys are skipped when reading.
 | `AuthorizationRequest` | `person`, `action`, `resource`, `ancestors: Vec<String>` (the resources `resource` sits under, nearest first; empty by default and then not written) |
 | `AuthorizationDecision` | `allowed`, `limits: BTreeMap<String, Value>` |
 | `Description` | `name?`, `takes?` (one of `takes::PASSWORD`, `KEY`, `REQUEST`, `OTP`) |
-| `AccountInfo` | `id`, `name`, `groups`, `disabled?`, `made_unix?`, `expires_unix?` |
-| `AccountPut` | `name`, `secret?`, `groups?`, `disabled?`, `expires_unix?`, `display_name?` (the label an enrolment shows; providers keeping none ignore it), `proved_current` (bool, default false, not written when false: the caller checked the account's current secret in this request; the one-time code provider refuses a rotation without it, the others ignore it) |
+| `AccountInfo` | `id`, `name`, `groups`, `disabled?`, `made_unix?`, `expires_unix?`, `reset?` (an administrator reset the account; only the one-time code provider keeps it), `unlocked_unix?` (when an administrator last cleared its failure counts) |
+| `AccountPut` | `name`, `secret?`, `groups?`, `disabled?`, `expires_unix?`, `display_name?` (the label an enrolment shows; providers keeping none ignore it), `reset` (bool, default false, not written when false: an administrator's reset, the provider takes the account's factor away and keeps a mark; a provider with none refuses it as unsupported), `unlock` (bool, same: clears the failure count and any delay and notes when; refused as unsupported by a provider that counts no failures), `proved_current` (bool, default false, not written when false: the caller checked the account's current secret in this request; the one-time code provider refuses a rotation without it, the others ignore it) |
 | `PutOutcome` | `secret?`, `codes?: Vec<String>` (one-time recovery codes, said once) |
 | `Waiting` | `shown`, `peer?`, `seen_unix?` |
 | `Factor` | `method`, `provider?` (the id that accepted the step), `person?` (the `Person::id` it named; `Debug` hides it) |

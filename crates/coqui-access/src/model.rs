@@ -253,6 +253,13 @@ pub struct AccountInfo {
     /// When it stops being taken, in seconds since the Unix epoch, where the provider
     /// keeps one.
     pub expires_unix: Option<i64>,
+    /// Whether an administrator reset the account (its factor was taken away and only an
+    /// administrator sets it up again), where the provider keeps that. Absent when the
+    /// provider keeps no such mark.
+    pub reset: Option<bool>,
+    /// When an administrator last cleared the account's failure counts, in seconds since the
+    /// Unix epoch, where the provider keeps it.
+    pub unlocked_unix: Option<i64>,
 }
 
 /// An account to make, or what to change of one there is. A field not said is left as it
@@ -280,6 +287,16 @@ pub struct AccountPut {
     /// holds refuses the replacement without it; one that does not ignores it. Absent is false.
     #[map(default, skip_serializing_if = is_false)]
     pub proved_current: bool,
+    /// An administrator's reset: the provider takes the account's factor away and keeps a mark
+    /// ([`AccountInfo::reset`]) until a new one is confirmed. A provider that keeps no such
+    /// mark refuses it as unsupported. Absent is false.
+    #[map(default, skip_serializing_if = is_false)]
+    pub reset: bool,
+    /// An administrator's unlock: the provider clears the account's failure count and any
+    /// delay and notes when ([`AccountInfo::unlocked_unix`]). A provider that counts no
+    /// failures refuses it as unsupported. Absent is false.
+    #[map(default, skip_serializing_if = is_false)]
+    pub unlock: bool,
 }
 
 fn is_false(value: &bool) -> bool {
@@ -297,6 +314,8 @@ impl fmt::Debug for AccountPut {
             .field("expires_unix", &self.expires_unix)
             .field("display_name", &self.display_name.as_ref().map(|_| "…"))
             .field("proved_current", &self.proved_current)
+            .field("reset", &self.reset)
+            .field("unlock", &self.unlock)
             .finish()
     }
 }
