@@ -251,10 +251,20 @@ What the consumer does:
   default, and a challenge lives five minutes.
 - **Register.** `Accounts::put` with a name and no secret begins a registration and answers the JSON for
   `navigator.credentials.create`; a second `put` with `secret` set to the browser's answer (JSON text, starting
-  `{`) confirms it. Who may register is the consumer's. The recommended gate is a password typed from where a
-  password is offered, as for a one-time code, so a session opened by a passkey or a certificate from outside
-  cannot add a passkey: a stolen session would then own the account for good. `remove:<id>` and `label:<id>`
-  manage one passkey by the id `AccountInfo::credentials` lists.
+  `{`) confirms it. Who may register is the consumer's, and the rule is the one-time code's: only after a fresh
+  sign-in decided under `purpose = enrol`, so the policy needs an `enrol` rule (with none, only an administrator
+  registers). A passkey signs in alone wherever a rule offers `["passkey"]`, so what the `enrol` rule accepts is
+  from then on enough there: with the rules above, a password accepted at the office must not register a passkey,
+  or a stolen password becomes a sign-in from anywhere. Ask for what the strictest rule asks:
+
+  ```toml
+  [[rule]]
+  purposes = ["enrol"]
+  allow = [["certificate"], ["passkey"]]
+  ```
+
+  A session already open is not a fresh sign-in: a stolen session cookie would otherwise own the account for
+  good. `remove:<id>` and `label:<id>` manage one passkey by the id `AccountInfo::credentials` lists.
 - **Recover.** A lost passkey is replaced through the other methods the policy offers, and an
   administrator's `remove` or `reset` takes a person's passkeys away.
 
@@ -262,7 +272,8 @@ Where it keeps things. A host builds one instance per kind, so the registrations
 are kept in files every instance reads (`<path>.pending`, `<path>.ceremonies` beside `source`); with memory
 tables a challenge made by one instance is `Unknown` to another. A counter that does not rise (a copy of the
 key is in use) refuses the answer and disables that passkey until it is removed; passkeys that sync between
-devices report a counter of 0 and are accepted by default (`reject_synced` refuses them).
+devices report a counter of 0 and are accepted by default (`reject_synced` refuses them, at registration and at
+sign-in, so one registered before it was set signs in no more).
 
 What it does not do: verify EdDSA signatures (the verifier does not; `eddsa` is refused when the provider is
 built), or check attestation unless authorities are configured.

@@ -36,6 +36,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   under the table's lock: `unlock` clears the failure count and any delay and notes the time; `reset` takes the secret and
   recovery codes and any enrolment waiting away and keeps a mark, which the next confirmed secret clears, and the account
   takes no code meanwhile. The key, password and certificate providers refuse either as unsupported.
+- **`Table::remove_where` removes every matching record at once.** A default method (load, then `remove` each match), which
+  `MemoryTable` and `FileTable` override to take them all in one write under their lock, and none when nothing matches. The
+  passkey provider sweeps expired challenges with it, so the first challenge after a flood has expired is one write, not one
+  per challenge the flood left.
 
 ### Changed
 

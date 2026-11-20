@@ -22,7 +22,8 @@ nothing is checked by hand except what the library leaves out.
 - **One challenge, one sign-in** - a challenge is removed from its table before the answer is checked,
   expires after `ceremony_seconds`, and is bounded per source and in all.
 - **A counter that does not rise** - refuses the answer and disables that passkey (or only refuses it).
-- **Synced passkeys** - accepted by default; `reject_synced` refuses them at registration.
+- **Synced passkeys** - accepted by default; `reject_synced` refuses them at registration and at
+  sign-in, so one registered before it was set signs in no more.
 - **Any source** - tables of `PasskeyAccount`, `PendingRegistration` and `Ceremony`; a host that builds
   one instance per kind keeps them in files every instance reads.
 
