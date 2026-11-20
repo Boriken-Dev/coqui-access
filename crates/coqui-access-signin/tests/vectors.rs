@@ -266,7 +266,7 @@ impl Consumer {
             "password" if provider == "local" && name == "alice" && secret == "pw" => {
                 self.person("alice")
             }
-            "certificate" if name == "alice" || name == "bob" => self.person(name),
+            "certificate" | "passkey" if name == "alice" || name == "bob" => self.person(name),
             "recovery_code" if secret == "RECOVER-1" && !self.recovery_used => {
                 let (first, _) = self.pending.as_ref()?;
                 (first.id == name).then(|| first.clone())
