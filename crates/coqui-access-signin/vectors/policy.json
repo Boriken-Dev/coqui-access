@@ -1912,6 +1912,142 @@
     "methods": [],
     "complete": true
    }
+  },
+  {
+   "name": "a password from the office does not register a passkey that signs in alone outside",
+   "config": {
+    "rule": [
+     {
+      "purposes": [
+       "enrol"
+      ],
+      "allow": [
+       [
+        "certificate"
+       ],
+       [
+        "passkey"
+       ]
+      ]
+     },
+     {
+      "networks": [
+       "10.0.0.0/8"
+      ],
+      "allow": [
+       [
+        "password"
+       ],
+       [
+        "certificate"
+       ],
+       [
+        "passkey"
+       ]
+      ]
+     },
+     {
+      "allow": [
+       [
+        "certificate"
+       ],
+       [
+        "passkey"
+       ]
+      ]
+     }
+    ]
+   },
+   "context": {
+    "purpose": "enrol",
+    "done": [
+     {
+      "method": "password",
+      "person": "id-alice"
+     }
+    ],
+    "address": "10.6.20.5",
+    "person": {
+     "id": "id-alice",
+     "name": "alice",
+     "groups": [
+      "admins"
+     ],
+     "attributes": {}
+    }
+   },
+   "expect": {
+    "methods": [],
+    "complete": false
+   }
+  },
+  {
+   "name": "a certificate registers a passkey under the enrolment rule",
+   "config": {
+    "rule": [
+     {
+      "purposes": [
+       "enrol"
+      ],
+      "allow": [
+       [
+        "certificate"
+       ],
+       [
+        "passkey"
+       ]
+      ]
+     },
+     {
+      "networks": [
+       "10.0.0.0/8"
+      ],
+      "allow": [
+       [
+        "password"
+       ],
+       [
+        "certificate"
+       ],
+       [
+        "passkey"
+       ]
+      ]
+     },
+     {
+      "allow": [
+       [
+        "certificate"
+       ],
+       [
+        "passkey"
+       ]
+      ]
+     }
+    ]
+   },
+   "context": {
+    "purpose": "enrol",
+    "done": [
+     {
+      "method": "certificate",
+      "person": "id-alice"
+     }
+    ],
+    "address": "10.6.20.5",
+    "person": {
+     "id": "id-alice",
+     "name": "alice",
+     "groups": [
+      "admins"
+     ],
+     "attributes": {}
+    }
+   },
+   "expect": {
+    "methods": [],
+    "complete": true
+   }
   }
  ]
 }
