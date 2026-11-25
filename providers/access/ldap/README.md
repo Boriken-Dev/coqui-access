@@ -62,7 +62,7 @@ bind_method = "gssapi"
 
 `gssapi` and `ntlm` are Cargo features, off by default; on Unix `gssapi` links `libgssapi_krb5` and
 needs the Kerberos development files and libclang to build. A password over plain `ldap://` to
-another machine is refused unless `allow_cleartext_password` is on, which `weakenings()` reports.
+another machine is refused unless `allow_cleartext_password` is on, which `non_defaults()` reports.
 [Binding to a directory](https://boriken-dev.github.io/coqui-access/ldap/) has each method's
 requirements and costs.
 
@@ -72,7 +72,8 @@ requirements and costs.
 | --- | --- |
 | `LdapAccounts` | The provider: `new(config)`, `Authenticator` and `Directory`. |
 | `LdapAccountsConfig` | The Guatiao configuration. |
-| `BindMethod`, `UserBind`, `Weakening` | How the search account and a person bind; what the settings weaken. |
+| `BindMethod`, `UserBind` | How the search account and a person bind. |
+| `NonDefault` | A setting that admits more than the defaults do: a TLS option past the default policy, a clear-text password, NTLM without TLS. |
 | `search` | Filter and result helpers that need no directory. |
 
 The live tests in `tests/live_directory.rs` and `tests/live_domain.rs` are ignored unless run against

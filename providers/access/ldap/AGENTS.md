@@ -40,15 +40,14 @@ pub struct LdapAccountsConfig {            // coqui_builder::Describe; the provi
 pub struct LdapAccounts;                  // provider id "coqui_access_ldap"
 impl LdapAccounts {
     pub fn new(config: LdapAccountsConfig) -> Result<Self, String>;   // also TryFrom<LdapAccountsConfig> and TryFrom<Described<LdapAccountsConfig>>
-    pub fn non_defaults(&self) -> &[coqui_peer_tls::NonDefault];   // what the ca_file TLS config allows past the default
+    pub fn non_defaults(&self) -> &[NonDefault];               // what the settings admit past the defaults, as data; empty by default
     pub fn cache(&self) -> coqui_access_kit::CacheOptions;     // how lookups are kept
     pub fn bind_method(&self) -> BindMethod;                   // the search account's method
     pub fn user_bind(&self) -> UserBind;                       // how a person's password is checked
-    pub fn weakenings(&self) -> &[Weakening];                  // settings that weaken a default, as data; empty by default
 }
 pub enum BindMethod { Simple, Gssapi, Ntlm, External }   // #[non_exhaustive]; parse(&str), as_str(), feature(), built()
 pub enum UserBind { Simple, Ntlm }                        // #[non_exhaustive]; parse, as_str, built
-pub enum Weakening { CleartextPassword, UnprotectedNtlm } // #[non_exhaustive]; Display
+pub enum NonDefault { Tls(coqui_peer_tls::NonDefault), CleartextPassword, UnprotectedNtlm } // #[non_exhaustive]; Display
 // module bind: ntlm_name(&str) -> Result<(), String>, url_host(&str), is_address(&str), is_socket(&str)
 impl Authenticator for LdapAccounts { /* takes name + secret */ }
 impl Directory for LdapAccounts { /* by "name", "id" and (when allowed) "filter" */ }
@@ -66,7 +65,7 @@ impl Directory for LdapAccounts { /* by "name", "id" and (when allowed) "filter"
   without TLS and `ca_file`.
 - With a `ca_file`, the client configuration is coqui-peer-tls's under `Policy::default()`
   (intermediate: TLS 1.2 with extended master secret, and 1.3; resumption off); `non_defaults()`
-  reports what it allows past that default, nothing as built. Without one, ldap3's own rustls
+  reports what it allows past that default as `Tls(..)`, nothing as built. Without one, ldap3's own rustls
   defaults apply and nothing is reported.
 - **Bind methods.** The search account (`bind_method`): `simple` (`bind` + `bind_password`, or neither: anonymous), `gssapi` (SASL
   GSSAPI as the process's own credentials; the provider takes no keytab or ticket-cache path because libgssapi reads them from the
@@ -75,7 +74,7 @@ impl Directory for LdapAccounts { /* by "name", "id" and (when allowed) "filter"
   (`bind` as `DOMAIN\user` or `user@domain`, SASL GSS-SPNEGO; cannot seal) and `external` (SASL EXTERNAL: the TLS client certificate
   or an `ldapi://` socket's peer credentials). A person (`user_bind`): `simple` (their DN, on the search account's connection, so a
   sealed layer carries the password) or `ntlm` (the name typed, on a connection of its own; a name `ntlm_name` refuses is `Invalid`).
-- **`weakenings()`.** `CleartextPassword` when `allow_cleartext_password` is on, `UnprotectedNtlm` when NTLM binds with no TLS
+- **Other `non_defaults()` items.** `CleartextPassword` when `allow_cleartext_password` is on, `UnprotectedNtlm` when NTLM binds with no TLS
   (`ldap://` without `start_tls`). Nothing is logged. A password is "in the clear" when a simple search-account bind carries one,
   or a person is checked by a simple bind on a connection that is not sealed; a `gssapi` search account seals plain `ldap://`.
 - **Server side.** `gssapi` needs the service principal `ldap/<server_fqdn>` and a client with a ticket or keytab; OpenLDAP also needs

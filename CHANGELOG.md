@@ -16,8 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   or an `ldapi://` URL). `user_bind` checks a person by `simple` (default) or `ntlm`. `gssapi` and `ntlm` are Cargo features, off
   by default, on the provider and its plugin; `ntlm` holds `picky` and `picky-krb` at the versions `sspi` 0.16.1 compiles with.
   `allow_cleartext_password` (off) lifts the refusal of a password over plain `ldap://`; a `gssapi` search account needs no
-  opt-out, since the person's password rides its sealed layer. `LdapAccounts::bind_method`, `user_bind` and `weakenings` report
-  the method in use and what is turned down (`Weakening::CleartextPassword`, `UnprotectedNtlm`). The refusal's message now names
+  opt-out, since the person's password rides its sealed layer. `LdapAccounts::bind_method`, `user_bind` and `non_defaults` report
+  the method in use and what is turned down (`NonDefault::CleartextPassword`, `UnprotectedNtlm`, beside the TLS items as `Tls`). The refusal's message now names
   the setting. Tests bind each method against a Kerberos and OpenLDAP container and, read-only, a domain controller.
 - **`coqui-access-passkey` signs a person in with a passkey (WebAuthn).** A provider (`coqui_access_passkey`, library and plugin) that
   registers passkeys through `Accounts::put` (begin answers the creation options, confirm takes the browser's answer; `remove:<id>`
@@ -198,7 +198,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **Breaking: a weakening is a non-default setting.** `coqui-access-acl`'s `Weakening` enum is `NonDefault` (variants
   unchanged) and `Options::weakened` and `ItemAcl::weakened` are `non_defaults`; `coqui-access-system`'s `Weakening` is
   `NonDefault` and `SystemAccountsConfig::weakenings` is `non_defaults`; `LdapAccounts::weakened` is `non_defaults` and
-  returns coqui-peer-tls's `NonDefault`. The old names are gone; nothing keeps an alias before a release without a pre-release tag.
+  returns the crate's own `NonDefault`. The old names are gone; nothing keeps an alias before a release without a pre-release tag.
 - **Breaking:** `SystemAccounts` refuses, with a bad value, a `min_uid` other than the default where accounts carry no
   uid (Windows): it used to be accepted and admit nothing.
 - **Breaking: settings types derive `coqui_builder::Describe`.** `Limit`, `RecordLimits`, `RoleLimits`,

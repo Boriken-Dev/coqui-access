@@ -50,10 +50,10 @@ cannot parse is an invalid sign-in, never a panic.
 A password may cross a plain `ldap://` connection to another machine only when
 `allow_cleartext_password` is on. By default such a URL is refused unless StartTLS is on, the host
 is the local machine, or no password would cross it: a `gssapi` search account seals the connection
-and the person's simple bind rides that layer. `weakenings()` lists, as data and never as a log line,
-what is turned down:
+and the person's simple bind rides that layer. `non_defaults()` lists, as data and never as a log line,
+what is turned down, with any TLS option past the default policy (`Tls`):
 
-| Weakening | When | Cost |
+| Non-default | When | Cost |
 | --- | --- | --- |
 | `CleartextPassword` | `allow_cleartext_password` is on | passwords are readable and replayable by anyone on the path |
 | `UnprotectedNtlm` | NTLM binds with no TLS | no password crosses, but nothing after the bind is signed or sealed, so the session can be altered and read |
