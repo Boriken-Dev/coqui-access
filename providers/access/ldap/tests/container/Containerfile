@@ -1,0 +1,9 @@
+# A throwaway directory for the bind-method tests: one Kerberos KDC and one OpenLDAP server
+# in the same container, configured by entrypoint.sh from files the test mounts. Built by the
+# test from this text, never pushed; the packages are installed inside the image only.
+FROM registry.fedoraproject.org/fedora:44
+RUN dnf -y install --setopt=install_weak_deps=False \
+        krb5-server krb5-workstation openldap-servers openldap-clients cyrus-sasl-gssapi \
+    && dnf clean all
+COPY entrypoint.sh /entrypoint.sh
+ENTRYPOINT ["/bin/bash", "/entrypoint.sh"]
