@@ -10,6 +10,18 @@ repository.workspace = true
 publish.workspace = true
 exclude = [".*", "*.local.*"]
 
+[features]
+# Kerberos binds (SASL GSSAPI). Windows uses SSPI; Unix links the system libgssapi_krb5 (MIT or
+# Heimdal) and builds its bindings with bindgen, so it needs the Kerberos development files and
+# libclang.
+gssapi = ["ldap3/gssapi"]
+# NTLM binds (SASL GSS-SPNEGO). sspi 0.16.1 does not compile against picky-krb 0.11.2 or later
+# nor picky 7.0.0-rc.18 or later, so those two are held at the last versions it builds with.
+ntlm = ["ldap3/ntlm", "dep:picky", "dep:picky-krb"]
+
+[package.metadata.docs.rs]
+all-features = true
+
 [dependencies]
 coqui-access.workspace = true
 coqui-builder = { workspace = true, features = ["zeroize"] }
@@ -18,8 +30,12 @@ coqui-access-kit = { workspace = true, features = ["cache"] }
 # The client TLS configuration for a directory with its own CA, under its default policy.
 coqui-peer-tls.workspace = true
 ldap3.workspace = true
+picky = { version = "=7.0.0-rc.17", default-features = false, optional = true }
+picky-krb = { version = "=0.11.1", optional = true }
 rustls.workspace = true
 
 [dev-dependencies]
+data-encoding.workspace = true
+getrandom.workspace = true
 rcgen.workspace = true
 tempfile.workspace = true
