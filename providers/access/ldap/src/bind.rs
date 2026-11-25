@@ -124,29 +124,6 @@ impl fmt::Display for UserBind {
     }
 }
 
-/// A setting that weakens what the defaults protect. Reported, never refused: the host
-/// decides what to do about it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[non_exhaustive]
-pub enum Weakening {
-    /// `allow_cleartext_password` is on: a password may cross a plain `ldap://` connection.
-    CleartextPassword,
-    /// NTLM binds on a connection with no TLS: no password crosses, but nothing after the
-    /// bind is signed or sealed.
-    UnprotectedNtlm,
-}
-
-impl fmt::Display for Weakening {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(match self {
-            Self::CleartextPassword => {
-                "allow_cleartext_password: a password may cross in the clear"
-            }
-            Self::UnprotectedNtlm => "ntlm without TLS: the session after the bind is unprotected",
-        })
-    }
-}
-
 /// Checks that `name` is one `sasl_ntlm_bind` accepts: `user`, `DOMAIN\user` or `user@domain`,
 /// each part present and free of control characters. ldap3 parses the name with `unwrap`, and a
 /// name with a second separator or a mixed form panics there, so it is refused here first.

@@ -8,7 +8,7 @@ pub mod bind;
 mod primary;
 pub mod search;
 
-pub use bind::{BindMethod, UserBind, Weakening};
+pub use bind::{BindMethod, UserBind};
 
 use std::fmt;
 use std::sync::Arc;
@@ -19,9 +19,38 @@ use coqui_access::guatiao::library::ProviderError;
 use coqui_access::{Attempt, Authenticator, Directory, Lookup, Person, Verdict};
 use coqui_access_kit::{CacheOptions, CacheSetting, Cached};
 use coqui_builder::{Describe, Secret};
-use coqui_peer_tls::{ClientBuilder, Identity, NonDefault, Policy, Roots, Trust};
+use coqui_peer_tls::{ClientBuilder, Identity, Policy, Roots, Trust};
 use guatiao_builder::Described;
 use ldap3::{LdapConn, LdapConnSettings, LdapResult, Scope, SearchEntry};
+
+/// A setting that admits more than the defaults do. Reported, never refused: the host
+/// decides what to do about it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum NonDefault {
+    /// What the `ca_file` TLS configuration allows past coqui-peer-tls's default policy.
+    Tls(coqui_peer_tls::NonDefault),
+    /// `allow_cleartext_password` is on: a password may cross a plain `ldap://` connection, where
+    /// anyone on the path can read and replay it.
+    CleartextPassword,
+    /// NTLM binds on a connection with no TLS: no password crosses, but nothing after the bind
+    /// is signed or sealed, so the session can be altered and read.
+    UnprotectedNtlm,
+}
+
+impl fmt::Display for NonDefault {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Tls(setting) => fmt::Display::fmt(setting, formatter),
+            Self::CleartextPassword => {
+                formatter.write_str("allow_cleartext_password: a password may cross in the clear")
+            }
+            Self::UnprotectedNtlm => {
+                formatter.write_str("ntlm without TLS: the session after the bind is unprotected")
+            }
+        }
+    }
+}
 
 /// The account filter a filter lookup is ANDed with unless the configuration says another:
 /// people who are users, which leaves out Active Directory's computer accounts.
@@ -71,7 +100,7 @@ pub struct LdapAccountsConfig {
     pub user_bind: String,
     /// Whether a password may cross a plain `ldap://` connection to a host that is not the
     /// local machine. Off by default, which refuses such a URL unless `start_tls` is on or
-    /// no password would cross it. Reported by `weakenings()` when on.
+    /// no password would cross it. Reported by `non_defaults()` when on.
     #[map(default = false)]
     pub allow_cleartext_password: bool,
     /// LDAP filter with `{name}` for the escaped account name.
@@ -184,9 +213,10 @@ impl LdapAccounts {
         })
     }
 
-    /// What the TLS configuration for `ca_file` allows beyond coqui-peer-tls's default policy
-    /// (TLS 1.2 and 1.3), as data for the host to act on. Empty without a `ca_file`, where
-    /// ldap3's own rustls defaults apply.
+    /// What these settings admit beyond the defaults, as data for the host to act on: the
+    /// `ca_file` TLS configuration past coqui-peer-tls's default policy (none without a
+    /// `ca_file`, where ldap3's own rustls defaults apply), a clear-text password allowed, and
+    /// NTLM without TLS. Empty with the defaults.
     pub fn non_defaults(&self) -> &[NonDefault] {
         &self.directory.inner().non_defaults
     }
@@ -204,12 +234,6 @@ impl LdapAccounts {
     /// How a person's password is checked.
     pub fn user_bind(&self) -> UserBind {
         self.directory.inner().user
-    }
-
-    /// The settings that weaken what the defaults protect, as data for the host to act on.
-    /// Empty with the defaults.
-    pub fn weakenings(&self) -> &[Weakening] {
-        &self.directory.inner().weakenings
     }
 }
 
@@ -234,7 +258,6 @@ struct Ldap {
     user: UserBind,
     /// The name `ldap/<name>` is asked for, for `gssapi`.
     server_fqdn: Option<String>,
-    weakenings: Vec<Weakening>,
     primary_groups: primary::GroupCache,
 }
 
@@ -353,18 +376,18 @@ impl Ldap {
                     .to_owned(),
             );
         }
-        let mut weakenings = Vec::new();
+        let mut non_defaults = Vec::new();
         if config.allow_cleartext_password {
-            weakenings.push(Weakening::CleartextPassword);
+            non_defaults.push(NonDefault::CleartextPassword);
         }
         if (service == BindMethod::Ntlm || user == UserBind::Ntlm) && !tls && !socket {
-            weakenings.push(Weakening::UnprotectedNtlm);
+            non_defaults.push(NonDefault::UnprotectedNtlm);
         }
         let identity = match (&config.client_cert, &config.client_key) {
             (Some(cert), Some(key)) => Some(read_identity(cert, key)?),
             _ => None,
         };
-        let (trusted, non_defaults) = match config.ca_file.as_deref() {
+        let trusted = match config.ca_file.as_deref() {
             Some(file) => {
                 let mut builder = ClientBuilder::new()
                     .server(Trust::Roots(Roots::bundle_file(file)))
@@ -375,10 +398,10 @@ impl Ldap {
                 let built = builder
                     .build()
                     .map_err(|reason| format!("ca_file {file}: {reason}"))?;
-                let non_defaults = built.non_defaults();
-                (Some(Arc::new(built.config)), non_defaults)
+                non_defaults.extend(built.non_defaults().into_iter().map(NonDefault::Tls));
+                Some(Arc::new(built.config))
             }
-            None => (None, Vec::new()),
+            None => None,
         };
         Ok(Self {
             primary_groups: primary::GroupCache::new(config.cache.options()),
@@ -388,7 +411,6 @@ impl Ldap {
             service,
             user,
             server_fqdn,
-            weakenings,
         })
     }
 
@@ -962,7 +984,7 @@ mod tests {
         let accounts = LdapAccounts::new(config("ldaps://directory.example.org")).unwrap();
         assert_eq!(accounts.bind_method(), BindMethod::Simple);
         assert_eq!(accounts.user_bind(), UserBind::Simple);
-        assert!(accounts.weakenings().is_empty());
+        assert!(accounts.non_defaults().is_empty());
     }
 
     #[test]
@@ -1086,7 +1108,7 @@ mod tests {
             })
             .unwrap();
             assert_eq!(accounts.bind_method(), BindMethod::Ntlm);
-            assert!(accounts.weakenings().is_empty());
+            assert!(accounts.non_defaults().is_empty());
         }
     }
 
@@ -1103,13 +1125,16 @@ mod tests {
         assert!(service_password.is_err());
         // The opt-out admits it and is listed as a weakening.
         let allowed = with(url, |c| c.allow_cleartext_password = true).unwrap();
-        assert_eq!(allowed.weakenings(), [Weakening::CleartextPassword]);
+        assert_eq!(allowed.non_defaults(), [NonDefault::CleartextPassword]);
         // StartTLS and ldaps need no opt-out; the setting is still reported when on.
         assert!(with(url, |c| c.start_tls = true).is_ok());
         let moot = with("ldaps://directory.example.org", |c| {
             c.allow_cleartext_password = true;
         });
-        assert_eq!(moot.unwrap().weakenings(), [Weakening::CleartextPassword]);
+        assert_eq!(
+            moot.unwrap().non_defaults(),
+            [NonDefault::CleartextPassword]
+        );
         // Loopback is not the network.
         assert!(with("ldap://localhost", |_| {}).is_ok());
     }
@@ -1120,7 +1145,7 @@ mod tests {
         let url = "ldap://dc.example.org";
         // The person's password rides the sealed layer, so simple user binds are accepted.
         let sealed = with(url, |c| c.bind_method = "gssapi".to_owned()).unwrap();
-        assert!(sealed.weakenings().is_empty());
+        assert!(sealed.non_defaults().is_empty());
         assert_eq!(sealed.bind_method(), BindMethod::Gssapi);
         // NTLM sends no password but nothing after it is protected: reported.
         let ntlm = with(url, |c| {
@@ -1128,13 +1153,13 @@ mod tests {
             c.user_bind = "ntlm".to_owned();
         })
         .unwrap();
-        assert_eq!(ntlm.weakenings(), [Weakening::UnprotectedNtlm]);
+        assert_eq!(ntlm.non_defaults(), [NonDefault::UnprotectedNtlm]);
         let ntlm_over_tls = with("ldaps://dc.example.org", |c| {
             c.bind_method = "gssapi".to_owned();
             c.user_bind = "ntlm".to_owned();
         })
         .unwrap();
-        assert!(ntlm_over_tls.weakenings().is_empty());
+        assert!(ntlm_over_tls.non_defaults().is_empty());
         // A simple search-account bind with a password is still clear text.
         let simple = with(url, |c| {
             c.bind = Some("CN=search".to_owned());
