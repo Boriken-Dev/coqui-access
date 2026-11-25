@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`coqui-access-ldap` binds with Kerberos, NTLM or a client certificate, and the clear-text refusal is a setting.** `bind_method`
+  is `simple` (default, as before), `gssapi` (SASL GSSAPI as the process's own credentials: SSPI on Windows, libgssapi on Unix;
+  sealed over plain `ldap://`, channel-bound over TLS; `server_fqdn` names the service), `ntlm` (`bind` as `DOMAIN\user` or
+  `user@domain`; a malformed name is a configuration error, not a panic in ldap3) or `external` (`client_cert` and `client_key`,
+  or an `ldapi://` URL). `user_bind` checks a person by `simple` (default) or `ntlm`. `gssapi` and `ntlm` are Cargo features, off
+  by default, on the provider and its plugin; `ntlm` holds `picky` and `picky-krb` at the versions `sspi` 0.16.1 compiles with.
+  `allow_cleartext_password` (off) lifts the refusal of a password over plain `ldap://`; a `gssapi` search account needs no
+  opt-out, since the person's password rides its sealed layer. `LdapAccounts::bind_method`, `user_bind` and `weakenings` report
+  the method in use and what is turned down (`Weakening::CleartextPassword`, `UnprotectedNtlm`). The refusal's message now names
+  the setting. Tests bind each method against a Kerberos and OpenLDAP container and, read-only, a domain controller.
 - **`coqui-access-passkey` signs a person in with a passkey (WebAuthn).** A provider (`coqui_access_passkey`, library and plugin) that
   registers passkeys through `Accounts::put` (begin answers the creation options, confirm takes the browser's answer; `remove:<id>`
   and `label:<id>` manage one), answers the sign-in options through the new `Challenger` kind and takes the signed answer through

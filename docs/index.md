@@ -39,6 +39,8 @@ whose `source` object says where the records live.
 
 [Sign-in policy](sign-in.md) is the contract a consumer follows to decide which methods a
 sign-in may use from where it is made, and when to ask for a second step.
+[Binding to a directory](ldap.md) says how the LDAP provider binds (password, Kerberos, NTLM, client
+certificate) and what each asks of the server and the build.
 [Claims and the matcher](identity.md) tie what an authenticator obtained (a certificate's
 names, in full) to an account in a directory, by templates and LDAP filters with every value
 escaped, and by pins kept in a per-user file or a table.
