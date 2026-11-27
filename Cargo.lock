@@ -1519,7 +1519,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1785,7 +1785,7 @@ dependencies = [
 [[package]]
 name = "guatiao"
 version = "0.0.0-alpha.1"
-source = "git+https://github.com/Boriken-Dev/guatiao?rev=75f9ef4a302e28caa16b2231cc11b4c2b9a53c9d#75f9ef4a302e28caa16b2231cc11b4c2b9a53c9d"
+source = "git+https://github.com/Boriken-Dev/guatiao?rev=3163647ab70bc19bf24125d30e1dc1ee49b10f94#3163647ab70bc19bf24125d30e1dc1ee49b10f94"
 dependencies = [
  "guatiao-derive",
  "libloading",
@@ -1797,7 +1797,7 @@ dependencies = [
 [[package]]
 name = "guatiao-builder"
 version = "0.0.0-alpha.1"
-source = "git+https://github.com/Boriken-Dev/guatiao?rev=75f9ef4a302e28caa16b2231cc11b4c2b9a53c9d#75f9ef4a302e28caa16b2231cc11b4c2b9a53c9d"
+source = "git+https://github.com/Boriken-Dev/guatiao?rev=3163647ab70bc19bf24125d30e1dc1ee49b10f94#3163647ab70bc19bf24125d30e1dc1ee49b10f94"
 dependencies = [
  "coqui-builder",
  "guatiao",
@@ -1807,7 +1807,7 @@ dependencies = [
 [[package]]
 name = "guatiao-derive"
 version = "0.0.0-alpha.1"
-source = "git+https://github.com/Boriken-Dev/guatiao?rev=75f9ef4a302e28caa16b2231cc11b4c2b9a53c9d#75f9ef4a302e28caa16b2231cc11b4c2b9a53c9d"
+source = "git+https://github.com/Boriken-Dev/guatiao?rev=3163647ab70bc19bf24125d30e1dc1ee49b10f94#3163647ab70bc19bf24125d30e1dc1ee49b10f94"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1817,7 +1817,7 @@ dependencies = [
 [[package]]
 name = "guatiao-intake"
 version = "0.0.0-alpha.1"
-source = "git+https://github.com/Boriken-Dev/guatiao?rev=75f9ef4a302e28caa16b2231cc11b4c2b9a53c9d#75f9ef4a302e28caa16b2231cc11b4c2b9a53c9d"
+source = "git+https://github.com/Boriken-Dev/guatiao?rev=3163647ab70bc19bf24125d30e1dc1ee49b10f94#3163647ab70bc19bf24125d30e1dc1ee49b10f94"
 dependencies = [
  "guatiao",
 ]
@@ -1825,7 +1825,7 @@ dependencies = [
 [[package]]
 name = "guatiao-serde"
 version = "0.0.0-alpha.1"
-source = "git+https://github.com/Boriken-Dev/guatiao?rev=75f9ef4a302e28caa16b2231cc11b4c2b9a53c9d#75f9ef4a302e28caa16b2231cc11b4c2b9a53c9d"
+source = "git+https://github.com/Boriken-Dev/guatiao?rev=3163647ab70bc19bf24125d30e1dc1ee49b10f94#3163647ab70bc19bf24125d30e1dc1ee49b10f94"
 dependencies = [
  "guatiao",
  "serde",
@@ -3502,7 +3502,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3912,7 +3912,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -4103,7 +4103,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4555,7 +4555,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
