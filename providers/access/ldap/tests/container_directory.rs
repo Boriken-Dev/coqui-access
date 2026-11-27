@@ -344,7 +344,7 @@ fn every_bind_method_binds_against_a_directory_that_wants_confidentiality() {
                 .to_owned(),
         );
     };
-    let external = directory.provider(&ldaps, |value| certificate(value));
+    let external = directory.provider(&ldaps, certificate);
     assert_ana(&external);
     let starttls = directory.provider(&format!("ldap://localhost:{}", directory.ldap), |value| {
         certificate(value);
